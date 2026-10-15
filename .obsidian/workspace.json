@@ -4,11 +4,11 @@
     "type": "split",
     "children": [
       {
-        "id": "e310ac39ea06138f",
+        "id": "05ba2166898b40b5",
         "type": "tabs",
         "children": [
           {
-            "id": "2c1fb19e6d554998",
+            "id": "fe3578f298b74a37",
             "type": "leaf",
             "state": {
               "type": "markdown",
@@ -188,11 +188,11 @@
       "bases:新規ベースを作成": false
     }
   },
-  "active": "2c1fb19e6d554998",
+  "active": "fe3578f298b74a37",
   "lastOpenFiles": [
+    "ユースケース/kusakari-ecのユースケース.md",
     "ユースケース/ユースケース案.md",
     "kusakari-ecのユースケース.md",
-    "ユースケース/kusakari-ecのユースケース.md",
     "ユースケース",
     "新しいフォルダー",
     "ユースケース案.md"
