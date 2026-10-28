@@ -11,14 +11,10 @@
             "id": "fe3578f298b74a37",
             "type": "leaf",
             "state": {
-              "type": "markdown",
-              "state": {
-                "file": "ユースケース/kusakari-ecのユースケース.md",
-                "mode": "source",
-                "source": false
-              },
+              "type": "empty",
+              "state": {},
               "icon": "lucide-file",
-              "title": "kusakari-ecのユースケース"
+              "title": "新規タブ"
             }
           }
         ]
@@ -161,7 +157,6 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "ユースケース/kusakari-ecのユースケース.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
@@ -191,10 +186,37 @@
   "active": "fe3578f298b74a37",
   "lastOpenFiles": [
     "ユースケース/kusakari-ecのユースケース.md",
-    "ユースケース/ユースケース案.md",
-    "kusakari-ecのユースケース.md",
+    "ユースケース/kusakari-canvas/README.md",
+    "ユースケース/kusakari-canvas/UC-08_購入リストを表示する.md",
+    "ユースケース/kusakari-canvas/UC-07_庭プロジェクトを管理する.md",
+    "ユースケース/kusakari-canvas/UC-06_庭プロジェクトを保存する.md",
+    "ユースケース/kusakari-canvas/UC-05_完成イメージ画像を生成・保存する.md",
+    "ユースケース/kusakari-canvas/UC-04_庭オブジェクトを配置・編集する.md",
+    "ユースケース/kusakari-canvas/UC-03_施工範囲を指定・修正する.md",
+    "ユースケース/kusakari-canvas/UC-02_庭の写真をアップロードし、施工範囲の実寸を補正する.md",
+    "ユースケース/kusakari-canvas/UC-01_庭プロジェクトを新規作成する.md",
+    "ユースケース/kusakari-canvas",
+    "ユースケース/kusakari-ec/README.md",
+    "ユースケース/kusakari-ec/EC-A09_商品カテゴリを削除する.md",
+    "ユースケース/kusakari-ec/EC-A08_商品カテゴリを編集する.md",
+    "ユースケース/kusakari-ec/EC-A07_商品カテゴリを追加する.md",
+    "ユースケース/kusakari-ec/EC-A06_商品情報を確認する.md",
+    "ユースケース/kusakari-ec/EC-A05_店舗情報を確認する.md",
+    "ユースケース/kusakari-ec/EC-A04_出店申請を却下する.md",
+    "ユースケース/kusakari-ec/EC-A03_出店申請を承認する.md",
+    "ユースケース/kusakari-ec/EC-A02_アカウントの利用状況の変更.md",
+    "ユースケース/kusakari-ec/EC-A01_会員を検索・確認する.md",
+    "ユースケース/kusakari-ec/EC-S11_出店者ダッシュボードを確認する.md",
+    "ユースケース/kusakari-ec/EC-S10_イベント通知を確認する.md",
+    "ユースケース/kusakari-ec/EC-S09_商品の受渡状況登録.md",
+    "ユースケース/kusakari-ec/EC-S08_注文一覧・詳細を確認する.md",
+    "ユースケース/kusakari-ec/EC-S07_売上・精算状況を確認する.md",
+    "ユースケース/kusakari-ec/EC-S06_商品の販売状態を変更する.md",
+    "ユースケース/kusakari-ec",
+    "ユースケース/canvas",
+    "ユースケース/ec",
+    "v11 アソウ.pdf",
     "ユースケース",
-    "新しいフォルダー",
-    "ユースケース案.md"
+    "新しいフォルダー"
   ]
 }
