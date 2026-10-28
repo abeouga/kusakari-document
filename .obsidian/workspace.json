@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "ユースケース/kusakari-canvas/00_全ユースケース共通の代替フロー.md",
+                "file": "ユースケース/kusakari-canvas/UC-07_庭プロジェクトを保存する.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "00_全ユースケース共通の代替フロー"
+              "title": "UC-07_庭プロジェクトを保存する"
             }
           },
           {
@@ -69,7 +69,7 @@
             "state": {
               "type": "search",
               "state": {
-                "query": "要確認",
+                "query": "複製",
                 "matchingCase": false,
                 "explainSearch": false,
                 "collapseAll": false,
@@ -175,7 +175,7 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "ユースケース/kusakari-canvas/00_全ユースケース共通の代替フロー.md",
+                "file": "ユースケース/kusakari-canvas/UC-07_庭プロジェクトを保存する.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
@@ -204,8 +204,20 @@
   },
   "active": "fe3578f298b74a37",
   "lastOpenFiles": [
+    "ユースケース/kusakari-canvas/UC-06_完成イメージ画像を生成・保存する.md",
+    "ユースケース/kusakari-canvas/UC-05_庭オブジェクトを配置・編集する.md",
+    "ユースケース/kusakari-canvas/UC-04_施工範囲の実寸を定義する.md",
+    "ユースケース/kusakari-canvas/UC-03_施工範囲を指定・修正する.md",
+    "ユースケース/kusakari-canvas/UC-02_庭の写真をアップロードする.md",
     "ユースケース/kusakari-canvas/UC-01_庭プロジェクトを新規作成する.md",
+    "ユースケース/kusakari-canvas/00_全ユースケース共通の代替フロー.md",
     "ユースケース/kusakari-canvas/UC-08_庭プロジェクトを管理する.md",
+    "ユースケース/kusakari-ec/EC-B24_買い物リストを確認する(EC).md",
+    "ユースケース/kusakari-ec/sed639DOF",
+    "ユースケース/kusakari-ec/EC-A11_店舗の利用を停止・再開する.md",
+    "ユースケース/kusakari-ec/EC-A10_商品の公開を停止・再開する.md",
+    "ユースケース/kusakari-ec/EC-A01_会員を検索・確認する.md",
+    "ユースケース/kusakari-ec/EC-B01_ログインする.md",
     "ユースケース/kusakari-ec/EC-S13_注文キャンセル申請を処理する.md",
     "ユースケース/kusakari-ec/EC-S09_注文を受取準備完了にする.md",
     "ユースケース/kusakari-ec/EC-S11_イベント通知を確認する.md",
@@ -214,22 +226,11 @@
     "ユースケース/kusakari-ec/EC-S04_商品情報を編集する.md",
     "ユースケース/kusakari-ec/EC-S03_商品を登録する.md",
     "ユースケース/kusakari-ec/EC-B25_買い物リストから商品をカートに追加する.md",
-    "ユースケース/kusakari-ec/EC-B24_買い物リストを確認する(EC).md",
     "ユースケース/kusakari-ec/EC-B21_アカウントを退会する.md",
     "ユースケース/kusakari-ec/EC-B16_一般アカウントを登録する.md",
     "ユースケース/kusakari-ec/EC-B09_カートの数量を変更する.md",
     "ユースケース/kusakari-ec/EC-B07_商品をカートに追加する.md",
     "ユースケース/kusakari-ec/EC-A03_出店申請を審査する.md",
-    "ユースケース/kusakari-ec/EC-A02_アカウントの利用状況を変更する.md",
-    "ユースケース/kusakari-canvas/UC-09_買い物リストを表示する.md",
-    "ユースケース/kusakari-canvas.md",
-    "ユースケース/kusakari-ec/EC-A10_商品を審査する.md",
-    "ユースケース/kusakari-ec/EC-A09_商品カテゴリを削除する.md",
-    "ユースケース/kusakari-ec/EC-A08_商品カテゴリを編集する.md",
-    "ユースケース/kusakari-ec/EC-A07_商品カテゴリを追加する.md",
-    "ユースケース/kusakari-ec/EC-A06_商品情報を確認する.md",
-    "ユースケース/kusakari-ec/EC-A05_店舗情報を確認する.md",
-    "ユースケース/kusakari-ec/EC-A04_出店申請を却下する(削除済み).md",
     "ユースケース/kusakari-canvas",
     "ユースケース/kusakari-ec",
     "ユースケース/canvas",
