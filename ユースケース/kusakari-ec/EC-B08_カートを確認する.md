@@ -10,3 +10,4 @@
 | 代替フロー    | 2a. カートが空の場合<br>2a-1. システムがカートは空であることを表示し、商品一覧へ進めるようにする。<br>2a-2. ユースケースを終了する。 |
 | 関連情報     |  |
 
+<img width="944" height="433" alt="image" src="https://github.com/user-attachments/assets/797061cf-3109-4f0e-9d0a-1a58796d5eba" />
