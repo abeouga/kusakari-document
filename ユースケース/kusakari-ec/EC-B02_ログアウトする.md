@@ -10,3 +10,4 @@
 | 代替フロー    |  |
 | 関連情報     | ・庭シミュレーション画面からアカウント情報画面へ移動するときは、庭プロジェクトの保存が終わってから移動する(UC-07)。 |
 
+<img width="951" height="437" alt="image" src="https://github.com/user-attachments/assets/e3014ffa-cd04-4d65-9c2e-22b1942acd1a" />
