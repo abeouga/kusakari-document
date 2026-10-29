@@ -10,3 +10,4 @@
 | 代替フロー    | 2a. 削除に失敗した場合<br>2a-1. システムが削除エラーを表示し、最新のカートを再取得する。<br>2a-2. ユースケースを終了する。 |
 | 関連情報     |  |
 
+<img width="947" height="438" alt="スクリーンショット 2026-10-29 104720" src="https://github.com/user-attachments/assets/a13fa3a7-cefe-4ea7-b1a7-bba942a6fbad" />
