@@ -10,3 +10,6 @@
 | 代替フロー    | 7a. カテゴリ名が空、30文字を超える、または同じ名前のカテゴリがすでにある場合<br>7a-1. システムが入力エラー(空白のみの場合は「カテゴリ名を入力してください。」、同じ名前がある場合は「同じカテゴリがあります。」)を表示し、変更前の内容を維持する。<br>7a-2. 基本フロー5へ戻る。 |
 | 関連情報     | ・共通代替フロー *b を適用する。<br>・カテゴリ名を変更すると、そのカテゴリの商品にも新しいカテゴリ名が表示される。 |
 
+<img width="945" height="415" alt="image" src="https://github.com/user-attachments/assets/b0bb68e0-b049-400e-a852-e5c5b94a6f7e" />
+
+<img width="950" height="440" alt="image" src="https://github.com/user-attachments/assets/a626c0c9-caa8-41bf-85d1-467b4b2fa34e" />

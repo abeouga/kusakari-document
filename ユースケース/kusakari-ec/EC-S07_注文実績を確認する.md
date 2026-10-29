@@ -10,3 +10,4 @@
 | 代替フロー    | 3a. 注文がない場合<br>3a-1. システムが注文なしの状態を表示する。<br>3a-2. ユースケースを終了する。 |
 | 関連情報     | ・共通代替フロー *b を適用する。 |
 
+<img width="950" height="440" alt="image" src="https://github.com/user-attachments/assets/55adaf60-dcfe-4da6-a417-ea84e3eacc7f" />

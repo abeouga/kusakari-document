@@ -10,3 +10,4 @@
 | 代替フロー    | 4a. 該当会員がいない場合<br>4a-1. システムが「検索条件に一致する会員はありません。」を表示する。<br>4a-2. 基本フロー3へ戻る。 |
 | 関連情報     | ・共通代替フロー *b を適用する。<br>・会員情報は一覧上で確認する。 |
 
+<img width="1462" height="782" alt="image" src="https://github.com/user-attachments/assets/54be42de-596e-4eb3-b918-3a5022a661a8" />

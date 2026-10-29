@@ -9,3 +9,7 @@
 | 基本フロー    | 1. 購入者が対象商品の削除ボタン(ごみ箱アイコン)をクリックする。<br>2. システムが削除内容を反映する。<br>3. システムが「ショッピングカート」画面に更新後のカートと合計を表示し、「カートから削除しました。」と表示する。         |
 | 代替フロー    | 2a. 削除に失敗した場合<br>2a-1. システムが削除エラーを表示し、最新のカートを再取得して表示する。<br>2a-2. ユースケースを終了する。 |
 | 関連情報     |  |
+
+<img width="947" height="438" alt="スクリーンショット 2026-10-29 104720" src="https://github.com/user-attachments/assets/a13fa3a7-cefe-4ea7-b1a7-bba942a6fbad" />
+
+<img width="946" height="425" alt="image" src="https://github.com/user-attachments/assets/4ba744e3-4190-4723-83fb-1f3a891cd9ca" />
