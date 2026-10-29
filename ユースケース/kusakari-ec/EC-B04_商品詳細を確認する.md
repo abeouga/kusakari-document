@@ -10,3 +10,4 @@
 | 代替フロー    |  |
 | 関連情報     | ・購入者向けの画面には、購入可能な商品(EC-B03)だけを表示する。 |
 
+<img width="949" height="436" alt="image" src="https://github.com/user-attachments/assets/04e5cd2a-e81e-4b5d-8996-02ee0e367767" />
