@@ -10,3 +10,4 @@
 | 代替フロー    | 2a. 店舗が見つからない場合<br>2a-1. システムが店舗が見つからないことを表示し、再取得を可能にする。<br>2a-2. ユースケースを終了する。 |
 | 関連情報     |  |
 
+<img width="950" height="434" alt="image" src="https://github.com/user-attachments/assets/8b0fe355-d51e-4fb7-8fa5-ff0b4aff9741" />
