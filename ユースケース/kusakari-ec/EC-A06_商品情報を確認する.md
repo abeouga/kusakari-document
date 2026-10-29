@@ -10,3 +10,4 @@
 | 代替フロー    | 2a. 商品がない場合<br>2a-1. システムが商品がないことを表示する。<br>2a-2. ユースケースを終了する。 |
 | 関連情報     | ・共通代替フロー *b を適用する。<br>・商品の公開の停止・再開はEC-A10で行う。 |
 
+<img width="943" height="340" alt="image" src="https://github.com/user-attachments/assets/7f94aa13-cccd-4ace-9d33-d97514ebf499" />
