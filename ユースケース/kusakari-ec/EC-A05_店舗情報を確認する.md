@@ -10,5 +10,5 @@
 | 代替フロー    | 2a. 店舗がない場合<br>2a-1. システムが店舗がないことを表示する。<br>2a-2. ユースケースを終了する。 |
 | 関連情報     | ・共通代替フロー *b を適用する。<br>・店舗の利用の停止・再開はEC-A11で行う。 |
 
-<img width="948" height="437" alt="スクリーンショット 2026-10-29 101002" src="https://github.com/user-attachments/assets/7bf54adf-c63f-418a-8ec6-4f544bad1733" />
+<img width="947" height="436" alt="スクリーンショット 2026-10-29 101023" src="https://github.com/user-attachments/assets/daa27900-8480-4443-bd1d-6ed15162e531" />
 
