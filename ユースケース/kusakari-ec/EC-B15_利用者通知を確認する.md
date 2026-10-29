@@ -10,3 +10,4 @@
 | 代替フロー    | 2a. 通知がない場合<br>2a-1. システムが通知なしの状態を表示する。<br>2a-2. ユースケースを終了する。 |
 | 関連情報     | ・共通代替フロー *b を適用する。 |
 
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/cf6ddc3b-c943-4c19-a688-c9a148802ef0" />
