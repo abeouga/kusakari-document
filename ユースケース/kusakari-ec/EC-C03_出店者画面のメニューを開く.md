@@ -11,3 +11,5 @@
 | 関連情報     | ・共通代替フロー *b を適用する。<br>・対象の画面に表示する内容は、呼び出し元のユースケースの次のステップで記述する。<br>・出店者・運営者アカウント以外では、共通ヘッダーに「出店者」リンクを表示しない。 |
 
 <img width="947" height="431" alt="image" src="https://github.com/user-attachments/assets/357ca3c8-09bf-4e72-86c9-247f2d293cac" />
+
+<img width="947" height="440" alt="image" src="https://github.com/user-attachments/assets/80c94fa4-7abc-4008-a943-37cd3bca1b89" />
