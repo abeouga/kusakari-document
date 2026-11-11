@@ -1,0 +1,2035 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>実装から書くシーケンス図</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Noto+Sans+JP:wght@400;500;700&family=Zen+Kaku+Gothic+New:wght@500;700&display=swap">
+<style>
+/* Layout: one reading column (46rem) inside a 70rem page. Figures, tables and code use the full page width and scroll inside their own box. */
+:root {
+  --bg: #F4F7F5;
+  --surface: #FFFFFF;
+  --sunken: #E9EFEB;
+  --fg: #17231F;
+  --fg-soft: #55655E;
+  --line: #D5DDD8;
+  --line-strong: #93A39B;
+  --accent: #1B7F5C;
+  --accent-soft: #DFF0E7;
+  --fe: #2F6FDB;
+  --fe-soft: #E5EDFB;
+  --be: #1B7F5C;
+  --be-soft: #DFF0E7;
+  --ex: #A66300;
+  --ex-soft: #FAEFD9;
+  --note: #FFF4CC;
+  --note-line: #C9A227;
+  --font-display: "Zen Kaku Gothic New", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+  --font-body: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Code", Consolas, "Noto Sans JP", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121816; --surface: #1A2320; --sunken: #222D29;
+    --fg: #E6ECE9; --fg-soft: #A3B1AB; --line: #2E3C37; --line-strong: #5D6F68;
+    --accent: #5CC49B; --accent-soft: #1D332B;
+    --fe: #7FA8F5; --fe-soft: #1C2A44;
+    --be: #5CC49B; --be-soft: #1D332B;
+    --ex: #E0A84A; --ex-soft: #3A2E17;
+    --note: #3A3420; --note-line: #8C7A35;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121816; --surface: #1A2320; --sunken: #222D29;
+  --fg: #E6ECE9; --fg-soft: #A3B1AB; --line: #2E3C37; --line-strong: #5D6F68;
+  --accent: #5CC49B; --accent-soft: #1D332B;
+  --fe: #7FA8F5; --fe-soft: #1C2A44;
+  --be: #5CC49B; --be-soft: #1D332B;
+  --ex: #E0A84A; --ex-soft: #3A2E17;
+  --note: #3A3420; --note-line: #8C7A35;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.85;
+  -webkit-text-size-adjust: 100%;
+}
+.wrap {
+  max-width: 70rem;
+  margin-inline: auto;
+  padding-block: 2.5rem 5rem;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap > *, section > * { min-width: 0; }
+p, ul, ol, h1, h2, h3, h4, .narrow { max-width: 46rem; }
+p { margin: 0 0 1rem; }
+ul, ol { margin: 0 0 1rem; padding-left: 1.4rem; }
+li { margin-bottom: .35rem; }
+a { color: var(--accent); text-underline-offset: 3px; }
+a:focus-visible, button:focus-visible, summary:focus-visible, input:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+h1, h2, h3, h4 { font-family: var(--font-display); line-height: 1.4; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(1.9rem, 5vw, 2.7rem); font-weight: 700; letter-spacing: .01em; }
+h2 { font-size: 1.55rem; font-weight: 700; margin: 4rem 0 1rem; padding-top: 1.25rem; border-top: 2px solid var(--fg); }
+h3 { font-size: 1.15rem; font-weight: 700; margin: 2.25rem 0 .6rem; }
+h4 { font-size: 1rem; font-weight: 700; margin: 1.5rem 0 .4rem; }
+code { font-family: var(--font-mono); font-size: .86em; background: var(--sunken); padding: .1em .35em; border-radius: 4px; overflow-wrap: anywhere; }
+strong { font-weight: 700; }
+
+/* masthead */
+.eyebrow { font-family: var(--font-mono); font-size: .78rem; letter-spacing: .08em; color: var(--accent); margin-bottom: .6rem; }
+.lede { font-size: 1.1rem; color: var(--fg); margin-top: 1rem; }
+.meta { display: flex; flex-wrap: wrap; gap: .4rem 1.2rem; color: var(--fg-soft); font-size: .86rem; margin: 1.2rem 0 0; padding: 0; list-style: none; max-width: none; }
+.meta li { margin: 0; }
+.toc { margin: 2rem 0 0; display: flex; flex-wrap: wrap; gap: .5rem; padding: 0; list-style: none; max-width: none; }
+.toc li { margin: 0; }
+.toc a { display: block; padding: .3rem .75rem; border: 1px solid var(--line-strong); border-radius: 999px; font-size: .86rem; text-decoration: none; color: var(--fg); background: var(--surface); }
+.toc a:hover { border-color: var(--accent); color: var(--accent); }
+
+/* layer chips: the three layers every diagram in this page is built from */
+.chip { display: inline-block; font-family: var(--font-mono); font-size: .72rem; line-height: 1.5; padding: .05rem .5rem; border-radius: 4px; border: 1px solid; white-space: nowrap; }
+.chip.fe { color: var(--fe); background: var(--fe-soft); border-color: var(--fe); }
+.chip.be { color: var(--be); background: var(--be-soft); border-color: var(--be); }
+.chip.ex { color: var(--ex); background: var(--ex-soft); border-color: var(--ex); }
+
+/* tables */
+.table-wrap { overflow-x: auto; margin: 1rem 0 1.5rem; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; line-height: 1.65; }
+th, td { text-align: left; vertical-align: top; padding: .6rem .8rem; border-bottom: 1px solid var(--line); }
+th { font-family: var(--font-display); font-weight: 700; font-size: .82rem; color: var(--fg-soft); background: var(--sunken); white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+td.no { font-family: var(--font-mono); font-size: .82rem; white-space: nowrap; color: var(--fg-soft); font-variant-numeric: tabular-nums; }
+td code { white-space: normal; }
+td > strong:only-child { white-space: nowrap; }
+.w-min { min-width: 44rem; }
+
+/* code blocks */
+pre.code { margin: 1rem 0 1.5rem; padding: 1rem 1.1rem; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow-x: auto; font-family: var(--font-mono); font-size: .8rem; line-height: 1.7; }
+pre.code code { background: none; padding: 0; font-size: inherit; overflow-wrap: normal; white-space: pre; }
+pre.code .file { color: var(--fg-soft); }
+pre.code .mark { color: var(--accent); font-weight: 600; }
+
+/* compare */
+.compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 1rem; margin: 1.25rem 0 1.5rem; }
+.compare > div { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 1rem 1.1rem; min-width: 0; }
+.compare > div.now { border-color: var(--accent); }
+.compare h4 { margin-top: 0; }
+.compare ul { margin-bottom: 0; }
+
+.rule { margin: 1.5rem 0; padding: 1rem 1.2rem; background: var(--accent-soft); border-radius: 8px; max-width: 46rem; }
+.rule p { margin: 0; }
+.caution { margin: 1.25rem 0; padding: .9rem 1.1rem; background: var(--note); border: 1px solid var(--note-line); border-radius: 8px; max-width: 46rem; }
+.caution p:last-child { margin-bottom: 0; }
+
+/* procedure steps: a real sequence, so the number is content */
+.steps { list-style: none; padding: 0; margin: 1.5rem 0 0; max-width: none; counter-reset: step; }
+.steps > li { counter-increment: step; margin: 0 0 2.5rem; display: grid; grid-template-columns: 2.6rem minmax(0, 1fr); column-gap: 1rem; }
+.steps > li::before { content: counter(step); font-family: var(--font-mono); font-weight: 600; font-size: 1rem; width: 2.6rem; height: 2.6rem; border-radius: 50%; display: grid; place-items: center; background: var(--fg); color: var(--bg); }
+.steps > li > div > h3 { margin-top: .35rem; }
+
+/* figures */
+.fig { margin: 1.5rem 0 2rem; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); overflow: hidden; }
+.fig figcaption { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: center; justify-content: space-between; padding: .7rem 1rem; border-bottom: 1px solid var(--line); }
+.fig-title { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; font-family: var(--font-display); font-weight: 700; font-size: .95rem; min-width: 0; }
+.fig-kind { font-family: var(--font-mono); font-size: .72rem; font-weight: 600; padding: .1rem .55rem; border-radius: 4px; background: var(--fg); color: var(--bg); }
+.fig-kind.detail { background: var(--accent); color: var(--surface); }
+button { font: inherit; }
+.btn { font-size: .8rem; padding: .25rem .75rem; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface); color: var(--fg); cursor: pointer; }
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+.fig-tools { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .9rem; }
+.fig-hint { font-size: .76rem; color: var(--fg-soft); }
+.diagram { overflow: auto; max-height: min(80vh, 54rem); padding: 1rem; cursor: grab; }
+.diagram.dragging { cursor: grabbing; user-select: none; }
+.fig.fit .diagram { max-height: none; cursor: default; }
+.fig.fit .fig-hint { visibility: hidden; }
+.diagram pre.mermaid { margin: 0; font-family: var(--font-mono); font-size: .74rem; line-height: 1.6; white-space: pre; color: var(--fg-soft); }
+.diagram svg { display: block; height: auto; }
+.src { border-top: 1px solid var(--line); }
+.src summary { cursor: pointer; padding: .6rem 1rem; font-size: .84rem; color: var(--fg-soft); }
+.src-bar { display: flex; justify-content: flex-end; padding: 0 1rem .5rem; }
+.src pre { margin: 0; padding: 0 1rem 1rem; overflow-x: auto; font-family: var(--font-mono); font-size: .76rem; line-height: 1.65; }
+.src pre code { background: none; padding: 0; white-space: pre; overflow-wrap: normal; font-size: inherit; }
+
+/* example header */
+.ex-head { display: flex; flex-wrap: wrap; gap: .4rem 1rem; align-items: baseline; margin: 0 0 .5rem; max-width: none; }
+.ex-id { font-family: var(--font-mono); font-size: .9rem; font-weight: 600; color: var(--accent); }
+.facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .3rem 1rem; margin: 1rem 0 1.5rem; max-width: 46rem; font-size: .92rem; }
+.facts dt { color: var(--fg-soft); font-family: var(--font-display); font-weight: 700; font-size: .82rem; padding-top: .15rem; }
+.facts dd { margin: 0; }
+
+/* checklist */
+.checklist { list-style: none; padding: 0; max-width: 46rem; }
+.checklist li { display: grid; grid-template-columns: 1.4rem minmax(0, 1fr); gap: .6rem; align-items: start; padding: .55rem 0; border-bottom: 1px solid var(--line); margin: 0; }
+.checklist input { width: 1.1rem; height: 1.1rem; margin: .4rem 0 0; accent-color: var(--accent); }
+.checklist label { cursor: pointer; }
+
+footer { margin-top: 4rem; padding-top: 1.25rem; border-top: 1px solid var(--line); color: var(--fg-soft); font-size: .84rem; }
+@media (max-width: 34rem) {
+  body { font-size: 15px; }
+  .steps > li { grid-template-columns: minmax(0, 1fr); row-gap: .5rem; }
+}
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+</style>
+<style>body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">KUSAKARI / シーケンス図</p>
+  <h1>実装から書くシーケンス図</h1>
+  <p class="lede">Kusakari はコードが先にできています。この資料では、動いているコードを読み、そこからシーケンス図を起こす方法を、4つのユースケースを例に説明します。</p>
+  <ul class="meta">
+    <li>対象：Python・Java・JavaScript の基本構文が分かる人</li>
+    <li>React・Spring Boot・FastAPI の知識は不要</li>
+    <li>コードは 2026-11-12 時点</li>
+  </ul>
+  <ul class="toc" aria-label="目次">
+    <li><a href="#about">1. 実装から書くとは</a></li>
+    <li><a href="#basics">2. 読む前の最小知識</a></li>
+    <li><a href="#steps">3. 図にする10の手順</a></li>
+    <li><a href="#ex-a07">例1 EC-A07</a></li>
+    <li><a href="#ex-s09">例2 EC-S09</a></li>
+    <li><a href="#ex-b12">例3 EC-B12</a></li>
+    <li><a href="#ex-uc06">例4 UC-06</a></li>
+    <li><a href="#pitfalls">つまずきやすい点</a></li>
+    <li><a href="#checklist">チェックリスト</a></li>
+  </ul>
+</header>
+
+<section id="about">
+  <h2>1. 実装から書くとは</h2>
+  <p>シーケンス図は、ふつう実装の前に書きます。図で処理の順番を決め、そのとおりにコードを書きます。Kusakari は順番が逆なので、図の役割も変わります。</p>
+
+  <div class="compare">
+    <div>
+      <h4>設計から書く(ふつうの順番)</h4>
+      <ul>
+        <li>これから作る処理を決めるために書く</li>
+        <li>クラス名や関数名は自分で考える</li>
+        <li>図が正しく、コードを図に合わせる</li>
+      </ul>
+    </div>
+    <div class="now">
+      <h4>実装から書く(今回)</h4>
+      <ul>
+        <li>すでにある処理を写すために書く</li>
+        <li>クラス名や関数名はコードから拾う</li>
+        <li>コードが正しく、図をコードに合わせる</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="rule">
+    <p><strong>矢印1本は、コードの1か所に対応させます。</strong>矢印を引くたびに「どのファイルの、どの関数が、何を呼んでいるか」を言える状態にします。言えない矢印は、想像で書いた矢印です。</p>
+  </div>
+
+  <h3>この資料で作る図</h3>
+  <p>ユースケースごとに2枚作ります。先に概要図で全体をつかみ、次に詳細図でファイルの流れを追います。</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>種類</th><th>縦線(ライフライン)</th><th>矢印に書くこと</th><th>使いどころ</th></tr></thead>
+    <tbody>
+      <tr><td><strong>概要図</strong></td><td>層ごとに1本。画面、API、DB、外部システム</td><td>HTTP のメソッドとパス、DB への操作を日本語で</td><td>ユースケース記述と見比べる。レビューで全体を説明する</td></tr>
+      <tr><td><strong>詳細図</strong></td><td>ファイルごとに1本。コンポーネント、フック、Controller、Service、Repository</td><td>実際の関数名と API 名</td><td>コードを直す人が、どのファイルを通るかを知る</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>例にする4つのユースケース</h3>
+  <p>やさしい順に並べています。例1で基本の形を覚え、例2から例4で1つずつ要素を足します。</p>
+  <div class="table-wrap"><table class="w-min">
+    <thead><tr><th>例</th><th>ユースケース</th><th>アプリ</th><th>新しく出てくる読み方</th></tr></thead>
+    <tbody>
+      <tr><td class="no"><a href="#ex-a07">EC-A07</a></td><td>商品カテゴリを追加する</td><td>EC(React + Spring Boot)</td><td>基本の形。画面 → フック → HTTP → Controller → Service → Repository → DB</td></tr>
+      <tr><td class="no"><a href="#ex-s09">EC-S09</a></td><td>注文を受取準備完了にする</td><td>EC</td><td>Service から別の Service を呼ぶ。トランザクション。保存の呼び出しがない更新</td></tr>
+      <tr><td class="no"><a href="#ex-b12">EC-B12</a></td><td>商品を購入する</td><td>EC</td><td>複数の画面と複数の通信。ループ。ライフラインをまとめる判断</td></tr>
+      <tr><td class="no"><a href="#ex-uc06">UC-06</a></td><td>完成イメージ画像を生成・保存する</td><td>Canvas(React + FastAPI)</td><td>FastAPI。外部システム。成功の応答の中に入る失敗</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="basics">
+  <h2>2. 読む前の最小知識</h2>
+  <p>フレームワークを使えるようになる必要はありません。「この書き方を見たら、こう読む」という対応だけ覚えれば、処理の流れは追えます。</p>
+
+  <h3>Kusakari の3つの層</h3>
+  <p>どの図も、この3つの層を左から右へ進み、右から左へ戻ります。図の中でも同じ色で示します。</p>
+  <div class="table-wrap"><table class="w-min">
+    <thead><tr><th>層</th><th>EC(買い物)</th><th>Canvas(庭づくり)</th></tr></thead>
+    <tbody>
+      <tr><td><span class="chip fe">画面</span> ブラウザーで動く</td><td>React<br><code>kusakari-ec/frontend/src</code></td><td>React<br><code>kusakari-canvas/frontend/src</code></td></tr>
+      <tr><td><span class="chip be">API</span> サーバーで動く</td><td>Spring Boot(Java)<br><code>kusakari-ec/backend/src/main/java/jp/kusakari/ec</code></td><td>FastAPI(Python)<br><code>kusakari-canvas/backend/kusakari_canvas_api</code></td></tr>
+      <tr><td><span class="chip ex">データ・外部</span></td><td>MySQL</td><td>MySQL、EC API、OpenAI 画像API</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3><span class="chip fe">画面</span> React の読み方</h3>
+  <div class="table-wrap"><table class="w-min">
+    <thead><tr><th>コードの書き方</th><th>意味</th><th>図では</th></tr></thead>
+    <tbody>
+      <tr><td><code>export function CategoriesPage() { … return (&lt;form&gt;…&lt;/form&gt;); }</code></td><td>コンポーネント。画面の部品を返す関数。<code>return</code> の中の HTML に似た部分が画面になる</td><td>ライフライン1本</td></tr>
+      <tr><td><code>onClick={…}</code>、<code>onSubmit={save}</code></td><td>利用者が操作したときに呼ばれる関数</td><td>アクターからの矢印の行き先</td></tr>
+      <tr><td><code>const [editing, setEditing] = useState('')</code></td><td>画面が覚えておく値。<code>setEditing(…)</code> で値を変えると、画面が描き直される</td><td>自分への矢印、またはアクターへの「表示」</td></tr>
+      <tr><td><code>useResource(…)</code>、<code>useShop()</code> など <code>use</code> で始まる関数</td><td>フック。複数の画面で使う処理をまとめた関数。通信はここに入っていることが多い</td><td>ライフライン1本</td></tr>
+      <tr><td><code>useEffect(() =&gt; { … }, […])</code>、<code>useQuery({ … })</code></td><td>画面が表示されたときに自動で実行される処理</td><td>操作なしで始まる矢印</td></tr>
+      <tr><td><code>await request(…)</code>、<code>await fetch(…)</code></td><td>サーバーへの HTTP リクエスト。応答が返るまで次の行に進まない</td><td>層をまたぐ矢印</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3><span class="chip be">API</span> Spring Boot の読み方</h3>
+  <div class="table-wrap"><table class="w-min">
+    <thead><tr><th>コードの書き方</th><th>意味</th><th>図では</th></tr></thead>
+    <tbody>
+      <tr><td><code>@RestController</code> のクラスにある<br><code>@PutMapping("/api/operator/categories")</code></td><td>この URL に PUT が届いたら、すぐ下のメソッドを呼ぶ。<code>@GetMapping</code>、<code>@PostMapping</code>、<code>@DeleteMapping</code> も同じ</td><td>HTTP の矢印の届け先</td></tr>
+      <tr><td><code>@Valid @RequestBody Input in</code></td><td>リクエストの JSON を <code>Input</code> に変換し、<code>@NotBlank</code> などの条件を検査する。違反するとメソッドの本体は実行されない</td><td>Controller の自分への矢印と、分岐</td></tr>
+      <tr><td><code>private final CategoryService service;</code></td><td>このクラスが使う相手。Spring が自動で用意する。<code>service.save(…)</code> が次の矢印になる</td><td>矢印の行き先の候補</td></tr>
+      <tr><td><code>@Service</code> のクラス</td><td>業務の処理を書く場所</td><td>ライフライン1本</td></tr>
+      <tr><td><code>interface CategoryRepository extends JpaRepository&lt;…&gt;</code></td><td>DB を読み書きする窓口。中身のコードはない。<code>findByDeletedAtIsNull()</code> のようなメソッド名から SQL が自動で作られる。<code>save()</code>、<code>findById()</code> は最初からある</td><td>ライフライン1本。DB への矢印を出す</td></tr>
+      <tr><td><code>@Transactional</code></td><td>メソッド全体が1つのトランザクション。途中で例外が出ると、DB への変更はすべて取り消される</td><td>Note で範囲を示す</td></tr>
+      <tr><td><code>throw new ApiException(409, …)</code></td><td>処理を中断する。<code>@RestControllerAdvice</code> の付いた <code>ApiErrors</code> が受け取り、エラーの JSON にして返す</td><td>×付きの破線と、分岐</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3><span class="chip be">API</span> FastAPI の読み方</h3>
+  <div class="table-wrap"><table class="w-min">
+    <thead><tr><th>コードの書き方</th><th>意味</th><th>図では</th></tr></thead>
+    <tbody>
+      <tr><td><code>@router.post("/api/gardens/{id}/ai-image")</code><br><code>def ai_image(…):</code></td><td>この URL に POST が届いたら、下の関数を呼ぶ。Spring Boot の <code>@PostMapping</code> と同じ役割</td><td>HTTP の矢印の届け先</td></tr>
+      <tr><td><code>request: AiImageRequest</code></td><td>リクエストの JSON を Pydantic のクラスに変換し、型や範囲を検査する</td><td>書かないか、Note</td></tr>
+      <tr><td><code>db: Db</code>、<code>owner: Owner</code>(<code>Depends</code>)</td><td>FastAPI が自動で用意する引数。DB の接続と、ログイン中の利用者の ID</td><td>書かない</td></tr>
+      <tr><td><code>from .ai_catalog import linked_products</code></td><td>別のファイル(モジュール)の関数を使う。クラスがなくても、ファイルが1つの役割を持つ</td><td>ファイルをライフラインにする</td></tr>
+      <tr><td><code>raise ApiError(409, …)</code>、<code>bad_request(…)</code></td><td>処理を中断する。<code>@app.exception_handler(ApiError)</code> の関数がエラーの JSON にして返す</td><td>×付きの破線と、分岐</td></tr>
+      <tr><td><code>@app.middleware("http")</code></td><td>すべてのリクエストの前後に実行される共通の処理。Kusakari Canvas ではログインの確認</td><td>Note 1つ</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="steps">
+  <h2>3. 図にする10の手順</h2>
+  <p>例1の EC-A07「商品カテゴリを追加する」を使って、手順を1つずつ説明します。完成した図は<a href="#ex-a07">例1</a>にあります。</p>
+
+  <ol class="steps">
+    <li><div>
+      <h3>ユースケース記述を「操作」と「応答」に分ける</h3>
+      <p>基本フローの各ステップを、だれが主語かで分けます。「運営者が」で始まる文はアクターからの矢印になります。「システムが」で始まる文は、画面だけで済むのか、サーバーまで行くのかをコードで確かめます。</p>
+      <div class="table-wrap"><table class="w-min">
+        <thead><tr><th>番号</th><th>基本フロー(EC-A07)</th><th>主語</th><th>コードで確かめること</th></tr></thead>
+        <tbody>
+          <tr><td class="no">1</td><td>メニュー「カテゴリ管理」を開く</td><td>運営者</td><td>どのコンポーネントが表示されるか</td></tr>
+          <tr><td class="no">2</td><td>入力欄、ボタン、カテゴリ一覧を表示する</td><td>システム</td><td>一覧はどこから取ってくるか</td></tr>
+          <tr><td class="no">3</td><td>カテゴリ名を入力する</td><td>運営者</td><td>入力のたびに通信するか(しないなら図に書かない)</td></tr>
+          <tr><td class="no">4</td><td>「保存」ボタンをクリックする</td><td>運営者</td><td>どの関数が呼ばれるか</td></tr>
+          <tr><td class="no">5</td><td>カテゴリ名を検証する</td><td>システム</td><td>検証は画面とサーバーのどちらにあるか</td></tr>
+          <tr><td class="no">6</td><td>追加し、「保存しました。」を表示し、一覧を更新する</td><td>システム</td><td>保存のあと、一覧をどう取り直すか</td></tr>
+        </tbody>
+      </table></div>
+    </div></li>
+
+    <li><div>
+      <h3>画面の文言で検索して、入口のファイルを見つける</h3>
+      <p>ユースケース記述には、ボタン名やメッセージが「」付きで書かれています。その文言をプロジェクト全体で検索します。VS Code なら <code>Ctrl+Shift+F</code>、ターミナルなら <code>git grep -n "編集を取消"</code> です。</p>
+      <p>「編集を取消」で検索すると <code>OperatorPages.jsx</code> が見つかります。メニュー名の「カテゴリ管理」で検索すると <code>Workspace.jsx</code> が見つかり、パスと画面の対応が分かります。</p>
+<pre class="code"><code><span class="file">// kusakari-ec/frontend/src/workspace/Workspace.jsx</span>
+['/operator/categories', 'カテゴリ管理', Tags],                          <span class="mark">// 31行目 メニューの定義</span>
+else if (path === '/operator/categories') content = &lt;CategoriesPage /&gt;;   <span class="mark">// 142行目 パスと画面の対応</span></code></pre>
+      <div class="table-wrap"><table class="w-min">
+        <thead><tr><th>探したいもの</th><th>検索する言葉</th><th>Kusakari での例</th></tr></thead>
+        <tbody>
+          <tr><td>入口の画面</td><td>ボタン名、見出し</td><td>「受取準備完了にする」→ <code>PickupOrders.jsx</code></td></tr>
+          <tr><td>メニューと画面の対応</td><td>メニュー名</td><td>「カテゴリ管理」→ <code>Workspace.jsx</code></td></tr>
+          <tr><td>API の受け口</td><td>パスの後半</td><td><code>/operator/categories</code> → <code>CategoryController.java</code></td></tr>
+          <tr><td>エラーが起きる場所</td><td>エラーメッセージ</td><td>「同じカテゴリがあります。」→ <code>CategoryService.java</code></td></tr>
+          <tr><td>例外を JSON にする場所</td><td>例外のクラス名</td><td><code>ApiException.class</code> → <code>ApiErrors.java</code></td></tr>
+          <tr><td>関数の呼び出し元</td><td>関数名と開きかっこ</td><td><code>placeOrder(</code> → <code>OrderController.java</code></td></tr>
+        </tbody>
+      </table></div>
+    </div></li>
+
+    <li><div>
+      <h3>操作から、呼ばれる関数をたどる</h3>
+      <p>コンポーネントの <code>return</code> の中で、<code>onSubmit</code> や <code>onClick</code> を探します。そこに書かれた関数が、操作の入口です。「保存」ボタンは <code>&lt;form&gt;</code> の中にあるので、クリックすると <code>onSubmit</code> の <code>save</code> が呼ばれます。</p>
+<pre class="code"><code><span class="file">// kusakari-ec/frontend/src/workspace/OperatorPages.jsx(抜粋)</span>
+export function CategoriesPage() {
+  const resource = useResource('/categories');          <span class="mark">// 画面を開いたときに一覧を取る(手順4で読む)</span>
+  const [editing, setEditing] = useState('');
+
+  async function save(e) {                              <span class="mark">// 「保存」で呼ばれる</span>
+    e.preventDefault();
+    const form = e.currentTarget;
+    if (await resource.run(() =&gt; write('/operator/categories', 'PUT', { previous: editing, name: values(form).name }))) {
+      setEditing('');
+      form.reset();                                     <span class="mark">// 成功したら入力欄を空にする</span>
+    }
+  }
+
+  return (
+    &lt;form onSubmit={save}&gt;                              <span class="mark">// 操作と関数の対応</span>
+      &lt;Input label="カテゴリ名" name="name" value={editing} maxLength={30} /&gt;
+      &lt;button disabled={resource.busy}&gt;保存&lt;/button&gt;</code></pre>
+    </div></li>
+
+    <li><div>
+      <h3>HTTP のメソッドとパスを特定する</h3>
+      <p><code>save</code> の中に <code>fetch</code> はありません。<code>resource.run(…)</code> と <code>write(…)</code> を呼んでいるので、その定義を開きます。関数名を <code>Ctrl</code> を押しながらクリックすると定義に移動できます。</p>
+<pre class="code"><code><span class="file">// kusakari-ec/frontend/src/workspace/useResource.js(抜粋)</span>
+async function run(action, message = '保存しました。') {
+  try {
+    await action();          <span class="mark">// 渡された write(...) を実行する</span>
+    await reload();          <span class="mark">// 成功したら一覧を取り直す(GET)</span>
+    setNotice(message);      <span class="mark">// 「保存しました。」</span>
+    return true;
+  } catch (reason) {
+    if (reason instanceof ApiError &amp;&amp; [404, 409].includes(reason.status)) await reload();
+    setError(reason instanceof Error ? reason.message : '処理を完了できませんでした。');
+    return false;
+  }
+}
+export const write = (path, method, body) =&gt; request(path, method, JSON.stringify(body));
+
+<span class="file">// kusakari-ec/frontend/src/api.js(抜粋)</span>
+export async function request(path, method = 'GET', body) {
+  const response = await send(`/api${path}`, { method, body, headers: { 'Content-Type': 'application/json' } });
+  return readResponse(response);
+}</code></pre>
+      <p>ここで3つのことが分かります。</p>
+      <ul>
+        <li>送るのは <code>PUT /api/operator/categories</code>。<code>/api</code> は <code>api.js</code> が付け足している</li>
+        <li>成功すると <code>reload()</code> が続けて <code>GET /api/categories</code> を送る。1回の「保存」で通信は2回</li>
+        <li>失敗すると <code>catch</code> に入り、メッセージが <code>setError</code> で画面に出る</li>
+      </ul>
+    </div></li>
+
+    <li><div>
+      <h3>パスで検索して、サーバーの受け口を見つける</h3>
+      <p>パスの後半 <code>/operator/categories</code> をバックエンドのフォルダーで検索します。<code>@PutMapping</code> の付いたメソッドが受け口です。</p>
+<pre class="code"><code><span class="file">// kusakari-ec/backend/.../catalog/controller/CategoryController.java</span>
+public record Input(@NotNull @Size(max = 30) String previous, @NotBlank @Size(max = 30) String name) {}
+
+@PutMapping("/api/operator/categories")
+public Map&lt;String, Boolean&gt; save(@Valid @RequestBody Input in) {   <span class="mark">// @Valid が Input の条件を検査する</span>
+  service.save(in.previous(), in.name());                          <span class="mark">// 次の矢印</span>
+  return Map.of("saved", true);                                    <span class="mark">// 戻りの矢印 200 {"saved": true}</span>
+}</code></pre>
+      <div class="caution">
+        <p><strong>パス全体で検索して見つからないとき。</strong>クラスに <code>@RequestMapping("/api/orders")</code>、メソッドに <code>@PostMapping</code> と、パスが2か所に分かれていることがあります(<code>OrderController</code>)。FastAPI でも <code>APIRouter(prefix="/api/gardens/{id}/image-history")</code> と <code>@router.post("")</code> に分かれます(<code>history_routes.py</code>)。後ろの部分だけで検索し直します。</p>
+      </div>
+    </div></li>
+
+    <li><div>
+      <h3>Controller から奥へ、1行ずつたどる</h3>
+      <p>Service のメソッドを上から読み、各行を次の3種類に分けます。</p>
+      <ul>
+        <li><strong>ほかのファイルを呼ぶ行</strong>。矢印になる</li>
+        <li><strong><code>if</code> と <code>throw</code> の行</strong>。分岐になる</li>
+        <li><strong>それ以外の行</strong>。変数の計算など。必要なら自分への矢印、不要なら書かない</li>
+      </ul>
+<pre class="code"><code><span class="file">// kusakari-ec/backend/.../catalog/service/CategoryService.java(抜粋)</span>
+public void save(String previous, String input) {
+  auth.requireAdmin();                                             <span class="mark">// 矢印 → AuthService</span>
+  String name = input.trim();                                      <span class="mark">// 自分の処理</span>
+  if (name.isEmpty()) throw new ApiException(400, "INVALID_CATEGORY", "カテゴリ名を入力してください。");
+  if (name.equals(previous)) return;
+  var existing = categories.lock(name);                            <span class="mark">// 矢印 → CategoryRepository → DB</span>
+  if (existing.filter(CategoryEntity::isAvailable).isPresent()) throw new ApiException(
+    409, "CATEGORY_EXISTS", "同じカテゴリがあります。"             <span class="mark">// 分岐 5b</span>
+  );
+  ...
+  var target = existing.orElseGet(() -&gt; new CategoryEntity(name));
+  target.setDeletedAt(null);
+  categories.saveAndFlush(target);                                 <span class="mark">// 矢印 → CategoryRepository → DB</span>
+  ...
+}</code></pre>
+      <p>Repository はインターフェースなので、中身の処理はありません。メソッド名とアノテーションから、どんな SQL かを読み取ります。<code>@Lock(PESSIMISTIC_WRITE)</code> は <code>SELECT ... FOR UPDATE</code>(ほかの処理が同じ行を変えられないようにして読む)です。</p>
+      <div class="caution">
+        <p><strong>コードにあっても、この経路では通らない行があります。</strong><code>name.isEmpty()</code> の検査は、空白だけの入力を止めるように見えます。しかし Controller の <code>@NotBlank</code> が先に止めるので、空白だけの入力は Service まで届きません。画面に出るのは <code>ApiErrors.invalid()</code> の「入力内容・文字数・数値の範囲を確認してください。」です。ユースケース記述の 5a もこの文言になっています。文言で検索して見つけた行は、そこまで処理が届くかを必ず確かめます。</p>
+      </div>
+    </div></li>
+
+    <li><div>
+      <h3>戻り道をたどる</h3>
+      <p>行きの矢印を書き終えたら、同じ道を逆に戻ります。成功の戻り道と、失敗の戻り道の両方を確かめます。</p>
+      <h4>成功のとき</h4>
+      <p><code>CategoryService.save()</code> が終わる → <code>CategoryController</code> が <code>{"saved": true}</code> を返す → <code>api.js</code> の <code>request()</code> がデータを返す → <code>useResource.js</code> の <code>run()</code> が <code>reload()</code> と <code>setNotice()</code> を実行する → <code>CategoriesPage</code> が <code>form.reset()</code> する。</p>
+      <h4>失敗のとき</h4>
+      <p><code>throw</code> された例外を、だれが受け取るかを探します。<code>ApiException.class</code> で検索すると <code>ApiErrors.java</code> が見つかります。</p>
+<pre class="code"><code><span class="file">// kusakari-ec/backend/.../common/web/ApiErrors.java(抜粋)</span>
+@RestControllerAdvice                                    <span class="mark">// すべての Controller の例外をここで受け取る</span>
+public class ApiErrors {
+  @ExceptionHandler(ApiException.class)
+  public ResponseEntity&lt;ErrorView&gt; business(ApiException error) {
+    return ResponseEntity.status(error.status()).body(new ErrorView(error.code(), error.getMessage()));
+  }
+  @ExceptionHandler({ MethodArgumentNotValidException.class, ... })   <span class="mark">// @Valid の違反</span>
+  public ResponseEntity&lt;ErrorView&gt; invalid(Exception error) {
+    return ResponseEntity.badRequest().body(new ErrorView("INVALID_INPUT", "入力内容・文字数・数値の範囲を確認してください。"));
+  }
+}
+
+<span class="file">// kusakari-ec/frontend/src/api.js の readResponse()(抜粋)</span>
+if (!response.ok) throw new ApiError(data?.message || failure, response.status, data?.code ?? '', data);</code></pre>
+      <p>サーバーの例外は、エラーの JSON になってブラウザーに届きます。<code>api.js</code> がそれを JavaScript の例外(<code>ApiError</code>)に変え、手順4で読んだ <code>run()</code> の <code>catch</code> が受け取ります。</p>
+    </div></li>
+
+    <li><div>
+      <h3>コードで見つけたものを、図の部品に置き換える</h3>
+      <p>ここまでで集めた事実を、次の対応で Mermaid に書きます。</p>
+      <div class="table-wrap"><table class="w-min">
+        <thead><tr><th>コードで見つけたもの</th><th>図の部品</th><th>Mermaid の書き方</th></tr></thead>
+        <tbody>
+          <tr><td>利用者</td><td>アクター</td><td><code>actor User as 運営者</code></td></tr>
+          <tr><td>ファイル(コンポーネント、クラス、モジュール)</td><td>ライフライン</td><td><code>participant Svc as CategoryService</code></td></tr>
+          <tr><td>層(画面、API)</td><td>ライフラインを囲む箱</td><td><code>box … end</code></td></tr>
+          <tr><td>ほかのファイルの関数を呼ぶ</td><td>実線の矢印に関数名</td><td><code>Ctrl-&gt;&gt;Svc: save(previous, name)</code></td></tr>
+          <tr><td><code>fetch</code>、<code>request</code></td><td>実線の矢印にメソッドとパス</td><td><code>Http-&gt;&gt;Ctrl: PUT /api/operator/categories</code></td></tr>
+          <tr><td><code>return</code>、HTTP の応答</td><td>破線の矢印</td><td><code>Ctrl--&gt;&gt;Http: 200 saved=true</code></td></tr>
+          <tr><td><code>throw</code>、<code>raise</code></td><td>×付きの破線</td><td><code>Svc--xErrs: throw ApiException(409, …)</code></td></tr>
+          <tr><td>同じファイルの中の処理</td><td>自分への矢印</td><td><code>Svc-&gt;&gt;Svc: input.trim()</code></td></tr>
+          <tr><td><code>if</code> で成功と失敗に分かれる</td><td><code>alt</code> と <code>else</code></td><td><code>alt 5b 同じ名前がある … else 追加できる … end</code></td></tr>
+          <tr><td>条件を満たすときだけ実行する</td><td><code>opt</code></td><td><code>opt 参考写真が必要 … end</code></td></tr>
+          <tr><td><code>for</code>、<code>forEach</code>、<code>map</code></td><td><code>loop</code></td><td><code>loop 受取店舗ごと … end</code></td></tr>
+          <tr><td>フレームワークが自動で行うこと、省略したこと</td><td>ノート</td><td><code>Note right of Hook: useEffect が reload() を実行</code></td></tr>
+          <tr><td>ユースケース記述のステップ番号</td><td>全体にかかるノート</td><td><code>Note over User,Db: 基本フロー 1〜2 …</code></td></tr>
+        </tbody>
+      </table></div>
+      <p>Obsidian や GitHub では、ソースを <code>```mermaid</code> と <code>```</code> で囲むと図として表示されます。</p>
+    </div></li>
+
+    <li><div>
+      <h3>書かないものを決める</h3>
+      <p>コードの呼び出しをすべて書くと、図は読めなくなります。次の線引きで減らします。</p>
+      <div class="table-wrap"><table class="w-min">
+        <thead><tr><th></th><th>書く</th><th>書かない</th></tr></thead>
+        <tbody>
+          <tr><td><strong>概要図</strong></td><td>アクターの操作、画面の表示、HTTP、DB への操作、外部システムとのやりとり、エラーの種類</td><td>ファイル名、関数名、画面の中だけの処理</td></tr>
+          <tr><td><strong>詳細図</strong></td><td>ほかのファイルへの呼び出し、HTTP、DB、分岐の原因になる検査(権限、状態、入力)、例外の受け渡し</td><td>getter と setter、JSON の形を表すだけのクラス(DTO)、変換だけのクラス(Mapper)、見た目(CSS)、ログ</td></tr>
+        </tbody>
+      </table></div>
+      <p>迷ったら「この矢印を消すと、ユースケース記述のどれかのステップを説明できなくなるか」で決めます。説明できなくなるなら残します。</p>
+      <p>省略した場所には、ノートで「図では省略」と書きます。黙って省くと、読む人は「呼んでいない」と受け取ります。</p>
+    </div></li>
+
+    <li><div>
+      <h3>ユースケース記述と突き合わせる</h3>
+      <p>最後に、図とユースケース記述を並べて確かめます。</p>
+      <ul>
+        <li>基本フローのすべての番号が、図のどこかに対応しているか</li>
+        <li>対象にした代替フロー(サーバーが関わるもの)が、<code>alt</code> の枝になっているか</li>
+        <li>図にあって、ユースケース記述にない処理は何か。権限の確認やロックは書かれていなくて構いません。実装の事実として図に残します</li>
+        <li>ユースケース記述にあって、コードに見つからない処理は何か。見つからなければ、図は実装どおりに書き、差をメモしてチームに伝えます</li>
+      </ul>
+    </div></li>
+  </ol>
+</section>
+
+<section id="ex-a07">
+  <h2>例1 基本の形</h2>
+  <p class="ex-head"><span class="ex-id">EC-A07</span><strong>商品カテゴリを追加する</strong></p>
+  <dl class="facts">
+    <dt>アクター</dt><dd>運営者</dd>
+    <dt>図にした範囲</dt><dd>基本フロー 1〜6、代替フロー 5a・5b。4a はブラウザーだけで終わるのでノート</dd>
+    <dt>身につくこと</dt><dd>画面 → フック → HTTP → Controller → Service → Repository → DB という、EC のほとんどの機能に共通する形</dd>
+  </dl>
+
+  <figure class="fig" id="fig-a07-overview">
+    <figcaption>
+      <span class="fig-title"><span class="fig-kind">概要図</span>EC-A07 商品カテゴリを追加する</span>
+      <span class="fig-tools"><span class="fig-hint">ドラッグかスクロールで図を移動</span><button type="button" class="btn fit-toggle" aria-pressed="false">全体を縮小して表示</button></span>
+    </figcaption>
+    <div class="diagram" tabindex="0" role="group" aria-label="概要図 EC-A07 商品カテゴリを追加する"><pre class="mermaid">sequenceDiagram
+    actor User as 運営者
+    participant Page as カテゴリ管理画面&lt;br/&gt;React
+    participant Api as EC API&lt;br/&gt;Spring Boot
+    participant Db as MySQL
+
+    Note over User,Db: 基本フロー 1〜2 画面を開いて一覧を表示する
+    User-&gt;&gt;Page: メニュー「カテゴリ&lt;br/&gt;管理」を開く
+    Page-&gt;&gt;Api: GET /api/categories
+    Api-&gt;&gt;Db: 削除されていないカ&lt;br/&gt;テゴリを検索
+    Db--&gt;&gt;Api: カテゴリの行
+    Api--&gt;&gt;Page: 200 カテゴリ名の一覧
+    Page--&gt;&gt;User: 入力欄、ボタン、&lt;br/&gt;カテゴリ一覧
+
+    Note over User,Db: 基本フロー 3〜6 入力して保存する
+    User-&gt;&gt;Page: カテゴリ名を入力し&lt;br/&gt;「保存」をクリック
+    Page-&gt;&gt;Api: PUT&lt;br/&gt;/api/operator/categories
+    Api-&gt;&gt;Api: 入力と権限を検査
+    alt 追加できる
+        Api-&gt;&gt;Db: カテゴリを追加
+        Api--&gt;&gt;Page: 200 saved=true
+        Page-&gt;&gt;Api: GET /api/categories
+        Api--&gt;&gt;Page: 200 最新の一覧
+        Page--&gt;&gt;User: 「保存しました。」、空&lt;br/&gt;の入力欄、最新の一覧
+    else 5a カテゴリ名が空白だけ
+        Api--&gt;&gt;Page: 400 INVALID_INPUT
+        Page--&gt;&gt;User: 「入力内容・文字数・&lt;br/&gt;数値の範囲を確認して&lt;br/&gt;ください。」
+    else 5b 同じ名前のカテゴリがある
+        Api--&gt;&gt;Page: 409 CATEGORY_EXISTS
+        Page--&gt;&gt;User: 「同じカテゴリが&lt;br/&gt;あります。」
+    end</pre></div>
+    <details class="src">
+      <summary>Mermaid のソースを表示</summary>
+      <div class="src-bar"><button type="button" class="btn copy">ソースをコピー</button></div>
+      <pre><code>sequenceDiagram
+    actor User as 運営者
+    participant Page as カテゴリ管理画面&lt;br/&gt;React
+    participant Api as EC API&lt;br/&gt;Spring Boot
+    participant Db as MySQL
+
+    Note over User,Db: 基本フロー 1〜2 画面を開いて一覧を表示する
+    User-&gt;&gt;Page: メニュー「カテゴリ&lt;br/&gt;管理」を開く
+    Page-&gt;&gt;Api: GET /api/categories
+    Api-&gt;&gt;Db: 削除されていないカ&lt;br/&gt;テゴリを検索
+    Db--&gt;&gt;Api: カテゴリの行
+    Api--&gt;&gt;Page: 200 カテゴリ名の一覧
+    Page--&gt;&gt;User: 入力欄、ボタン、&lt;br/&gt;カテゴリ一覧
+
+    Note over User,Db: 基本フロー 3〜6 入力して保存する
+    User-&gt;&gt;Page: カテゴリ名を入力し&lt;br/&gt;「保存」をクリック
+    Page-&gt;&gt;Api: PUT&lt;br/&gt;/api/operator/categories
+    Api-&gt;&gt;Api: 入力と権限を検査
+    alt 追加できる
+        Api-&gt;&gt;Db: カテゴリを追加
+        Api--&gt;&gt;Page: 200 saved=true
+        Page-&gt;&gt;Api: GET /api/categories
+        Api--&gt;&gt;Page: 200 最新の一覧
+        Page--&gt;&gt;User: 「保存しました。」、空&lt;br/&gt;の入力欄、最新の一覧
+    else 5a カテゴリ名が空白だけ
+        Api--&gt;&gt;Page: 400 INVALID_INPUT
+        Page--&gt;&gt;User: 「入力内容・文字数・&lt;br/&gt;数値の範囲を確認して&lt;br/&gt;ください。」
+    else 5b 同じ名前のカテゴリがある
+        Api--&gt;&gt;Page: 409 CATEGORY_EXISTS
+        Page--&gt;&gt;User: 「同じカテゴリが&lt;br/&gt;あります。」
+    end</code></pre>
+    </details>
+  </figure>
+  <figure class="fig" id="fig-a07-detail">
+    <figcaption>
+      <span class="fig-title"><span class="fig-kind detail">詳細図</span>EC-A07 商品カテゴリを追加する</span>
+      <span class="fig-tools"><span class="fig-hint">ドラッグかスクロールで図を移動</span><button type="button" class="btn fit-toggle" aria-pressed="false">全体を縮小して表示</button></span>
+    </figcaption>
+    <div class="diagram" tabindex="0" role="group" aria-label="詳細図 EC-A07 商品カテゴリを追加する"><pre class="mermaid">sequenceDiagram
+    actor User as 運営者
+    box rgba(47,111,219,0.10) ブラウザー React
+        participant Work as Workspace.jsx
+        participant Page as CategoriesPage&lt;br/&gt;OperatorPages.jsx
+        participant Hook as useResource.js
+        participant Http as api.js
+    end
+    box rgba(27,127,92,0.12) EC API Spring Boot
+        participant Ctrl as Category&lt;br/&gt;Controller
+        participant Errs as ApiErrors
+        participant Svc as CategoryService
+        participant Auth as AuthService
+        participant Repo as Category&lt;br/&gt;Repository
+    end
+    participant Db as MySQL
+
+    Note over User,Db: 基本フロー 1〜2 画面を開いて一覧を表示する
+    User-&gt;&gt;Work: メニュー「カテゴリ管&lt;br/&gt;理」をクリック
+    Work-&gt;&gt;Page: CategoriesPage を表示
+    Page-&gt;&gt;Hook: useResource('/categories')
+    Note right of Hook: useEffect が reload()&lt;br/&gt;を自動で実行する
+    Hook-&gt;&gt;Http: request('/categories')
+    Http-&gt;&gt;Ctrl: GET /api/categories
+    Ctrl-&gt;&gt;Svc: list()
+    Svc-&gt;&gt;Repo: findByDeletedAtIsNull()
+    Repo-&gt;&gt;Db: SELECT
+    Db--&gt;&gt;Repo: 行
+    Repo--&gt;&gt;Svc: CategoryEntity のリスト
+    Svc--&gt;&gt;Ctrl: 名前順の文字列リスト
+    Ctrl--&gt;&gt;Http: 200 カテゴリ名の配列
+    Http--&gt;&gt;Hook: data
+    Hook--&gt;&gt;Page: resource.data
+    Page--&gt;&gt;User: 入力欄、ボタン、カテゴリ一覧
+
+    Note over User,Db: 基本フロー 3〜6 入力して保存する
+    User-&gt;&gt;Page: カテゴリ名を入力し「保存」をクリック
+    Note right of Page: 4a 未入力はブラウザー&lt;br/&gt;が止める。通信しない
+    Page-&gt;&gt;Page: save(e)
+    Page-&gt;&gt;Hook: run(action)
+    Hook-&gt;&gt;Http: write('/operator/categories',&lt;br/&gt;'PUT', body)
+    Http-&gt;&gt;Ctrl: PUT&lt;br/&gt;/api/operator/categories
+    Ctrl-&gt;&gt;Ctrl: @Valid が Input を検査
+    alt 5a カテゴリ名が空白だけ (@NotBlank 違反)
+        Ctrl--xErrs: MethodArgumentNotValidException
+        Errs--&gt;&gt;Http: invalid() が 400 INVALID_INPUT を返す
+        Http--xHook: throw ApiError(400)
+        Hook--&gt;&gt;Page: resource.error
+        Page--&gt;&gt;User: 「入力内容・文字数・数値の範&lt;br/&gt;囲を確認してください。」
+    else 検査を通る
+        Ctrl-&gt;&gt;Svc: save(previous, name)
+        Svc-&gt;&gt;Auth: requireAdmin()
+        Svc-&gt;&gt;Svc: input.trim()
+        Svc-&gt;&gt;Repo: lock(name)
+        Repo-&gt;&gt;Db: SELECT ... FOR UPDATE
+        Db--&gt;&gt;Repo: 行 または 空
+        Repo--&gt;&gt;Svc: Optional の CategoryEntity
+        alt 5b 同じ名前のカテゴリがある
+            Svc--xErrs: throw&lt;br/&gt;ApiException(409,&lt;br/&gt;CATEGORY_EXISTS)
+            Errs--&gt;&gt;Http: business() が 409 と message を返す
+            Http--xHook: throw ApiError(409)
+            Hook-&gt;&gt;Http: reload() 409 なので&lt;br/&gt;一覧を取り直す
+            Hook--&gt;&gt;Page: resource.error
+            Page--&gt;&gt;User: 「同じカテゴリがあります。」
+        else 追加できる
+            Svc-&gt;&gt;Repo: saveAndFlush(target)
+            Repo-&gt;&gt;Db: INSERT
+            Svc--&gt;&gt;Ctrl: 戻る (void)
+            Ctrl--&gt;&gt;Http: 200 saved=true
+            Http--&gt;&gt;Hook: data
+            Hook-&gt;&gt;Http: reload()&lt;br/&gt;request('/categories')
+            Note over Http,Db: 一覧取得は基本フロー 2 と同じ流れ
+            Http--&gt;&gt;Hook: 最新の一覧
+            Hook--&gt;&gt;Page: run() が true を返す。&lt;br/&gt;data と notice を更新
+            Page-&gt;&gt;Page: setEditing('') と&lt;br/&gt;form.reset()
+            Page--&gt;&gt;User: 「保存しました。」、空の入力欄、最新の一覧
+        end
+    end</pre></div>
+    <details class="src">
+      <summary>Mermaid のソースを表示</summary>
+      <div class="src-bar"><button type="button" class="btn copy">ソースをコピー</button></div>
+      <pre><code>sequenceDiagram
+    actor User as 運営者
+    box rgba(47,111,219,0.10) ブラウザー React
+        participant Work as Workspace.jsx
+        participant Page as CategoriesPage&lt;br/&gt;OperatorPages.jsx
+        participant Hook as useResource.js
+        participant Http as api.js
+    end
+    box rgba(27,127,92,0.12) EC API Spring Boot
+        participant Ctrl as Category&lt;br/&gt;Controller
+        participant Errs as ApiErrors
+        participant Svc as CategoryService
+        participant Auth as AuthService
+        participant Repo as Category&lt;br/&gt;Repository
+    end
+    participant Db as MySQL
+
+    Note over User,Db: 基本フロー 1〜2 画面を開いて一覧を表示する
+    User-&gt;&gt;Work: メニュー「カテゴリ管&lt;br/&gt;理」をクリック
+    Work-&gt;&gt;Page: CategoriesPage を表示
+    Page-&gt;&gt;Hook: useResource('/categories')
+    Note right of Hook: useEffect が reload()&lt;br/&gt;を自動で実行する
+    Hook-&gt;&gt;Http: request('/categories')
+    Http-&gt;&gt;Ctrl: GET /api/categories
+    Ctrl-&gt;&gt;Svc: list()
+    Svc-&gt;&gt;Repo: findByDeletedAtIsNull()
+    Repo-&gt;&gt;Db: SELECT
+    Db--&gt;&gt;Repo: 行
+    Repo--&gt;&gt;Svc: CategoryEntity のリスト
+    Svc--&gt;&gt;Ctrl: 名前順の文字列リスト
+    Ctrl--&gt;&gt;Http: 200 カテゴリ名の配列
+    Http--&gt;&gt;Hook: data
+    Hook--&gt;&gt;Page: resource.data
+    Page--&gt;&gt;User: 入力欄、ボタン、カテゴリ一覧
+
+    Note over User,Db: 基本フロー 3〜6 入力して保存する
+    User-&gt;&gt;Page: カテゴリ名を入力し「保存」をクリック
+    Note right of Page: 4a 未入力はブラウザー&lt;br/&gt;が止める。通信しない
+    Page-&gt;&gt;Page: save(e)
+    Page-&gt;&gt;Hook: run(action)
+    Hook-&gt;&gt;Http: write('/operator/categories',&lt;br/&gt;'PUT', body)
+    Http-&gt;&gt;Ctrl: PUT&lt;br/&gt;/api/operator/categories
+    Ctrl-&gt;&gt;Ctrl: @Valid が Input を検査
+    alt 5a カテゴリ名が空白だけ (@NotBlank 違反)
+        Ctrl--xErrs: MethodArgumentNotValidException
+        Errs--&gt;&gt;Http: invalid() が 400 INVALID_INPUT を返す
+        Http--xHook: throw ApiError(400)
+        Hook--&gt;&gt;Page: resource.error
+        Page--&gt;&gt;User: 「入力内容・文字数・数値の範&lt;br/&gt;囲を確認してください。」
+    else 検査を通る
+        Ctrl-&gt;&gt;Svc: save(previous, name)
+        Svc-&gt;&gt;Auth: requireAdmin()
+        Svc-&gt;&gt;Svc: input.trim()
+        Svc-&gt;&gt;Repo: lock(name)
+        Repo-&gt;&gt;Db: SELECT ... FOR UPDATE
+        Db--&gt;&gt;Repo: 行 または 空
+        Repo--&gt;&gt;Svc: Optional の CategoryEntity
+        alt 5b 同じ名前のカテゴリがある
+            Svc--xErrs: throw&lt;br/&gt;ApiException(409,&lt;br/&gt;CATEGORY_EXISTS)
+            Errs--&gt;&gt;Http: business() が 409 と message を返す
+            Http--xHook: throw ApiError(409)
+            Hook-&gt;&gt;Http: reload() 409 なので&lt;br/&gt;一覧を取り直す
+            Hook--&gt;&gt;Page: resource.error
+            Page--&gt;&gt;User: 「同じカテゴリがあります。」
+        else 追加できる
+            Svc-&gt;&gt;Repo: saveAndFlush(target)
+            Repo-&gt;&gt;Db: INSERT
+            Svc--&gt;&gt;Ctrl: 戻る (void)
+            Ctrl--&gt;&gt;Http: 200 saved=true
+            Http--&gt;&gt;Hook: data
+            Hook-&gt;&gt;Http: reload()&lt;br/&gt;request('/categories')
+            Note over Http,Db: 一覧取得は基本フロー 2 と同じ流れ
+            Http--&gt;&gt;Hook: 最新の一覧
+            Hook--&gt;&gt;Page: run() が true を返す。&lt;br/&gt;data と notice を更新
+            Page-&gt;&gt;Page: setEditing('') と&lt;br/&gt;form.reset()
+            Page--&gt;&gt;User: 「保存しました。」、空の入力欄、最新の一覧
+        end
+    end</code></pre>
+    </details>
+  </figure>
+
+  <h3>たどった記録</h3>
+  <p>図を書く前に、ステップごとに「どこを見て、何が分かったか」を表にします。この表がそのまま図の根拠になります。</p>
+  <div class="table-wrap"><table class="w-min">
+    <thead><tr><th>ステップ</th><th>見た場所</th><th>分かったこと</th></tr></thead>
+    <tbody>
+      <tr><td class="no">1</td><td><code>Workspace.jsx</code> 31、142行目</td><td><code>/operator/categories</code> のとき <code>CategoriesPage</code> を表示する</td></tr>
+      <tr><td class="no">2</td><td><code>OperatorPages.jsx</code> 210行目<br><code>useResource.js</code> 11〜27行目</td><td><code>useResource('/categories')</code> が、表示時に <code>reload()</code> で <code>GET /api/categories</code> を送る</td></tr>
+      <tr><td class="no">2</td><td><code>CategoryController.java</code> 18行目<br><code>CategoryService.java</code> 23行目<br><code>CategoryRepository.java</code> 12行目</td><td><code>list()</code> → <code>findByDeletedAtIsNull()</code>。Service が名前順に並べる</td></tr>
+      <tr><td class="no">3</td><td><code>OperatorPages.jsx</code> 235行目</td><td>入力中は通信しない。<code>maxLength={30}</code> で30文字まで</td></tr>
+      <tr><td class="no">4</td><td><code>OperatorPages.jsx</code> 214〜223、234行目</td><td><code>onSubmit={save}</code>。<code>save</code> が <code>resource.run(() =&gt; write(…, 'PUT', …))</code> を呼ぶ</td></tr>
+      <tr><td class="no">4a</td><td><code>ResourceView.jsx</code> 16〜20行目</td><td><code>Input</code> は <code>required</code>。未入力はブラウザーが止め、<code>save</code> は呼ばれない</td></tr>
+      <tr><td class="no">5、5a</td><td><code>CategoryController.java</code> 16、24行目<br><code>ApiErrors.java</code> 20〜29行目</td><td><code>@Valid</code> と <code>@NotBlank</code>。違反は <code>invalid()</code> が 400 にする</td></tr>
+      <tr><td class="no">5、5b</td><td><code>CategoryService.java</code> 28〜37行目<br><code>CategoryRepository.java</code> 15〜17行目</td><td><code>requireAdmin()</code> → <code>lock(name)</code> → 同じ名前があれば 409</td></tr>
+      <tr><td class="no">6</td><td><code>CategoryService.java</code> 42〜44行目<br><code>useResource.js</code> 36〜39行目<br><code>OperatorPages.jsx</code> 220〜221行目</td><td><code>saveAndFlush()</code> で追加 → 200 → <code>reload()</code> → 「保存しました。」→ <code>form.reset()</code></td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>この例の読みどころ</h3>
+  <ul>
+    <li><strong>通信しているのは画面のファイルではありません。</strong><code>CategoriesPage</code> には <code>fetch</code> がなく、<code>useResource.js</code> と <code>api.js</code> が通信します。概要図では1本だった「画面」が、詳細図では4本に分かれます。</li>
+    <li><strong>1回の「保存」で HTTP は2回です。</strong><code>PUT</code> のあとに <code>GET</code> で一覧を取り直します。ユースケース記述の「カテゴリ一覧を更新する」は、この2回目の通信です。</li>
+    <li><strong>5a と 5b は、止まる場所が違います。</strong>5a は Controller に入る前の検査、5b は Service の中の検査です。概要図ではどちらも「API がエラーを返す」ですが、詳細図では別の枝になります。</li>
+  </ul>
+</section>
+
+<section id="ex-s09">
+  <h2>例2 別の Service とトランザクション</h2>
+  <p class="ex-head"><span class="ex-id">EC-S09</span><strong>注文を受取準備完了にする</strong></p>
+  <dl class="facts">
+    <dt>アクター</dt><dd>出店者</dd>
+    <dt>図にした範囲</dt><dd>基本フロー 1〜8、代替フロー 6a。3a と 5a はブラウザーだけで終わるのでノート</dd>
+    <dt>身につくこと</dt><dd>Service から別の Service を呼ぶ流れ。<code>@Transactional</code> の範囲。保存の呼び出しがない更新の読み方</dd>
+  </dl>
+
+  <figure class="fig" id="fig-s09-overview">
+    <figcaption>
+      <span class="fig-title"><span class="fig-kind">概要図</span>EC-S09 注文を受取準備完了にする</span>
+      <span class="fig-tools"><span class="fig-hint">ドラッグかスクロールで図を移動</span><button type="button" class="btn fit-toggle" aria-pressed="false">全体を縮小して表示</button></span>
+    </figcaption>
+    <div class="diagram" tabindex="0" role="group" aria-label="概要図 EC-S09 注文を受取準備完了にする"><pre class="mermaid">sequenceDiagram
+    actor User as 出店者
+    participant Page as 店舗受け取り画面&lt;br/&gt;React
+    participant Api as EC API&lt;br/&gt;Spring Boot
+    participant Db as MySQL
+
+    Note over User,Db: 基本フロー 1〜2 注文一覧を表示する
+    User-&gt;&gt;Page: メニュー「店舗受け&lt;br/&gt;取り」を開く
+    Page-&gt;&gt;Api: GET&lt;br/&gt;/api/seller/orders?storeId=…
+    Api-&gt;&gt;Db: 所属店舗の注文を検索
+    Api--&gt;&gt;Page: 200 注文の一覧
+    Page--&gt;&gt;User: 注文一覧 (キャンセル申&lt;br/&gt;請中、準備待ち、受け取&lt;br/&gt;り待ち、その他の順)
+
+    Note over User,Db: 基本フロー 3〜5 確認ダイアログ (通信なし)
+    User-&gt;&gt;Page: 「受取準備完了にす&lt;br/&gt;る」をクリック
+    Page--&gt;&gt;User: 確認ダイアログ (注文&lt;br/&gt;番号、受取人)
+    User-&gt;&gt;Page: 「受取準備完了を確&lt;br/&gt;定」をクリック
+
+    Note over User,Db: 基本フロー 6〜8 状態を更新して通知する
+    Page-&gt;&gt;Api: PUT&lt;br/&gt;/api/seller/orders/{id}/status
+    Api-&gt;&gt;Db: 注文をロックして読む
+    alt 状態が「注文受付」のまま
+        Api-&gt;&gt;Db: 注文状態を&lt;br/&gt;READY に更新
+        Api-&gt;&gt;Db: 購入者への通知を追加
+        Note over Api,Db: 更新と通知は1つのトランザクション
+        Api--&gt;&gt;Page: 200 更新後の注文
+        Page-&gt;&gt;Api: GET&lt;br/&gt;/api/seller/orders?storeId=…
+        Api--&gt;&gt;Page: 200 最新の一覧
+        Page--&gt;&gt;User: 「受取準備完了にし、購&lt;br/&gt;入者に通知しました。」&lt;br/&gt;と最新の一覧
+    else 6a 状態が変わっていた、またはキャンセル申請中
+        Api--&gt;&gt;Page: 409 ORDER_CHANGED
+        Page-&gt;&gt;Api: GET&lt;br/&gt;/api/seller/orders?storeId=…
+        Api--&gt;&gt;Page: 200 最新の一覧
+        Page--&gt;&gt;User: 「注文状態が変わりま&lt;br/&gt;した。最新の状態を確&lt;br/&gt;認してください。」と&lt;br/&gt;最新の一覧
+    end</pre></div>
+    <details class="src">
+      <summary>Mermaid のソースを表示</summary>
+      <div class="src-bar"><button type="button" class="btn copy">ソースをコピー</button></div>
+      <pre><code>sequenceDiagram
+    actor User as 出店者
+    participant Page as 店舗受け取り画面&lt;br/&gt;React
+    participant Api as EC API&lt;br/&gt;Spring Boot
+    participant Db as MySQL
+
+    Note over User,Db: 基本フロー 1〜2 注文一覧を表示する
+    User-&gt;&gt;Page: メニュー「店舗受け&lt;br/&gt;取り」を開く
+    Page-&gt;&gt;Api: GET&lt;br/&gt;/api/seller/orders?storeId=…
+    Api-&gt;&gt;Db: 所属店舗の注文を検索
+    Api--&gt;&gt;Page: 200 注文の一覧
+    Page--&gt;&gt;User: 注文一覧 (キャンセル申&lt;br/&gt;請中、準備待ち、受け取&lt;br/&gt;り待ち、その他の順)
+
+    Note over User,Db: 基本フロー 3〜5 確認ダイアログ (通信なし)
+    User-&gt;&gt;Page: 「受取準備完了にす&lt;br/&gt;る」をクリック
+    Page--&gt;&gt;User: 確認ダイアログ (注文&lt;br/&gt;番号、受取人)
+    User-&gt;&gt;Page: 「受取準備完了を確&lt;br/&gt;定」をクリック
+
+    Note over User,Db: 基本フロー 6〜8 状態を更新して通知する
+    Page-&gt;&gt;Api: PUT&lt;br/&gt;/api/seller/orders/{id}/status
+    Api-&gt;&gt;Db: 注文をロックして読む
+    alt 状態が「注文受付」のまま
+        Api-&gt;&gt;Db: 注文状態を&lt;br/&gt;READY に更新
+        Api-&gt;&gt;Db: 購入者への通知を追加
+        Note over Api,Db: 更新と通知は1つのトランザクション
+        Api--&gt;&gt;Page: 200 更新後の注文
+        Page-&gt;&gt;Api: GET&lt;br/&gt;/api/seller/orders?storeId=…
+        Api--&gt;&gt;Page: 200 最新の一覧
+        Page--&gt;&gt;User: 「受取準備完了にし、購&lt;br/&gt;入者に通知しました。」&lt;br/&gt;と最新の一覧
+    else 6a 状態が変わっていた、またはキャンセル申請中
+        Api--&gt;&gt;Page: 409 ORDER_CHANGED
+        Page-&gt;&gt;Api: GET&lt;br/&gt;/api/seller/orders?storeId=…
+        Api--&gt;&gt;Page: 200 最新の一覧
+        Page--&gt;&gt;User: 「注文状態が変わりま&lt;br/&gt;した。最新の状態を確&lt;br/&gt;認してください。」と&lt;br/&gt;最新の一覧
+    end</code></pre>
+    </details>
+  </figure>
+  <figure class="fig" id="fig-s09-detail">
+    <figcaption>
+      <span class="fig-title"><span class="fig-kind detail">詳細図</span>EC-S09 注文を受取準備完了にする</span>
+      <span class="fig-tools"><span class="fig-hint">ドラッグかスクロールで図を移動</span><button type="button" class="btn fit-toggle" aria-pressed="false">全体を縮小して表示</button></span>
+    </figcaption>
+    <div class="diagram" tabindex="0" role="group" aria-label="詳細図 EC-S09 注文を受取準備完了にする"><pre class="mermaid">sequenceDiagram
+    actor User as 出店者
+    box rgba(47,111,219,0.10) ブラウザー React
+        participant List as OrderPage&lt;br/&gt;PickupOrders.jsx
+        participant Card as PickupCard&lt;br/&gt;PickupOrders.jsx
+        participant Hook as useResource.js
+        participant Http as api.js
+    end
+    box rgba(27,127,92,0.12) EC API Spring Boot
+        participant Ctrl as OrderWorkflow&lt;br/&gt;Controller
+        participant Errs as ApiErrors
+        participant Svc as OrderWorkflow&lt;br/&gt;Service
+        participant Auth as AuthService
+        participant Repo as OrderRepository
+        participant Notice as Notification&lt;br/&gt;Service
+        participant NRepo as Notification&lt;br/&gt;Repository
+    end
+    participant Db as MySQL
+
+    Note over User,Db: 基本フロー 1〜2 注文一覧を表示する
+    User-&gt;&gt;List: メニュー「店舗受け&lt;br/&gt;取り」を開く
+    List-&gt;&gt;Hook: useResource('/seller/orders?storeId=…')
+    Hook-&gt;&gt;Http: request(path)
+    Http-&gt;&gt;Ctrl: GET&lt;br/&gt;/api/seller/orders?storeId=…
+    Ctrl-&gt;&gt;Svc: sellerOrders(storeId)
+    Svc-&gt;&gt;Auth: requireSeller(storeId)
+    Svc-&gt;&gt;Repo: findByStoreIdOrderByCreatedAtDesc(storeId)
+    Repo-&gt;&gt;Db: SELECT
+    Db--&gt;&gt;Repo: 行
+    Repo--&gt;&gt;Svc: OrderEntity のリスト
+    Svc-&gt;&gt;Svc: view(order) で&lt;br/&gt;OrderView に変換
+    Note right of Svc: view() は明細と受取連&lt;br/&gt;絡先も読む (図では省&lt;br/&gt;略)
+    Svc--&gt;&gt;Ctrl: OrderView のリスト
+    Ctrl--&gt;&gt;Http: 200 JSON
+    Http--&gt;&gt;Hook: data
+    Hook--&gt;&gt;List: resource.data
+    List-&gt;&gt;List: priority() で並べ替え
+    List-&gt;&gt;Card: 注文ごとに&lt;br/&gt;PickupCard を表示
+    Card--&gt;&gt;User: 注文一覧
+
+    Note over User,Db: 基本フロー 3〜5 確認ダイアログ (通信なし)
+    User-&gt;&gt;Card: 「受取準備完了にする」をクリック
+    Note right of Card: 3a キャンセル申請中は&lt;br/&gt;ボタンが disabled
+    Card-&gt;&gt;Card: setConfirming('ACCEPTED')
+    Card--&gt;&gt;User: ConfirmDialog (注文番号、受取人)
+    User-&gt;&gt;Card: 「受取準備完了を確定」をクリック
+
+    Note over User,Db: 基本フロー 6〜8 状態を更新して通知する
+    Card-&gt;&gt;Hook: run(action,&lt;br/&gt;dialog.done)
+    Hook-&gt;&gt;Http: write(path, 'PUT',&lt;br/&gt;{expectedStatus,&lt;br/&gt;status})
+    Http-&gt;&gt;Ctrl: PUT&lt;br/&gt;/api/seller/orders/{id}/status
+    Ctrl-&gt;&gt;Svc: changeStatus(id, 'ACCEPTED', 'READY')
+    Note over Svc,Db: @Transactional ここからメソッドの終わりまでが1つのトランザクション
+    Svc-&gt;&gt;Repo: lockOrder(id)
+    Repo-&gt;&gt;Db: SELECT ... FOR UPDATE
+    Db--&gt;&gt;Repo: 行
+    Repo--&gt;&gt;Svc: OrderEntity
+    Svc-&gt;&gt;Auth: requireStore(order) の&lt;br/&gt;中で current() と&lt;br/&gt;requireSeller()
+    Svc-&gt;&gt;Svc: 状態が expectedStatus と&lt;br/&gt;同じか、キャンセル申請中&lt;br/&gt;でないかを確認
+    alt 6a 状態が変わっていた、またはキャンセル申請中
+        Svc--xErrs: conflict() が throw&lt;br/&gt;ApiException(409,&lt;br/&gt;ORDER_CHANGED)
+        Note over Svc,Db: 例外でロールバック。何も保存されない
+        Errs--&gt;&gt;Http: business() が 409 と message を返す
+        Http--xHook: throw ApiError(409)
+        Hook-&gt;&gt;Http: reload() 409 なので&lt;br/&gt;一覧を取り直す
+        Hook--&gt;&gt;List: resource.error と最新の data
+        List--&gt;&gt;User: 「注文状態が変わりま&lt;br/&gt;した。最新の状態を確&lt;br/&gt;認してください。」と&lt;br/&gt;最新の一覧
+    else 更新できる
+        Svc-&gt;&gt;Svc: order.markReady() 状態を&lt;br/&gt;READY、readyAt を現在時刻に
+        Svc-&gt;&gt;Notice: send(buyerMemberId, '受取準備が完了しました', 注文番号 / 店舗名)
+        Notice-&gt;&gt;NRepo: save(new&lt;br/&gt;NotificationEntity(...))
+        NRepo-&gt;&gt;Db: INSERT 通知
+        Svc-&gt;&gt;Svc: view(order)
+        Svc--&gt;&gt;Ctrl: OrderView
+        Note over Svc,Db: メソッドの終わりでコミット。注文の UPDATE はここで実行される
+        Ctrl--&gt;&gt;Http: 200 OrderView
+        Http--&gt;&gt;Hook: data
+        Hook-&gt;&gt;Http: reload() 一覧を&lt;br/&gt;取り直す
+        Hook--&gt;&gt;List: 最新の data と notice
+        Card-&gt;&gt;Card: setConfirming('') でダ&lt;br/&gt;イアログを閉じる
+        List--&gt;&gt;User: 「受取準備完了にし、購&lt;br/&gt;入者に通知しました。」&lt;br/&gt;と最新の一覧
+    end</pre></div>
+    <details class="src">
+      <summary>Mermaid のソースを表示</summary>
+      <div class="src-bar"><button type="button" class="btn copy">ソースをコピー</button></div>
+      <pre><code>sequenceDiagram
+    actor User as 出店者
+    box rgba(47,111,219,0.10) ブラウザー React
+        participant List as OrderPage&lt;br/&gt;PickupOrders.jsx
+        participant Card as PickupCard&lt;br/&gt;PickupOrders.jsx
+        participant Hook as useResource.js
+        participant Http as api.js
+    end
+    box rgba(27,127,92,0.12) EC API Spring Boot
+        participant Ctrl as OrderWorkflow&lt;br/&gt;Controller
+        participant Errs as ApiErrors
+        participant Svc as OrderWorkflow&lt;br/&gt;Service
+        participant Auth as AuthService
+        participant Repo as OrderRepository
+        participant Notice as Notification&lt;br/&gt;Service
+        participant NRepo as Notification&lt;br/&gt;Repository
+    end
+    participant Db as MySQL
+
+    Note over User,Db: 基本フロー 1〜2 注文一覧を表示する
+    User-&gt;&gt;List: メニュー「店舗受け&lt;br/&gt;取り」を開く
+    List-&gt;&gt;Hook: useResource('/seller/orders?storeId=…')
+    Hook-&gt;&gt;Http: request(path)
+    Http-&gt;&gt;Ctrl: GET&lt;br/&gt;/api/seller/orders?storeId=…
+    Ctrl-&gt;&gt;Svc: sellerOrders(storeId)
+    Svc-&gt;&gt;Auth: requireSeller(storeId)
+    Svc-&gt;&gt;Repo: findByStoreIdOrderByCreatedAtDesc(storeId)
+    Repo-&gt;&gt;Db: SELECT
+    Db--&gt;&gt;Repo: 行
+    Repo--&gt;&gt;Svc: OrderEntity のリスト
+    Svc-&gt;&gt;Svc: view(order) で&lt;br/&gt;OrderView に変換
+    Note right of Svc: view() は明細と受取連&lt;br/&gt;絡先も読む (図では省&lt;br/&gt;略)
+    Svc--&gt;&gt;Ctrl: OrderView のリスト
+    Ctrl--&gt;&gt;Http: 200 JSON
+    Http--&gt;&gt;Hook: data
+    Hook--&gt;&gt;List: resource.data
+    List-&gt;&gt;List: priority() で並べ替え
+    List-&gt;&gt;Card: 注文ごとに&lt;br/&gt;PickupCard を表示
+    Card--&gt;&gt;User: 注文一覧
+
+    Note over User,Db: 基本フロー 3〜5 確認ダイアログ (通信なし)
+    User-&gt;&gt;Card: 「受取準備完了にする」をクリック
+    Note right of Card: 3a キャンセル申請中は&lt;br/&gt;ボタンが disabled
+    Card-&gt;&gt;Card: setConfirming('ACCEPTED')
+    Card--&gt;&gt;User: ConfirmDialog (注文番号、受取人)
+    User-&gt;&gt;Card: 「受取準備完了を確定」をクリック
+
+    Note over User,Db: 基本フロー 6〜8 状態を更新して通知する
+    Card-&gt;&gt;Hook: run(action,&lt;br/&gt;dialog.done)
+    Hook-&gt;&gt;Http: write(path, 'PUT',&lt;br/&gt;{expectedStatus,&lt;br/&gt;status})
+    Http-&gt;&gt;Ctrl: PUT&lt;br/&gt;/api/seller/orders/{id}/status
+    Ctrl-&gt;&gt;Svc: changeStatus(id, 'ACCEPTED', 'READY')
+    Note over Svc,Db: @Transactional ここからメソッドの終わりまでが1つのトランザクション
+    Svc-&gt;&gt;Repo: lockOrder(id)
+    Repo-&gt;&gt;Db: SELECT ... FOR UPDATE
+    Db--&gt;&gt;Repo: 行
+    Repo--&gt;&gt;Svc: OrderEntity
+    Svc-&gt;&gt;Auth: requireStore(order) の&lt;br/&gt;中で current() と&lt;br/&gt;requireSeller()
+    Svc-&gt;&gt;Svc: 状態が expectedStatus と&lt;br/&gt;同じか、キャンセル申請中&lt;br/&gt;でないかを確認
+    alt 6a 状態が変わっていた、またはキャンセル申請中
+        Svc--xErrs: conflict() が throw&lt;br/&gt;ApiException(409,&lt;br/&gt;ORDER_CHANGED)
+        Note over Svc,Db: 例外でロールバック。何も保存されない
+        Errs--&gt;&gt;Http: business() が 409 と message を返す
+        Http--xHook: throw ApiError(409)
+        Hook-&gt;&gt;Http: reload() 409 なので&lt;br/&gt;一覧を取り直す
+        Hook--&gt;&gt;List: resource.error と最新の data
+        List--&gt;&gt;User: 「注文状態が変わりま&lt;br/&gt;した。最新の状態を確&lt;br/&gt;認してください。」と&lt;br/&gt;最新の一覧
+    else 更新できる
+        Svc-&gt;&gt;Svc: order.markReady() 状態を&lt;br/&gt;READY、readyAt を現在時刻に
+        Svc-&gt;&gt;Notice: send(buyerMemberId, '受取準備が完了しました', 注文番号 / 店舗名)
+        Notice-&gt;&gt;NRepo: save(new&lt;br/&gt;NotificationEntity(...))
+        NRepo-&gt;&gt;Db: INSERT 通知
+        Svc-&gt;&gt;Svc: view(order)
+        Svc--&gt;&gt;Ctrl: OrderView
+        Note over Svc,Db: メソッドの終わりでコミット。注文の UPDATE はここで実行される
+        Ctrl--&gt;&gt;Http: 200 OrderView
+        Http--&gt;&gt;Hook: data
+        Hook-&gt;&gt;Http: reload() 一覧を&lt;br/&gt;取り直す
+        Hook--&gt;&gt;List: 最新の data と notice
+        Card-&gt;&gt;Card: setConfirming('') でダ&lt;br/&gt;イアログを閉じる
+        List--&gt;&gt;User: 「受取準備完了にし、購&lt;br/&gt;入者に通知しました。」&lt;br/&gt;と最新の一覧
+    end</code></pre>
+    </details>
+  </figure>
+
+  <h3>たどった記録</h3>
+  <div class="table-wrap"><table class="w-min">
+    <thead><tr><th>ステップ</th><th>見た場所</th><th>分かったこと</th></tr></thead>
+    <tbody>
+      <tr><td class="no">1</td><td><code>Workspace.jsx</code> 22、135〜136行目</td><td><code>/seller/orders</code> のとき <code>OrderPage</code> を表示する</td></tr>
+      <tr><td class="no">2</td><td><code>PickupOrders.jsx</code> 227行目<br><code>OrderWorkflowController.java</code> 31行目<br><code>OrderWorkflowService.java</code> 30〜33行目</td><td><code>GET /api/seller/orders?storeId=</code> → <code>sellerOrders()</code> → <code>requireSeller()</code> → <code>findByStoreIdOrderByCreatedAtDesc()</code></td></tr>
+      <tr><td class="no">2</td><td><code>PickupOrders.jsx</code> 24〜25、236行目</td><td>並び順は画面の <code>priority()</code> が決める。サーバーは新しい順で返すだけ</td></tr>
+      <tr><td class="no">3、4</td><td><code>PickupOrders.jsx</code> 191〜197、200〜219行目</td><td>クリックで <code>setConfirming()</code>。<code>ConfirmDialog</code> を表示するだけで通信しない</td></tr>
+      <tr><td class="no">3a</td><td><code>PickupOrders.jsx</code> 190、193行目</td><td>キャンセル申請中はボタンが <code>disabled</code></td></tr>
+      <tr><td class="no">5、6</td><td><code>PickupOrders.jsx</code> 206〜213行目</td><td><code>PUT /api/seller/orders/{id}/status</code> に <code>expectedStatus</code> と <code>status</code> を送る</td></tr>
+      <tr><td class="no">6</td><td><code>OrderWorkflowController.java</code> 46行目<br><code>OrderWorkflowService.java</code> 55〜63行目<br><code>OrderEntity.java</code> 104行目</td><td><code>changeStatus()</code> → <code>lockOrder()</code> → <code>requireStore()</code> → 状態の確認 → <code>order.markReady()</code></td></tr>
+      <tr><td class="no">6a</td><td><code>OrderWorkflowService.java</code> 58、61、131行目<br><code>useResource.js</code> 42行目</td><td>状態が違えば <code>conflict()</code> が 409。画面は 409 のとき一覧を取り直す</td></tr>
+      <tr><td class="no">7</td><td><code>OrderWorkflowService.java</code> 64〜68行目<br><code>NotificationService.java</code> 24行目</td><td><code>notices.send()</code> → <code>NotificationRepository.save()</code></td></tr>
+      <tr><td class="no">8</td><td><code>PickupOrders.jsx</code> 34行目<br><code>useResource.js</code> 36〜38行目</td><td><code>dialog.done</code> の文言を <code>run()</code> に渡し、<code>reload()</code> のあとに表示する</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>この例の読みどころ</h3>
+  <ul>
+    <li><strong>保存の呼び出しがなくても、DB は更新されます。</strong><code>order.markReady()</code> は Entity の値を変えるだけで、<code>save()</code> を呼んでいません。<code>@Transactional</code> のメソッドの中で DB から読んだ Entity は、メソッドが終わるときに変更が自動で UPDATE されます。図ではノートで「メソッドの終わりでコミット」と示します。</li>
+    <li><strong>「一緒に記録する」はトランザクションで表します。</strong>ユースケース記述の関連情報に「注文状態の更新と通知は一緒に記録する」とあります。コードでは、<code>OrderWorkflowService</code> のクラスに付いた <code>@Transactional</code> がこれを実現しています。<code>NotificationService.send()</code> も同じトランザクションの中で動きます。</li>
+    <li><strong>6a は、画面とサーバーの両方を読むと理由が分かります。</strong>画面は、ダイアログを開いた時点の状態を <code>expectedStatus</code> として送ります。サーバーは、ロックして読み直した状態と比べます。違っていれば、ほかの操作が先に入ったと判断します。</li>
+    <li><strong>同じ検査が画面とサーバーの両方にあります。</strong>キャンセル申請中は、画面がボタンを押せなくします(3a)。サーバーも同じ条件で 409 を返します(6a)。図では、通信しない 3a をノート、通信する 6a を <code>alt</code> にしています。</li>
+  </ul>
+</section>
+
+<section id="ex-b12">
+  <h2>例3 複数の画面、複数の通信、ループ</h2>
+  <p class="ex-head"><span class="ex-id">EC-B12</span><strong>商品を購入する</strong></p>
+  <dl class="facts">
+    <dt>アクター</dt><dd>購入者</dd>
+    <dt>図にした範囲</dt><dd>基本フロー 1〜9、代替フロー 7a〜7e。2a と 4a は画面がボタンを押せなくするだけなのでノート</dd>
+    <dt>身につくこと</dt><dd>操作と通信のタイミングがずれる場合の書き方。<code>for</code> 文を <code>loop</code> にする。ライフラインが多すぎるときのまとめ方</dd>
+  </dl>
+
+  <figure class="fig" id="fig-b12-overview">
+    <figcaption>
+      <span class="fig-title"><span class="fig-kind">概要図</span>EC-B12 商品を購入する</span>
+      <span class="fig-tools"><span class="fig-hint">ドラッグかスクロールで図を移動</span><button type="button" class="btn fit-toggle" aria-pressed="false">全体を縮小して表示</button></span>
+    </figcaption>
+    <div class="diagram" tabindex="0" role="group" aria-label="概要図 EC-B12 商品を購入する"><pre class="mermaid">sequenceDiagram
+    actor User as 購入者
+    participant Page as カート画面&lt;br/&gt;React
+    participant Api as EC API&lt;br/&gt;Spring Boot
+    participant Db as MySQL
+
+    Note over User,Db: アプリを開いたとき (操作の前に自動で実行)
+    Page-&gt;&gt;Api: GET /api/cart
+    Api-&gt;&gt;Db: カート、商品、&lt;br/&gt;在庫を読む
+    Api--&gt;&gt;Page: 200 カート (行ごとの&lt;br/&gt;受取店舗、金額、購入&lt;br/&gt;できるか)
+
+    Note over User,Db: 基本フロー 1〜2 カートを表示する
+    User-&gt;&gt;Page: 共通ヘッダーの「カー&lt;br/&gt;ト」をクリック
+    Page--&gt;&gt;User: 「ショッピングカ&lt;br/&gt;ート」画面
+
+    Note over User,Db: 基本フロー 3〜5 確認画面へ進む
+    User-&gt;&gt;Page: 「注文内容を確認す&lt;br/&gt;る」をクリック
+    Page-&gt;&gt;Api: GET /api/cart
+    Api--&gt;&gt;Page: 200 最新のカート
+    Page--&gt;&gt;User: 「お支払い・受け取&lt;br/&gt;りの確認」画面
+    User-&gt;&gt;Page: お支払い方法を選ぶ
+
+    Note over User,Db: 基本フロー 6〜9 注文を確定する
+    User-&gt;&gt;Page: 「注文を確定す&lt;br/&gt;る」をクリック
+    Page-&gt;&gt;Api: GET /api/cart
+    Api--&gt;&gt;Page: 200 最新のカート&lt;br/&gt;(revision、totalYen)
+    Page-&gt;&gt;Api: POST /api/orders
+    Api-&gt;&gt;Db: カート、店舗、商品、在&lt;br/&gt;庫をロックして確認
+    alt 確定できる
+        loop 受取店舗ごと
+            Api-&gt;&gt;Db: 注文 (状態は注文受&lt;br/&gt;付)、通知、明細を追加&lt;br/&gt;し、在庫を減らす
+        end
+        Api-&gt;&gt;Db: カートを空にする
+        Note over Api,Db: ここまでが1つのトランザクション
+        Api--&gt;&gt;Page: 200 作成した注文の一覧
+        Page-&gt;&gt;Api: GET /api/cart ほか (画&lt;br/&gt;面のデータを取り直す)
+        Page--&gt;&gt;User: 「注文を保存しま&lt;br/&gt;した」画面
+    else 7a〜7d カート、価格、在庫、店舗が変わっていた
+        Api--&gt;&gt;Page: 409 CART_CHANGED /&lt;br/&gt;PRICE_CHANGED /&lt;br/&gt;OUT_OF_STOCK /&lt;br/&gt;STORE_DISABLED
+        Page-&gt;&gt;Api: GET /api/cart ほか (最&lt;br/&gt;新の内容を取り直す)
+        Page--&gt;&gt;User: エラーメッセージと&lt;br/&gt;最新のカート
+    else 7e 保存に失敗
+        Api--&gt;&gt;Page: 503&lt;br/&gt;DATABASE_UNAVAILABLE
+        Page--&gt;&gt;User: 「保存処理を完了でき&lt;br/&gt;ませんでした。時間を&lt;br/&gt;おいて再試行してくだ&lt;br/&gt;さい。」
+    end</pre></div>
+    <details class="src">
+      <summary>Mermaid のソースを表示</summary>
+      <div class="src-bar"><button type="button" class="btn copy">ソースをコピー</button></div>
+      <pre><code>sequenceDiagram
+    actor User as 購入者
+    participant Page as カート画面&lt;br/&gt;React
+    participant Api as EC API&lt;br/&gt;Spring Boot
+    participant Db as MySQL
+
+    Note over User,Db: アプリを開いたとき (操作の前に自動で実行)
+    Page-&gt;&gt;Api: GET /api/cart
+    Api-&gt;&gt;Db: カート、商品、&lt;br/&gt;在庫を読む
+    Api--&gt;&gt;Page: 200 カート (行ごとの&lt;br/&gt;受取店舗、金額、購入&lt;br/&gt;できるか)
+
+    Note over User,Db: 基本フロー 1〜2 カートを表示する
+    User-&gt;&gt;Page: 共通ヘッダーの「カー&lt;br/&gt;ト」をクリック
+    Page--&gt;&gt;User: 「ショッピングカ&lt;br/&gt;ート」画面
+
+    Note over User,Db: 基本フロー 3〜5 確認画面へ進む
+    User-&gt;&gt;Page: 「注文内容を確認す&lt;br/&gt;る」をクリック
+    Page-&gt;&gt;Api: GET /api/cart
+    Api--&gt;&gt;Page: 200 最新のカート
+    Page--&gt;&gt;User: 「お支払い・受け取&lt;br/&gt;りの確認」画面
+    User-&gt;&gt;Page: お支払い方法を選ぶ
+
+    Note over User,Db: 基本フロー 6〜9 注文を確定する
+    User-&gt;&gt;Page: 「注文を確定す&lt;br/&gt;る」をクリック
+    Page-&gt;&gt;Api: GET /api/cart
+    Api--&gt;&gt;Page: 200 最新のカート&lt;br/&gt;(revision、totalYen)
+    Page-&gt;&gt;Api: POST /api/orders
+    Api-&gt;&gt;Db: カート、店舗、商品、在&lt;br/&gt;庫をロックして確認
+    alt 確定できる
+        loop 受取店舗ごと
+            Api-&gt;&gt;Db: 注文 (状態は注文受&lt;br/&gt;付)、通知、明細を追加&lt;br/&gt;し、在庫を減らす
+        end
+        Api-&gt;&gt;Db: カートを空にする
+        Note over Api,Db: ここまでが1つのトランザクション
+        Api--&gt;&gt;Page: 200 作成した注文の一覧
+        Page-&gt;&gt;Api: GET /api/cart ほか (画&lt;br/&gt;面のデータを取り直す)
+        Page--&gt;&gt;User: 「注文を保存しま&lt;br/&gt;した」画面
+    else 7a〜7d カート、価格、在庫、店舗が変わっていた
+        Api--&gt;&gt;Page: 409 CART_CHANGED /&lt;br/&gt;PRICE_CHANGED /&lt;br/&gt;OUT_OF_STOCK /&lt;br/&gt;STORE_DISABLED
+        Page-&gt;&gt;Api: GET /api/cart ほか (最&lt;br/&gt;新の内容を取り直す)
+        Page--&gt;&gt;User: エラーメッセージと&lt;br/&gt;最新のカート
+    else 7e 保存に失敗
+        Api--&gt;&gt;Page: 503&lt;br/&gt;DATABASE_UNAVAILABLE
+        Page--&gt;&gt;User: 「保存処理を完了でき&lt;br/&gt;ませんでした。時間を&lt;br/&gt;おいて再試行してくだ&lt;br/&gt;さい。」
+    end</code></pre>
+    </details>
+  </figure>
+  <figure class="fig" id="fig-b12-detail">
+    <figcaption>
+      <span class="fig-title"><span class="fig-kind detail">詳細図</span>EC-B12 商品を購入する</span>
+      <span class="fig-tools"><span class="fig-hint">ドラッグかスクロールで図を移動</span><button type="button" class="btn fit-toggle" aria-pressed="false">全体を縮小して表示</button></span>
+    </figcaption>
+    <div class="diagram" tabindex="0" role="group" aria-label="詳細図 EC-B12 商品を購入する"><pre class="mermaid">sequenceDiagram
+    actor User as 購入者
+    box rgba(47,111,219,0.10) ブラウザー React
+        participant Cart as Cart.jsx
+        participant Shop as useShop.js
+        participant Http as api.js
+    end
+    box rgba(27,127,92,0.12) EC API Spring Boot
+        participant CartCtrl as CartController
+        participant OrderCtrl as OrderController
+        participant Errs as ApiErrors
+        participant Session as CartSession&lt;br/&gt;Resolver
+        participant CartSvc as CartService
+        participant Checkout as CheckoutService
+        participant Notice as Notification&lt;br/&gt;Service
+        participant Repo as 各 Repository
+    end
+    participant Db as MySQL
+
+    Note over User,Db: アプリを開いたとき App.jsx が useShop() を呼び、カートを読み込む
+    Shop-&gt;&gt;Shop: useEffect が initialize()&lt;br/&gt;を実行し refresh() へ
+    Shop-&gt;&gt;Http: api.cart()
+    Http-&gt;&gt;CartCtrl: GET /api/cart
+    CartCtrl-&gt;&gt;Session: resolve(request, response)
+    Session--&gt;&gt;CartCtrl: cartId (ログイン中の会員のカート)
+    CartCtrl-&gt;&gt;CartSvc: read(cartId)
+    CartSvc-&gt;&gt;Repo: CartRepository.findLocked(id)
+    Repo-&gt;&gt;Db: SELECT ... FOR UPDATE
+    CartSvc-&gt;&gt;CartSvc: view(cart) 価格、在庫、合&lt;br/&gt;計、canCheckout を計算
+    CartSvc--&gt;&gt;CartCtrl: CartView
+    CartCtrl--&gt;&gt;Http: 200 CartView
+    Http--&gt;&gt;Shop: cart
+    Shop-&gt;&gt;Shop: setCart(cart)
+
+    Note over User,Db: 基本フロー 1〜2 カートを表示する
+    User-&gt;&gt;Cart: 共通ヘッダーの「カー&lt;br/&gt;ト」をクリック
+    Cart--&gt;&gt;User: 「ショッピングカー&lt;br/&gt;ト」画面&lt;br/&gt;(shop.cart を表示)
+    Note right of Cart: 2a 在庫不足の行がある&lt;br/&gt;と cart.canCheckout&lt;br/&gt;が false でボタンが&lt;br/&gt;disabled
+
+    Note over User,Db: 基本フロー 3〜5 確認画面へ進む
+    User-&gt;&gt;Cart: 「注文内容を確認す&lt;br/&gt;る」をクリック
+    Cart-&gt;&gt;Shop: beginCheckout()
+    Shop-&gt;&gt;Shop: run() の中で checkoutCart()
+    Shop-&gt;&gt;Http: api.cart()
+    Http-&gt;&gt;CartCtrl: GET /api/cart
+    Note over CartCtrl,Db: カートの取得は上と同じ流れ
+    CartCtrl--&gt;&gt;Http: 200 最新の CartView
+    Http--&gt;&gt;Shop: cart
+    Shop--&gt;&gt;Cart: true
+    Cart-&gt;&gt;Cart: setConfirming(true)
+    Cart--&gt;&gt;User: 「お支払い・受け取り&lt;br/&gt;の確認」画面&lt;br/&gt;(CheckoutConfirm.jsx)
+    User-&gt;&gt;Cart: お支払い方法を選ぶ
+    Cart-&gt;&gt;Cart: setPayment(id)
+
+    Note over User,Db: 基本フロー 6〜9 注文を確定する
+    User-&gt;&gt;Cart: 「注文を確定す&lt;br/&gt;る」をクリック
+    Cart-&gt;&gt;Shop: checkout(payment)
+    Shop-&gt;&gt;Shop: run() の中で&lt;br/&gt;checkoutCart() (GET&lt;br/&gt;/api/cart で最新のカー&lt;br/&gt;ト)
+    Shop-&gt;&gt;Shop: checkoutRequest を作る&lt;br/&gt;(requestId、revision、&lt;br/&gt;expectedTotalYen、&lt;br/&gt;paymentMethod)
+    Shop-&gt;&gt;Http: api.checkout(checkoutRequest)
+    Http-&gt;&gt;OrderCtrl: POST /api/orders
+    OrderCtrl-&gt;&gt;Session: resolve(request, response)
+    Session--&gt;&gt;OrderCtrl: cartId
+    OrderCtrl-&gt;&gt;Checkout: placeOrder(cartId, request)
+    Note over Checkout,Db: @Transactional ここからメソッドの終わりまでが1つのトランザクション
+    Checkout-&gt;&gt;Repo: CartRepository.findLocked(cartId)
+    Checkout-&gt;&gt;Repo: OrderRepository.findByCartIdAndRequestIdOrderByStoreIdAsc(cartId,&lt;br/&gt;requestId)
+    Note right of Checkout: 同じ requestId の注文&lt;br/&gt;が保存済みなら、その注&lt;br/&gt;文を返して終わる (二重&lt;br/&gt;注文の防止)
+    Checkout-&gt;&gt;Checkout: cart.getRevision() と&lt;br/&gt;request.revision() を比べる
+    Checkout-&gt;&gt;Repo: StoreRepository.lock()、&lt;br/&gt;ProductRepository.findLocked()、&lt;br/&gt;InventoryRepository.lockAtStore()
+    Repo-&gt;&gt;Db: SELECT ... FOR UPDATE&lt;br/&gt;(店舗、商品、在庫の順)
+    Checkout-&gt;&gt;CartSvc: view(cart)
+    CartSvc--&gt;&gt;Checkout: CartView&lt;br/&gt;(canCheckout、&lt;br/&gt;totalYen)
+    alt 7a〜7d 確定できない
+        Checkout--xErrs: throw ApiException(409, CART_CHANGED など)
+        Note over Checkout,Db: 例外でロールバック。注文も在庫の減算も残らない
+        Errs--&gt;&gt;Http: business() が 409 と message を返す
+        Http--xShop: throw ApiError(409)
+        Shop-&gt;&gt;Shop: run() の catch で&lt;br/&gt;setError(message)、&lt;br/&gt;checkoutRequest を捨てる
+        Shop-&gt;&gt;Http: refresh() 最新のカ&lt;br/&gt;ートを取り直す
+        Shop--&gt;&gt;Cart: shop.error と&lt;br/&gt;shop.cart
+        Cart--&gt;&gt;User: エラーメッセージと&lt;br/&gt;最新の確認画面
+    else 確定できる
+        loop 受取店舗ごとに placeStoreOrder()
+            Checkout-&gt;&gt;Repo: OrderRepository.save(order) 状態は ACCEPTED
+            Checkout-&gt;&gt;Notice: send(購入者, 「ご注文&lt;br/&gt;を受け付けました」)
+            Checkout-&gt;&gt;Notice: toStore(storeId, 「新&lt;br/&gt;しい注文が届きまし&lt;br/&gt;た」)
+            Notice-&gt;&gt;Repo: NotificationRepository.save()
+            Checkout-&gt;&gt;Repo: OrderDetailsRepository.save()&lt;br/&gt;受取連絡先と支払方法
+            loop 商品ごと
+                Checkout-&gt;&gt;Checkout: stock.setQuantity(在&lt;br/&gt;庫 - 数量)
+                Checkout-&gt;&gt;Repo: OrderItemRepository.save()
+            end
+        end
+        Checkout-&gt;&gt;Repo: CartItemRepository.deleteAll(items)
+        Checkout-&gt;&gt;Checkout: cart.incrementRevision()
+        Repo-&gt;&gt;Db: コミット (注文、通&lt;br/&gt;知、明細の INSERT、在&lt;br/&gt;庫の UPDATE、カートの&lt;br/&gt;行の DELETE)
+        Checkout--&gt;&gt;OrderCtrl: CheckoutResult
+        OrderCtrl--&gt;&gt;Http: 200 orders の配列
+        Http--&gt;&gt;Shop: result
+        Shop-&gt;&gt;Shop: setLastOrders(result.orders)
+        Shop-&gt;&gt;Http: refresh() カート、商&lt;br/&gt;品、注文履歴を取り直す
+        Shop--&gt;&gt;Cart: shop.lastOrders
+        Cart--&gt;&gt;User: 「注文を保存しま&lt;br/&gt;した」画面
+    end
+    Note over Shop,Errs: 7e DBのエラーは ApiErrors.database() が 503 にする。&lt;br/&gt;checkoutRequest は残るので、再試行は同じ requestId で送られ&lt;br/&gt;る</pre></div>
+    <details class="src">
+      <summary>Mermaid のソースを表示</summary>
+      <div class="src-bar"><button type="button" class="btn copy">ソースをコピー</button></div>
+      <pre><code>sequenceDiagram
+    actor User as 購入者
+    box rgba(47,111,219,0.10) ブラウザー React
+        participant Cart as Cart.jsx
+        participant Shop as useShop.js
+        participant Http as api.js
+    end
+    box rgba(27,127,92,0.12) EC API Spring Boot
+        participant CartCtrl as CartController
+        participant OrderCtrl as OrderController
+        participant Errs as ApiErrors
+        participant Session as CartSession&lt;br/&gt;Resolver
+        participant CartSvc as CartService
+        participant Checkout as CheckoutService
+        participant Notice as Notification&lt;br/&gt;Service
+        participant Repo as 各 Repository
+    end
+    participant Db as MySQL
+
+    Note over User,Db: アプリを開いたとき App.jsx が useShop() を呼び、カートを読み込む
+    Shop-&gt;&gt;Shop: useEffect が initialize()&lt;br/&gt;を実行し refresh() へ
+    Shop-&gt;&gt;Http: api.cart()
+    Http-&gt;&gt;CartCtrl: GET /api/cart
+    CartCtrl-&gt;&gt;Session: resolve(request, response)
+    Session--&gt;&gt;CartCtrl: cartId (ログイン中の会員のカート)
+    CartCtrl-&gt;&gt;CartSvc: read(cartId)
+    CartSvc-&gt;&gt;Repo: CartRepository.findLocked(id)
+    Repo-&gt;&gt;Db: SELECT ... FOR UPDATE
+    CartSvc-&gt;&gt;CartSvc: view(cart) 価格、在庫、合&lt;br/&gt;計、canCheckout を計算
+    CartSvc--&gt;&gt;CartCtrl: CartView
+    CartCtrl--&gt;&gt;Http: 200 CartView
+    Http--&gt;&gt;Shop: cart
+    Shop-&gt;&gt;Shop: setCart(cart)
+
+    Note over User,Db: 基本フロー 1〜2 カートを表示する
+    User-&gt;&gt;Cart: 共通ヘッダーの「カー&lt;br/&gt;ト」をクリック
+    Cart--&gt;&gt;User: 「ショッピングカー&lt;br/&gt;ト」画面&lt;br/&gt;(shop.cart を表示)
+    Note right of Cart: 2a 在庫不足の行がある&lt;br/&gt;と cart.canCheckout&lt;br/&gt;が false でボタンが&lt;br/&gt;disabled
+
+    Note over User,Db: 基本フロー 3〜5 確認画面へ進む
+    User-&gt;&gt;Cart: 「注文内容を確認す&lt;br/&gt;る」をクリック
+    Cart-&gt;&gt;Shop: beginCheckout()
+    Shop-&gt;&gt;Shop: run() の中で checkoutCart()
+    Shop-&gt;&gt;Http: api.cart()
+    Http-&gt;&gt;CartCtrl: GET /api/cart
+    Note over CartCtrl,Db: カートの取得は上と同じ流れ
+    CartCtrl--&gt;&gt;Http: 200 最新の CartView
+    Http--&gt;&gt;Shop: cart
+    Shop--&gt;&gt;Cart: true
+    Cart-&gt;&gt;Cart: setConfirming(true)
+    Cart--&gt;&gt;User: 「お支払い・受け取り&lt;br/&gt;の確認」画面&lt;br/&gt;(CheckoutConfirm.jsx)
+    User-&gt;&gt;Cart: お支払い方法を選ぶ
+    Cart-&gt;&gt;Cart: setPayment(id)
+
+    Note over User,Db: 基本フロー 6〜9 注文を確定する
+    User-&gt;&gt;Cart: 「注文を確定す&lt;br/&gt;る」をクリック
+    Cart-&gt;&gt;Shop: checkout(payment)
+    Shop-&gt;&gt;Shop: run() の中で&lt;br/&gt;checkoutCart() (GET&lt;br/&gt;/api/cart で最新のカー&lt;br/&gt;ト)
+    Shop-&gt;&gt;Shop: checkoutRequest を作る&lt;br/&gt;(requestId、revision、&lt;br/&gt;expectedTotalYen、&lt;br/&gt;paymentMethod)
+    Shop-&gt;&gt;Http: api.checkout(checkoutRequest)
+    Http-&gt;&gt;OrderCtrl: POST /api/orders
+    OrderCtrl-&gt;&gt;Session: resolve(request, response)
+    Session--&gt;&gt;OrderCtrl: cartId
+    OrderCtrl-&gt;&gt;Checkout: placeOrder(cartId, request)
+    Note over Checkout,Db: @Transactional ここからメソッドの終わりまでが1つのトランザクション
+    Checkout-&gt;&gt;Repo: CartRepository.findLocked(cartId)
+    Checkout-&gt;&gt;Repo: OrderRepository.findByCartIdAndRequestIdOrderByStoreIdAsc(cartId,&lt;br/&gt;requestId)
+    Note right of Checkout: 同じ requestId の注文&lt;br/&gt;が保存済みなら、その注&lt;br/&gt;文を返して終わる (二重&lt;br/&gt;注文の防止)
+    Checkout-&gt;&gt;Checkout: cart.getRevision() と&lt;br/&gt;request.revision() を比べる
+    Checkout-&gt;&gt;Repo: StoreRepository.lock()、&lt;br/&gt;ProductRepository.findLocked()、&lt;br/&gt;InventoryRepository.lockAtStore()
+    Repo-&gt;&gt;Db: SELECT ... FOR UPDATE&lt;br/&gt;(店舗、商品、在庫の順)
+    Checkout-&gt;&gt;CartSvc: view(cart)
+    CartSvc--&gt;&gt;Checkout: CartView&lt;br/&gt;(canCheckout、&lt;br/&gt;totalYen)
+    alt 7a〜7d 確定できない
+        Checkout--xErrs: throw ApiException(409, CART_CHANGED など)
+        Note over Checkout,Db: 例外でロールバック。注文も在庫の減算も残らない
+        Errs--&gt;&gt;Http: business() が 409 と message を返す
+        Http--xShop: throw ApiError(409)
+        Shop-&gt;&gt;Shop: run() の catch で&lt;br/&gt;setError(message)、&lt;br/&gt;checkoutRequest を捨てる
+        Shop-&gt;&gt;Http: refresh() 最新のカ&lt;br/&gt;ートを取り直す
+        Shop--&gt;&gt;Cart: shop.error と&lt;br/&gt;shop.cart
+        Cart--&gt;&gt;User: エラーメッセージと&lt;br/&gt;最新の確認画面
+    else 確定できる
+        loop 受取店舗ごとに placeStoreOrder()
+            Checkout-&gt;&gt;Repo: OrderRepository.save(order) 状態は ACCEPTED
+            Checkout-&gt;&gt;Notice: send(購入者, 「ご注文&lt;br/&gt;を受け付けました」)
+            Checkout-&gt;&gt;Notice: toStore(storeId, 「新&lt;br/&gt;しい注文が届きまし&lt;br/&gt;た」)
+            Notice-&gt;&gt;Repo: NotificationRepository.save()
+            Checkout-&gt;&gt;Repo: OrderDetailsRepository.save()&lt;br/&gt;受取連絡先と支払方法
+            loop 商品ごと
+                Checkout-&gt;&gt;Checkout: stock.setQuantity(在&lt;br/&gt;庫 - 数量)
+                Checkout-&gt;&gt;Repo: OrderItemRepository.save()
+            end
+        end
+        Checkout-&gt;&gt;Repo: CartItemRepository.deleteAll(items)
+        Checkout-&gt;&gt;Checkout: cart.incrementRevision()
+        Repo-&gt;&gt;Db: コミット (注文、通&lt;br/&gt;知、明細の INSERT、在&lt;br/&gt;庫の UPDATE、カートの&lt;br/&gt;行の DELETE)
+        Checkout--&gt;&gt;OrderCtrl: CheckoutResult
+        OrderCtrl--&gt;&gt;Http: 200 orders の配列
+        Http--&gt;&gt;Shop: result
+        Shop-&gt;&gt;Shop: setLastOrders(result.orders)
+        Shop-&gt;&gt;Http: refresh() カート、商&lt;br/&gt;品、注文履歴を取り直す
+        Shop--&gt;&gt;Cart: shop.lastOrders
+        Cart--&gt;&gt;User: 「注文を保存しま&lt;br/&gt;した」画面
+    end
+    Note over Shop,Errs: 7e DBのエラーは ApiErrors.database() が 503 にする。&lt;br/&gt;checkoutRequest は残るので、再試行は同じ requestId で送られ&lt;br/&gt;る</code></pre>
+    </details>
+  </figure>
+
+  <h3>たどった記録</h3>
+  <div class="table-wrap"><table class="w-min">
+    <thead><tr><th>ステップ</th><th>見た場所</th><th>分かったこと</th></tr></thead>
+    <tbody>
+      <tr><td class="no">(起動時)</td><td><code>App.jsx</code> 48行目<br><code>useShop.js</code> 35〜53、89〜100行目</td><td><code>useShop()</code> の <code>useEffect</code> が <code>initialize()</code> → <code>refresh()</code> でカートを読み込む</td></tr>
+      <tr><td class="no">1、2</td><td><code>App.jsx</code> 142〜146行目<br><code>Cart.jsx</code> 12〜16、103〜118行目</td><td><code>/cart</code> のとき <code>CartPage</code> → <code>Cart</code>。すでに読み込んだ <code>shop.cart</code> を表示する</td></tr>
+      <tr><td class="no">2</td><td><code>CartController.java</code> 27〜30行目<br><code>CartService.java</code> 43〜45、135行目</td><td><code>GET /api/cart</code> → <code>sessions.resolve()</code> → <code>read()</code> → <code>view()</code>。金額と <code>canCheckout</code> はサーバーが計算する</td></tr>
+      <tr><td class="no">3、4</td><td><code>Cart.jsx</code> 202〜211行目<br><code>useShop.js</code> 153〜165行目</td><td><code>beginCheckout()</code> がカートを取り直し、成功したら <code>setConfirming(true)</code> で確認画面に切り替える</td></tr>
+      <tr><td class="no">5</td><td><code>Cart.jsx</code> 14、99行目</td><td>支払方法は <code>setPayment()</code> で画面が覚えるだけ。通信しない</td></tr>
+      <tr><td class="no">6</td><td><code>Cart.jsx</code> 187〜194行目<br><code>useShop.js</code> 168〜186行目</td><td><code>checkout(payment)</code> がカートを取り直し、<code>requestId</code> などを付けて <code>POST /api/orders</code> を送る</td></tr>
+      <tr><td class="no">7</td><td><code>OrderController.java</code> 34〜41行目<br><code>CheckoutService.java</code> 59〜124行目</td><td><code>placeOrder()</code>。ロック → 確認 → 店舗ごとに <code>placeStoreOrder()</code> → カートを空にする</td></tr>
+      <tr><td class="no">7a</td><td><code>CheckoutService.java</code> 78〜80行目</td><td><code>revision</code> が違えば <code>CART_CHANGED</code></td></tr>
+      <tr><td class="no">7b</td><td><code>CheckoutService.java</code> 102〜104行目</td><td>合計が違えば <code>PRICE_CHANGED</code></td></tr>
+      <tr><td class="no">7c</td><td><code>CheckoutService.java</code> 99〜101、159〜161行目</td><td><code>canCheckout</code> が false、または在庫が足りなければ <code>OUT_OF_STOCK</code></td></tr>
+      <tr><td class="no">7d</td><td><code>CheckoutService.java</code> 134〜136行目</td><td>店舗が停止中なら <code>STORE_DISABLED</code>。ループの中で throw される</td></tr>
+      <tr><td class="no">7e</td><td><code>ApiErrors.java</code> 46〜51行目</td><td>DB のエラーは <code>database()</code> が 503 にする</td></tr>
+      <tr><td class="no">8</td><td><code>CheckoutService.java</code> 150〜151行目<br><code>NotificationService.java</code> 24〜30行目</td><td><code>send()</code> で購入者へ、<code>toStore()</code> で店舗の会員全員へ通知</td></tr>
+      <tr><td class="no">9</td><td><code>useShop.js</code> 181〜184行目<br><code>Cart.jsx</code> 17〜35行目</td><td><code>setLastOrders()</code> → <code>shop.lastOrders</code> があると「注文を保存しました」を表示する</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>この例の読みどころ</h3>
+  <ul>
+    <li><strong>操作と通信のタイミングは、一致するとは限りません。</strong>ユースケース記述では「カートをクリック → カートを表示」ですが、カートのデータはアプリを開いた時点で読み込み済みです。図では、操作の前に「アプリを開いたとき」の区切りを作って書きます。</li>
+    <li><strong>1回のクリックで、通信が何回も起きます。</strong>「注文を確定する」は <code>GET /api/cart</code>、<code>POST /api/orders</code>、そのあとの <code>refresh()</code> と続きます。<code>await</code> の付いた行を上から順に拾います。</li>
+    <li><strong>ライフラインが多すぎるときは、同じ役割のものをまとめます。</strong><code>CheckoutService</code> は Repository を8つ使います。8本並べると読めないので「各 Repository」1本にまとめ、矢印に <code>OrderRepository.save()</code> のようにクラス名を書きました。まとめたことは、縦線の名前で分かるようにします。</li>
+    <li><strong><code>for</code> 文は <code>loop</code> にします。</strong>受取店舗ごとの <code>for</code>(114行目)の中に、商品ごとの <code>for</code>(157行目)があります。図でも <code>loop</code> を入れ子にします。関連情報の「受取店舗ごとに注文を分けて保存」が、この外側のループです。</li>
+    <li><strong>戻り道が同じ分岐は、1つの枝にまとめます。</strong>7a〜7d は throw する場所が違いますが、どれも 409 で、画面の動きも同じです。図では1つの枝にまとめ、場所の違いは上の表に書きました。</li>
+    <li><strong>関連情報も、コードで確かめて図に入れます。</strong>「同じ注文は1回だけ記録する」は、画面が作る <code>requestId</code> と、<code>CheckoutService</code> の先頭にある保存済み注文の検索(65行目)で実現しています。</li>
+  </ul>
+</section>
+
+<section id="ex-uc06">
+  <h2>例4 FastAPI と外部システム</h2>
+  <p class="ex-head"><span class="ex-id">UC-06</span><strong>完成イメージ画像を生成・保存する</strong></p>
+  <dl class="facts">
+    <dt>アクター</dt><dd>購入者</dd>
+    <dt>図にした範囲</dt><dd>基本フロー 1〜11、代替フロー 5d・8a・9a。4a、5a〜5c、6a、7a、10a は画面だけで終わるので、ノートか省略</dd>
+    <dt>身につくこと</dt><dd>FastAPI のコードのたどり方。自分たちのコードの外にあるシステムの書き方。200 の応答に失敗が入る場合の読み方</dd>
+  </dl>
+
+  <figure class="fig" id="fig-uc06-overview">
+    <figcaption>
+      <span class="fig-title"><span class="fig-kind">概要図</span>UC-06 完成イメージ画像を生成・保存する</span>
+      <span class="fig-tools"><span class="fig-hint">ドラッグかスクロールで図を移動</span><button type="button" class="btn fit-toggle" aria-pressed="false">全体を縮小して表示</button></span>
+    </figcaption>
+    <div class="diagram" tabindex="0" role="group" aria-label="概要図 UC-06 完成イメージ画像を生成・保存する"><pre class="mermaid">sequenceDiagram
+    actor User as 購入者
+    participant Page as 庭シミュレーション画面&lt;br/&gt;React
+    participant Api as Canvas API&lt;br/&gt;FastAPI
+    participant Db as Canvas の MySQL
+    participant Ec as EC API&lt;br/&gt;Spring Boot
+    participant OpenAi as OpenAI 画像API
+
+    Note over User,OpenAi: 基本フロー 1〜4 生成前の画像を作る (通信なし)
+    User-&gt;&gt;Page: 「AI生成」、続けて「新&lt;br/&gt;しく作成」をクリック
+    Page-&gt;&gt;Page: 庭写真に庭オブジェクトを&lt;br/&gt;重ねて PNG にする
+    Page--&gt;&gt;User: 「庭の完成イメージ」ダ&lt;br/&gt;イアログ (生成前)
+
+    Note over User,OpenAi: 基本フロー 5〜6 参考画像を取得する (ダイアログの表示時に自動で実行)
+    Page-&gt;&gt;Api: POST&lt;br/&gt;/api/ai/product-references
+    Api-&gt;&gt;Ec: POST /api/products/references
+    alt 取得できた
+        Ec--&gt;&gt;Api: 商品名、登録画像のURL
+        Api--&gt;&gt;Page: 200 商品ごとの参考画像&lt;br/&gt;情報 (requiresUpload)
+        Page--&gt;&gt;User: 登録画像を使えない&lt;br/&gt;植物だけ「参考写&lt;br/&gt;真」欄を表示
+        opt 参考写真が必要な植物がある
+            User-&gt;&gt;Page: 「写真を選択」で参&lt;br/&gt;考写真を追加
+        end
+    else 5d 取得に失敗
+        Api--&gt;&gt;Page: 502 または 504
+        Page--&gt;&gt;User: 「植物の参考画像を取得&lt;br/&gt;できませんでした。」と&lt;br/&gt;再取得ボタン
+    end
+
+    Note over User,OpenAi: 基本フロー 7〜9 生成して履歴に保存する
+    User-&gt;&gt;Page: 「AIで生成」をクリック
+    Page--&gt;&gt;User: 「完成イメージを&lt;br/&gt;生成中…」
+    Page-&gt;&gt;Api: POST&lt;br/&gt;/api/gardens/{id}/ai-image
+    Api-&gt;&gt;Db: 庭の所有者と版を確認
+    Api-&gt;&gt;Ec: 商品情報と登録画像を取得
+    Api-&gt;&gt;OpenAi: 画像の編集を依頼 (生成前の画像、参考画像、指示文)
+    alt 生成できた
+        OpenAi--&gt;&gt;Api: 生成画像
+        Api-&gt;&gt;Db: 生成履歴を保存
+        alt 履歴も保存できた
+            Api--&gt;&gt;Page: 200 画像&lt;br/&gt;historySaved=true
+            Page--&gt;&gt;User: 生成前と生成後の比較、&lt;br/&gt;「履歴に保存済み」
+        else 9a 履歴の保存に失敗
+            Api--&gt;&gt;Page: 200 画像&lt;br/&gt;historySaved=false
+            Page--&gt;&gt;User: 画像と「履歴への保存&lt;br/&gt;に失敗しました」
+            User-&gt;&gt;Page: 「履歴へ再保存」&lt;br/&gt;をクリック
+            Page-&gt;&gt;Api: POST&lt;br/&gt;/api/gardens/{id}/image-history
+            Api-&gt;&gt;Db: 生成履歴を保存
+            Api--&gt;&gt;Page: 200
+            Page--&gt;&gt;User: 「履歴に保存済み」
+        end
+    else 8a 生成に失敗
+        OpenAi--&gt;&gt;Api: エラーまたはタイムアウト
+        Api--&gt;&gt;Page: 502、504 または 429
+        Page--&gt;&gt;User: エラーメッセージ。「AI&lt;br/&gt;で生成」を再び押せる
+    end
+
+    Note over User,OpenAi: 基本フロー 10〜11 「画像を保存」はブラウザーのダウンロード (通信なし)</pre></div>
+    <details class="src">
+      <summary>Mermaid のソースを表示</summary>
+      <div class="src-bar"><button type="button" class="btn copy">ソースをコピー</button></div>
+      <pre><code>sequenceDiagram
+    actor User as 購入者
+    participant Page as 庭シミュレーション画面&lt;br/&gt;React
+    participant Api as Canvas API&lt;br/&gt;FastAPI
+    participant Db as Canvas の MySQL
+    participant Ec as EC API&lt;br/&gt;Spring Boot
+    participant OpenAi as OpenAI 画像API
+
+    Note over User,OpenAi: 基本フロー 1〜4 生成前の画像を作る (通信なし)
+    User-&gt;&gt;Page: 「AI生成」、続けて「新&lt;br/&gt;しく作成」をクリック
+    Page-&gt;&gt;Page: 庭写真に庭オブジェクトを&lt;br/&gt;重ねて PNG にする
+    Page--&gt;&gt;User: 「庭の完成イメージ」ダ&lt;br/&gt;イアログ (生成前)
+
+    Note over User,OpenAi: 基本フロー 5〜6 参考画像を取得する (ダイアログの表示時に自動で実行)
+    Page-&gt;&gt;Api: POST&lt;br/&gt;/api/ai/product-references
+    Api-&gt;&gt;Ec: POST /api/products/references
+    alt 取得できた
+        Ec--&gt;&gt;Api: 商品名、登録画像のURL
+        Api--&gt;&gt;Page: 200 商品ごとの参考画像&lt;br/&gt;情報 (requiresUpload)
+        Page--&gt;&gt;User: 登録画像を使えない&lt;br/&gt;植物だけ「参考写&lt;br/&gt;真」欄を表示
+        opt 参考写真が必要な植物がある
+            User-&gt;&gt;Page: 「写真を選択」で参&lt;br/&gt;考写真を追加
+        end
+    else 5d 取得に失敗
+        Api--&gt;&gt;Page: 502 または 504
+        Page--&gt;&gt;User: 「植物の参考画像を取得&lt;br/&gt;できませんでした。」と&lt;br/&gt;再取得ボタン
+    end
+
+    Note over User,OpenAi: 基本フロー 7〜9 生成して履歴に保存する
+    User-&gt;&gt;Page: 「AIで生成」をクリック
+    Page--&gt;&gt;User: 「完成イメージを&lt;br/&gt;生成中…」
+    Page-&gt;&gt;Api: POST&lt;br/&gt;/api/gardens/{id}/ai-image
+    Api-&gt;&gt;Db: 庭の所有者と版を確認
+    Api-&gt;&gt;Ec: 商品情報と登録画像を取得
+    Api-&gt;&gt;OpenAi: 画像の編集を依頼 (生成前の画像、参考画像、指示文)
+    alt 生成できた
+        OpenAi--&gt;&gt;Api: 生成画像
+        Api-&gt;&gt;Db: 生成履歴を保存
+        alt 履歴も保存できた
+            Api--&gt;&gt;Page: 200 画像&lt;br/&gt;historySaved=true
+            Page--&gt;&gt;User: 生成前と生成後の比較、&lt;br/&gt;「履歴に保存済み」
+        else 9a 履歴の保存に失敗
+            Api--&gt;&gt;Page: 200 画像&lt;br/&gt;historySaved=false
+            Page--&gt;&gt;User: 画像と「履歴への保存&lt;br/&gt;に失敗しました」
+            User-&gt;&gt;Page: 「履歴へ再保存」&lt;br/&gt;をクリック
+            Page-&gt;&gt;Api: POST&lt;br/&gt;/api/gardens/{id}/image-history
+            Api-&gt;&gt;Db: 生成履歴を保存
+            Api--&gt;&gt;Page: 200
+            Page--&gt;&gt;User: 「履歴に保存済み」
+        end
+    else 8a 生成に失敗
+        OpenAi--&gt;&gt;Api: エラーまたはタイムアウト
+        Api--&gt;&gt;Page: 502、504 または 429
+        Page--&gt;&gt;User: エラーメッセージ。「AI&lt;br/&gt;で生成」を再び押せる
+    end
+
+    Note over User,OpenAi: 基本フロー 10〜11 「画像を保存」はブラウザーのダウンロード (通信なし)</code></pre>
+    </details>
+  </figure>
+  <figure class="fig" id="fig-uc06-detail">
+    <figcaption>
+      <span class="fig-title"><span class="fig-kind detail">詳細図</span>UC-06 完成イメージ画像を生成・保存する</span>
+      <span class="fig-tools"><span class="fig-hint">ドラッグかスクロールで図を移動</span><button type="button" class="btn fit-toggle" aria-pressed="false">全体を縮小して表示</button></span>
+    </figcaption>
+    <div class="diagram" tabindex="0" role="group" aria-label="詳細図 UC-06 完成イメージ画像を生成・保存する"><pre class="mermaid">sequenceDiagram
+    actor User as 購入者
+    box rgba(47,111,219,0.10) ブラウザー React
+        participant Menu as Completion&lt;br/&gt;Menu.jsx
+        participant Action as CompletionImage&lt;br/&gt;Action.jsx
+        participant Capture as captureImage.js
+        participant Gen as AiImage&lt;br/&gt;Generation.jsx
+        participant Http as api/aiImages.js&lt;br/&gt;api/http.js
+    end
+    box rgba(27,127,92,0.12) Canvas API FastAPI
+        participant Main as main.py
+        participant AiSvc as ai_service.py
+        participant Catalog as ai_catalog.py
+        participant Provider as ai_provider.py
+        participant History as history_service.py
+    end
+    participant Db as Canvas の MySQL
+    participant Ec as EC API
+    participant OpenAi as OpenAI 画像API
+
+    Note over User,OpenAi: 基本フロー 1〜4 生成前の画像を作る (通信なし)
+    User-&gt;&gt;Menu: 「AI生成」をクリック
+    Menu--&gt;&gt;User: メニュー (新しく作&lt;br/&gt;成、生成履歴)
+    User-&gt;&gt;Menu: 「新しく作成」&lt;br/&gt;をクリック
+    Menu-&gt;&gt;Action: onCapture() で&lt;br/&gt;capture() を実行
+    Action-&gt;&gt;Capture: captureImage(document,&lt;br/&gt;photoMode,&lt;br/&gt;captureScene, options)
+    Capture--&gt;&gt;Action: dataUrl、&lt;br/&gt;coverageDataUrl、&lt;br/&gt;layout
+    Note right of Capture: 4a 失敗すると Error を&lt;br/&gt;throw。capture() の&lt;br/&gt;catch がエラーを表示&lt;br/&gt;し、ダイアログは開かな&lt;br/&gt;い
+    Action-&gt;&gt;Gen: setImage() で AiImageGeneration を表示
+    Gen--&gt;&gt;User: 「庭の完成イメージ」ダイアログ (生成前)
+
+    Note over User,OpenAi: 基本フロー 5〜6 参考画像を取得する (useQuery が表示時に自動で実行)
+    Gen-&gt;&gt;Http: aiImageApi.productReferences(productIds)
+    Http-&gt;&gt;Main: POST&lt;br/&gt;/api/ai/product-references
+    Note right of Main: backend_identity() が&lt;br/&gt;毎回、EC の&lt;br/&gt;/api/auth/verify でロ&lt;br/&gt;グインを確認する
+    Main-&gt;&gt;Catalog: product_references(ai_settings, productIds)
+    Catalog-&gt;&gt;Catalog: linked_products()
+    Catalog-&gt;&gt;Ec: POST /api/products/references
+    alt 取得できた
+        Ec--&gt;&gt;Catalog: 商品の一覧 (名前、imageUrl)
+        Catalog--&gt;&gt;Main: AiCandidate のリスト (requiresUpload)
+        Main--&gt;&gt;Http: 200 JSON
+        Http--&gt;&gt;Gen: candidates.data
+        Gen--&gt;&gt;User: requiresUpload の植物だけ「参考写真」欄 (AiPlantReference.jsx)
+        opt 参考写真が必要な植物がある
+            User-&gt;&gt;Gen: 「写真を選択」
+            Gen-&gt;&gt;Gen: uploadPhoto() が&lt;br/&gt;readAiReferencePhoto(file)&lt;br/&gt;で形式、容量、画素数を検査
+        end
+    else 5d 取得に失敗
+        Ec--xCatalog: エラーまたはタイムアウト
+        Catalog--xMain: raise ApiError(502 または 504)
+        Main--&gt;&gt;Http: domain_error() がエラ&lt;br/&gt;ーの JSON を返す
+        Http--xGen: throw ApiError で&lt;br/&gt;candidates.isError が&lt;br/&gt;true
+        Gen--&gt;&gt;User: 「植物の参考画像を取得できませんでした。」と「登録画像を再取得」
+    end
+
+    Note over User,OpenAi: 基本フロー 7〜9 生成して履歴に保存する
+    User-&gt;&gt;Gen: 「AIで生成」をクリック
+    Gen-&gt;&gt;Gen: generate() の中で&lt;br/&gt;generationRequest() 送信前&lt;br/&gt;の検査 (7a はここで止まる)
+    Gen--&gt;&gt;User: 「完成イメージを生成中…」
+    Gen-&gt;&gt;Http: aiImageApi.generate(gardenId,&lt;br/&gt;request)
+    Http-&gt;&gt;Main: POST&lt;br/&gt;/api/gardens/{id}/ai-image
+    Main-&gt;&gt;AiSvc: generate_image(db,&lt;br/&gt;ai_settings, owner,&lt;br/&gt;id, request)
+    AiSvc-&gt;&gt;AiSvc: generation_lock(owner) 同じ&lt;br/&gt;利用者の同時生成を防ぐ
+    AiSvc-&gt;&gt;Db: validate_snapshot() 庭の所有者、revision、アセットを確認
+    AiSvc-&gt;&gt;Db: 同じ historyId が保存済みでないか確認
+    AiSvc-&gt;&gt;AiSvc: 画像を準備&lt;br/&gt;(ai_images.py、&lt;br/&gt;ai_frame.py)
+    AiSvc-&gt;&gt;Catalog: linked_products()、&lt;br/&gt;植物ごとに&lt;br/&gt;resolve_reference()
+    Catalog-&gt;&gt;Ec: POST /api/products/references、GET 登録画像
+    Ec--&gt;&gt;Catalog: 商品情報、画像
+    Catalog--&gt;&gt;AiSvc: 参考画像 (PNG) と&lt;br/&gt;ReferenceSummary
+    AiSvc-&gt;&gt;AiSvc: generation_prompt() で指示文&lt;br/&gt;を作る (ai_prompt.py)
+    AiSvc-&gt;&gt;Provider: edit_images(settings,&lt;br/&gt;images, mask, prompt, size)
+    Provider-&gt;&gt;OpenAi: client.images.edit(...)
+    alt 生成できた
+        OpenAi--&gt;&gt;Provider: 生成画像 (b64_json)
+        Provider--&gt;&gt;AiSvc: PNG のバイト列
+        AiSvc-&gt;&gt;History: save_history(session, owner, garden_id, HistorySaveRequest)
+        alt 履歴も保存できた
+            History-&gt;&gt;Db: INSERT HistoryEntity
+            History--&gt;&gt;AiSvc: HistorySummary
+            AiSvc--&gt;&gt;Main: AiImageResponse&lt;br/&gt;(historySaved=True)
+            Main--&gt;&gt;Http: 200 JSON
+            Http--&gt;&gt;Gen: generated
+            Gen-&gt;&gt;Gen: setResult()、履歴一覧のキ&lt;br/&gt;ャッシュを無効にする
+            Gen--&gt;&gt;User: BeforeAfterComparison と「履歴に保存済み」
+        else 9a 履歴の保存に失敗
+            History--xAiSvc: 例外
+            AiSvc-&gt;&gt;AiSvc: except で&lt;br/&gt;session.rollback()、&lt;br/&gt;historyError を設定
+            AiSvc--&gt;&gt;Main: AiImageResponse&lt;br/&gt;(historySaved=False)
+            Main--&gt;&gt;Http: 200 JSON
+            Http--&gt;&gt;Gen: generated
+            Gen--&gt;&gt;User: 画像と「履歴への保存に失敗しました。」
+            User-&gt;&gt;Gen: 「履歴へ再保存」をクリック
+            Gen-&gt;&gt;Http: retrySave() が&lt;br/&gt;imageHistoryApi.save(gardenId,&lt;br/&gt;savePayload)
+            Http-&gt;&gt;History: POST /api/gardens/{id}/image-history (history_routes.py の save() 経由)
+            History-&gt;&gt;Db: INSERT HistoryEntity
+            History--&gt;&gt;Http: 200 HistorySummary
+            Http--&gt;&gt;Gen: 成功
+            Gen--&gt;&gt;User: 「履歴に保存済み」
+        end
+    else 8a 生成に失敗
+        OpenAi--xProvider: エラーまたはタイムアウト
+        Provider--xAiSvc: raise ApiError(502、504 または 429)
+        AiSvc--xMain: 例外がそのまま上がる
+        Main--&gt;&gt;Http: domain_error() がエラ&lt;br/&gt;ーの JSON を返す
+        Http--xGen: throw ApiError
+        Gen-&gt;&gt;Gen: catch で setError()、&lt;br/&gt;finally で setPending(false)
+        Gen--&gt;&gt;User: エラーメッセージ。「AIで生成」を再び押せる
+    end
+
+    Note over User,Gen: 基本フロー 10〜11 「画像を保存」は a タグの download 属性。通信なし</pre></div>
+    <details class="src">
+      <summary>Mermaid のソースを表示</summary>
+      <div class="src-bar"><button type="button" class="btn copy">ソースをコピー</button></div>
+      <pre><code>sequenceDiagram
+    actor User as 購入者
+    box rgba(47,111,219,0.10) ブラウザー React
+        participant Menu as Completion&lt;br/&gt;Menu.jsx
+        participant Action as CompletionImage&lt;br/&gt;Action.jsx
+        participant Capture as captureImage.js
+        participant Gen as AiImage&lt;br/&gt;Generation.jsx
+        participant Http as api/aiImages.js&lt;br/&gt;api/http.js
+    end
+    box rgba(27,127,92,0.12) Canvas API FastAPI
+        participant Main as main.py
+        participant AiSvc as ai_service.py
+        participant Catalog as ai_catalog.py
+        participant Provider as ai_provider.py
+        participant History as history_service.py
+    end
+    participant Db as Canvas の MySQL
+    participant Ec as EC API
+    participant OpenAi as OpenAI 画像API
+
+    Note over User,OpenAi: 基本フロー 1〜4 生成前の画像を作る (通信なし)
+    User-&gt;&gt;Menu: 「AI生成」をクリック
+    Menu--&gt;&gt;User: メニュー (新しく作&lt;br/&gt;成、生成履歴)
+    User-&gt;&gt;Menu: 「新しく作成」&lt;br/&gt;をクリック
+    Menu-&gt;&gt;Action: onCapture() で&lt;br/&gt;capture() を実行
+    Action-&gt;&gt;Capture: captureImage(document,&lt;br/&gt;photoMode,&lt;br/&gt;captureScene, options)
+    Capture--&gt;&gt;Action: dataUrl、&lt;br/&gt;coverageDataUrl、&lt;br/&gt;layout
+    Note right of Capture: 4a 失敗すると Error を&lt;br/&gt;throw。capture() の&lt;br/&gt;catch がエラーを表示&lt;br/&gt;し、ダイアログは開かな&lt;br/&gt;い
+    Action-&gt;&gt;Gen: setImage() で AiImageGeneration を表示
+    Gen--&gt;&gt;User: 「庭の完成イメージ」ダイアログ (生成前)
+
+    Note over User,OpenAi: 基本フロー 5〜6 参考画像を取得する (useQuery が表示時に自動で実行)
+    Gen-&gt;&gt;Http: aiImageApi.productReferences(productIds)
+    Http-&gt;&gt;Main: POST&lt;br/&gt;/api/ai/product-references
+    Note right of Main: backend_identity() が&lt;br/&gt;毎回、EC の&lt;br/&gt;/api/auth/verify でロ&lt;br/&gt;グインを確認する
+    Main-&gt;&gt;Catalog: product_references(ai_settings, productIds)
+    Catalog-&gt;&gt;Catalog: linked_products()
+    Catalog-&gt;&gt;Ec: POST /api/products/references
+    alt 取得できた
+        Ec--&gt;&gt;Catalog: 商品の一覧 (名前、imageUrl)
+        Catalog--&gt;&gt;Main: AiCandidate のリスト (requiresUpload)
+        Main--&gt;&gt;Http: 200 JSON
+        Http--&gt;&gt;Gen: candidates.data
+        Gen--&gt;&gt;User: requiresUpload の植物だけ「参考写真」欄 (AiPlantReference.jsx)
+        opt 参考写真が必要な植物がある
+            User-&gt;&gt;Gen: 「写真を選択」
+            Gen-&gt;&gt;Gen: uploadPhoto() が&lt;br/&gt;readAiReferencePhoto(file)&lt;br/&gt;で形式、容量、画素数を検査
+        end
+    else 5d 取得に失敗
+        Ec--xCatalog: エラーまたはタイムアウト
+        Catalog--xMain: raise ApiError(502 または 504)
+        Main--&gt;&gt;Http: domain_error() がエラ&lt;br/&gt;ーの JSON を返す
+        Http--xGen: throw ApiError で&lt;br/&gt;candidates.isError が&lt;br/&gt;true
+        Gen--&gt;&gt;User: 「植物の参考画像を取得できませんでした。」と「登録画像を再取得」
+    end
+
+    Note over User,OpenAi: 基本フロー 7〜9 生成して履歴に保存する
+    User-&gt;&gt;Gen: 「AIで生成」をクリック
+    Gen-&gt;&gt;Gen: generate() の中で&lt;br/&gt;generationRequest() 送信前&lt;br/&gt;の検査 (7a はここで止まる)
+    Gen--&gt;&gt;User: 「完成イメージを生成中…」
+    Gen-&gt;&gt;Http: aiImageApi.generate(gardenId,&lt;br/&gt;request)
+    Http-&gt;&gt;Main: POST&lt;br/&gt;/api/gardens/{id}/ai-image
+    Main-&gt;&gt;AiSvc: generate_image(db,&lt;br/&gt;ai_settings, owner,&lt;br/&gt;id, request)
+    AiSvc-&gt;&gt;AiSvc: generation_lock(owner) 同じ&lt;br/&gt;利用者の同時生成を防ぐ
+    AiSvc-&gt;&gt;Db: validate_snapshot() 庭の所有者、revision、アセットを確認
+    AiSvc-&gt;&gt;Db: 同じ historyId が保存済みでないか確認
+    AiSvc-&gt;&gt;AiSvc: 画像を準備&lt;br/&gt;(ai_images.py、&lt;br/&gt;ai_frame.py)
+    AiSvc-&gt;&gt;Catalog: linked_products()、&lt;br/&gt;植物ごとに&lt;br/&gt;resolve_reference()
+    Catalog-&gt;&gt;Ec: POST /api/products/references、GET 登録画像
+    Ec--&gt;&gt;Catalog: 商品情報、画像
+    Catalog--&gt;&gt;AiSvc: 参考画像 (PNG) と&lt;br/&gt;ReferenceSummary
+    AiSvc-&gt;&gt;AiSvc: generation_prompt() で指示文&lt;br/&gt;を作る (ai_prompt.py)
+    AiSvc-&gt;&gt;Provider: edit_images(settings,&lt;br/&gt;images, mask, prompt, size)
+    Provider-&gt;&gt;OpenAi: client.images.edit(...)
+    alt 生成できた
+        OpenAi--&gt;&gt;Provider: 生成画像 (b64_json)
+        Provider--&gt;&gt;AiSvc: PNG のバイト列
+        AiSvc-&gt;&gt;History: save_history(session, owner, garden_id, HistorySaveRequest)
+        alt 履歴も保存できた
+            History-&gt;&gt;Db: INSERT HistoryEntity
+            History--&gt;&gt;AiSvc: HistorySummary
+            AiSvc--&gt;&gt;Main: AiImageResponse&lt;br/&gt;(historySaved=True)
+            Main--&gt;&gt;Http: 200 JSON
+            Http--&gt;&gt;Gen: generated
+            Gen-&gt;&gt;Gen: setResult()、履歴一覧のキ&lt;br/&gt;ャッシュを無効にする
+            Gen--&gt;&gt;User: BeforeAfterComparison と「履歴に保存済み」
+        else 9a 履歴の保存に失敗
+            History--xAiSvc: 例外
+            AiSvc-&gt;&gt;AiSvc: except で&lt;br/&gt;session.rollback()、&lt;br/&gt;historyError を設定
+            AiSvc--&gt;&gt;Main: AiImageResponse&lt;br/&gt;(historySaved=False)
+            Main--&gt;&gt;Http: 200 JSON
+            Http--&gt;&gt;Gen: generated
+            Gen--&gt;&gt;User: 画像と「履歴への保存に失敗しました。」
+            User-&gt;&gt;Gen: 「履歴へ再保存」をクリック
+            Gen-&gt;&gt;Http: retrySave() が&lt;br/&gt;imageHistoryApi.save(gardenId,&lt;br/&gt;savePayload)
+            Http-&gt;&gt;History: POST /api/gardens/{id}/image-history (history_routes.py の save() 経由)
+            History-&gt;&gt;Db: INSERT HistoryEntity
+            History--&gt;&gt;Http: 200 HistorySummary
+            Http--&gt;&gt;Gen: 成功
+            Gen--&gt;&gt;User: 「履歴に保存済み」
+        end
+    else 8a 生成に失敗
+        OpenAi--xProvider: エラーまたはタイムアウト
+        Provider--xAiSvc: raise ApiError(502、504 または 429)
+        AiSvc--xMain: 例外がそのまま上がる
+        Main--&gt;&gt;Http: domain_error() がエラ&lt;br/&gt;ーの JSON を返す
+        Http--xGen: throw ApiError
+        Gen-&gt;&gt;Gen: catch で setError()、&lt;br/&gt;finally で setPending(false)
+        Gen--&gt;&gt;User: エラーメッセージ。「AIで生成」を再び押せる
+    end
+
+    Note over User,Gen: 基本フロー 10〜11 「画像を保存」は a タグの download 属性。通信なし</code></pre>
+    </details>
+  </figure>
+
+  <h3>FastAPI の入口と、try / except の読み方</h3>
+  <p>FastAPI には Controller クラスがありません。<code>main.py</code> の中の、デコレーター(<code>@router.post</code>)が付いた関数が入口です。そこから、ほかの <code>.py</code> ファイルの関数を呼びます。</p>
+<pre class="code"><code><span class="file"># kusakari-canvas/backend/kusakari_canvas_api/main.py</span>
+@router.post("/api/gardens/{id}/ai-image", response_model=AiImageResponse)
+def ai_image(id: str, request: AiImageRequest, db: Db, owner: Owner):
+    return generate_image(db, ai_settings, owner, id, request)        <span class="mark"># 矢印 → ai_service.py</span>
+
+<span class="file"># kusakari-canvas/backend/kusakari_canvas_api/ai_service.py(抜粋)</span>
+result = edit_images(settings, images, mask, prompt, size)           <span class="mark"># 矢印 → ai_provider.py → OpenAI。失敗すると ApiError(8a)</span>
+response = AiImageResponse(..., historySaved=False)
+try:
+    save_history(session, owner, garden_id, HistorySaveRequest(...)) <span class="mark"># 矢印 → history_service.py → MySQL</span>
+    response.historySaved = True
+except Exception as error:
+    session.rollback()                                               <span class="mark"># 9a 例外を外に出さず、応答に結果を書く</span>
+    response.historyError = "画像は生成されましたが…"
+return response                                                      <span class="mark"># どちらの場合も 200</span></code></pre>
+
+  <h3>たどった記録</h3>
+  <div class="table-wrap"><table class="w-min">
+    <thead><tr><th>ステップ</th><th>見た場所</th><th>分かったこと</th></tr></thead>
+    <tbody>
+      <tr><td class="no">1、2</td><td><code>EditorPage.jsx</code> 252行目<br><code>CompletionMenu.jsx</code> 53〜58行目</td><td>「AI生成」は <code>setOpen()</code> でメニューを開くだけ</td></tr>
+      <tr><td class="no">3、4</td><td><code>CompletionMenu.jsx</code> 42〜45行目<br><code>CompletionImageAction.jsx</code> 31〜49、55〜63行目<br><code>captureImage.js</code> 26行目</td><td><code>capture()</code> → <code>captureImage()</code> がブラウザーの中で画像を作る。通信しない</td></tr>
+      <tr><td class="no">4a</td><td><code>captureImage.js</code> 10、13行目<br><code>CompletionImageAction.jsx</code> 41〜44行目</td><td>失敗は <code>throw</code> → <code>catch</code> で <code>setError()</code>。<code>setImage()</code> が呼ばれないのでダイアログは開かない</td></tr>
+      <tr><td class="no">5</td><td><code>AiImageGeneration.jsx</code> 28〜33行目<br><code>aiImages.js</code> 7〜9行目</td><td><code>useQuery</code> が表示時に <code>POST /api/ai/product-references</code> を送る</td></tr>
+      <tr><td class="no">5</td><td><code>main.py</code> 170〜172行目<br><code>ai_catalog.py</code> 101〜137行目<br>EC の <code>CatalogController.java</code> 34〜37行目</td><td><code>product_references()</code> → <code>linked_products()</code> が EC の <code>POST /api/products/references</code> を呼ぶ</td></tr>
+      <tr><td class="no">5d</td><td><code>ai_catalog.py</code> 120〜129行目<br><code>main.py</code> 110〜112行目<br><code>AiImageGeneration.jsx</code> 206〜209行目</td><td>EC のエラーは <code>ApiError(502 / 504)</code> → <code>domain_error()</code> → 画面は <code>candidates.isError</code></td></tr>
+      <tr><td class="no">6、6a</td><td><code>AiImageGeneration.jsx</code> 56〜73行目</td><td><code>readAiReferencePhoto()</code> がブラウザーの中で写真を検査する。通信しない</td></tr>
+      <tr><td class="no">7、7a</td><td><code>AiImageGeneration.jsx</code> 75〜106、108〜123行目</td><td><code>generationRequest()</code> が送信前に検査し、<code>POST /api/gardens/{id}/ai-image</code> を送る</td></tr>
+      <tr><td class="no">8</td><td><code>main.py</code> 166〜168行目<br><code>ai_service.py</code> 80〜117行目<br><code>ai_provider.py</code> 11〜26行目</td><td><code>generate_image()</code>。ロック → 庭の確認 → 参考画像の取得 → 指示文 → <code>edit_images()</code> → OpenAI</td></tr>
+      <tr><td class="no">8a</td><td><code>ai_provider.py</code> 27〜42行目</td><td>OpenAI のエラーの種類ごとに <code>ApiError</code> へ変換する</td></tr>
+      <tr><td class="no">9</td><td><code>ai_service.py</code> 125〜132行目<br><code>history_service.py</code> 176〜218行目</td><td><code>save_history()</code> が MySQL に履歴を追加し、<code>historySaved=True</code> にする</td></tr>
+      <tr><td class="no">9a</td><td><code>ai_service.py</code> 133〜140行目<br><code>AiImageGeneration.jsx</code> 151〜169、192〜197行目<br><code>history_routes.py</code> 20〜22行目</td><td>保存に失敗しても 200。画面の <code>retrySave()</code> が <code>POST …/image-history</code> で再保存する</td></tr>
+      <tr><td class="no">10、11</td><td><code>AiImageGeneration.jsx</code> 188〜190行目</td><td><code>&lt;a download&gt;</code> によるブラウザーのダウンロード。通信しない</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>この例の読みどころ</h3>
+  <ul>
+    <li><strong>クラスがなくても、ファイルをライフラインにできます。</strong>Python の関数は <code>import</code> で別のファイルから読み込まれます。<code>from .ai_catalog import linked_products</code> とあれば、<code>linked_products()</code> の呼び出しは <code>ai_catalog.py</code> への矢印です。</li>
+    <li><strong>自分たちのコードの外は、1本のライフラインで止めます。</strong>OpenAI の中で何が起きるかは書けません。「何を渡し、何が返るか」だけを書きます。Canvas から見た EC API も同じ扱いにしました。EC の中の流れを知りたいときは、EC 側の図を別に書きます。</li>
+    <li><strong>HTTP のクライアントを探すと、外部への矢印が見つかります。</strong>Canvas API では <code>httpx</code> と <code>OpenAI(…)</code> です。<code>ai_catalog.py</code> の <code>client.stream("POST", settings.ec_origin + "/api/products/references", …)</code> が EC への矢印です。</li>
+    <li><strong>200 の応答が、成功とは限りません。</strong>9a では、画像の生成は成功し、履歴の保存だけが失敗しています。サーバーは例外を外に出さず、<code>historySaved=False</code> を入れて 200 を返します。<code>try</code> と <code>except</code> を読まないと、この枝は見つかりません。</li>
+    <li><strong>画面だけで終わるステップは、サーバー側に矢印を引きません。</strong>このユースケースは、11ステップのうち通信するのが 5、8、9 だけです。代替フローも多くが画面の中の検査です。コードで <code>await</code> と API の呼び出しがないことを確かめてから、省きます。</li>
+    <li><strong>毎回の共通処理は、ノート1つにします。</strong>Canvas API は、リクエストを受けるたびに EC へログインを確認します(<code>main.py</code> の <code>backend_identity()</code> と <code>auth.py</code>)。全部の矢印に書くと図が埋まるので、最初の1か所にノートで書きました。</li>
+  </ul>
+</section>
+
+<section id="pitfalls">
+  <h2>つまずきやすい点</h2>
+  <p>4つの例で実際に出てきた、コードを読み違えやすい場所をまとめます。</p>
+  <div class="table-wrap"><table class="w-min">
+    <thead><tr><th>こう見える</th><th>実際は</th><th>確かめ方</th><th>出てきた例</th></tr></thead>
+    <tbody>
+      <tr><td>画面のファイルに <code>fetch</code> がない。通信していない</td><td>共通のフックや <code>api.js</code> が通信している</td><td>呼んでいる関数の定義を、<code>fetch</code> が出てくるまでたどる</td><td>EC-A07 の <code>useResource.run()</code></td></tr>
+      <tr><td>ボタンを押したときに通信が始まる</td><td>画面を開いただけで走る通信がある</td><td><code>useEffect</code>、<code>useQuery</code> を探す</td><td>EC-B12 のカート、UC-06 の参考画像</td></tr>
+      <tr><td>成功したら、応答を表示して終わる</td><td>成功のあとに、一覧を取り直す通信が続く</td><td>API を呼んだ行の、次の行を読む</td><td>EC-A07、EC-S09 の <code>reload()</code></td></tr>
+      <tr><td>Repository のメソッドに中身がない。何もしていない</td><td>メソッド名とアノテーションから SQL が作られる</td><td><code>@Query</code>、<code>@Lock</code> とメソッド名を読む</td><td><code>lock()</code>、<code>findByDeletedAtIsNull()</code></td></tr>
+      <tr><td><code>save()</code> を呼んでいない。保存していない</td><td><code>@Transactional</code> の中で読んだ Entity は、変更が自動で保存される</td><td>クラスかメソッドに <code>@Transactional</code> があるかを見る</td><td>EC-S09 の <code>markReady()</code>、EC-B12 の <code>stock.setQuantity()</code></td></tr>
+      <tr><td><code>throw</code> の先が分からない</td><td>例外を JSON に変える専用のファイルがある</td><td>例外のクラス名で検索する</td><td><code>ApiErrors.java</code>、<code>main.py</code> の <code>domain_error()</code></td></tr>
+      <tr><td>メッセージのある行が、その表示の原因</td><td>手前の検査で止まり、その行まで届かないことがある</td><td>入口からその行まで、条件を順に確かめる</td><td>EC-A07 の <code>name.isEmpty()</code></td></tr>
+      <tr><td>200 が返れば、すべて成功</td><td>応答の中に、一部が失敗したという値が入ることがある</td><td><code>try</code> と <code>except</code>(<code>catch</code>)の中で、例外を投げ直しているかを見る</td><td>UC-06 の <code>historySaved</code></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="checklist">
+  <h2>チェックリスト</h2>
+  <p>図を書き終えたら、次の項目を確かめます。</p>
+  <ul class="checklist">
+    <li><input type="checkbox" id="chk-1"><label for="chk-1">すべての矢印について、ファイル名と関数名を言える</label></li>
+    <li><input type="checkbox" id="chk-2"><label for="chk-2">ライフラインの名前は、コードにあるファイル名やクラス名と同じである</label></li>
+    <li><input type="checkbox" id="chk-3"><label for="chk-3">HTTP の矢印に、メソッドとパスを書いた。パスは <code>api.js</code> が付ける <code>/api</code> を含めて確かめた</label></li>
+    <li><input type="checkbox" id="chk-4"><label for="chk-4">行きの矢印すべてに、戻りの矢印か、例外の矢印がある</label></li>
+    <li><input type="checkbox" id="chk-5"><label for="chk-5">基本フローのすべての番号が、図のノートに出てくる</label></li>
+    <li><input type="checkbox" id="chk-6"><label for="chk-6">サーバーが関わる代替フローが、<code>alt</code> の枝になっている</label></li>
+    <li><input type="checkbox" id="chk-7"><label for="chk-7">画面だけで終わる代替フローは、通信がないことをコードで確かめた</label></li>
+    <li><input type="checkbox" id="chk-8"><label for="chk-8">画面を開いたときの通信と、成功のあとの取り直しを書いた</label></li>
+    <li><input type="checkbox" id="chk-9"><label for="chk-9">トランザクションの範囲を、<code>@Transactional</code> や <code>session.begin()</code> で確かめて書いた</label></li>
+    <li><input type="checkbox" id="chk-10"><label for="chk-10">省略した処理に、ノートで「省略」と書いた</label></li>
+    <li><input type="checkbox" id="chk-11"><label for="chk-11">概要図と詳細図で、HTTP のメソッドとパス、分岐の数が一致している</label></li>
+    <li><input type="checkbox" id="chk-12"><label for="chk-12">ユースケース記述とコードに差があれば、メモしてチームに伝えた</label></li>
+  </ul>
+</section>
+
+<footer>
+  <p>行番号は 2026-11-12 時点のものです。コードが変わるとずれるので、関数名で探し直してください。図のソースは Mermaid の <code>sequenceDiagram</code> です。</p>
+</footer>
+
+</div>
+
+<script>
+(function () {
+  // Keep each diagram at its natural size (scrolling inside its box) unless the reader asks to fit it to the width.
+  function sizeSvg(svg) {
+    var fig = svg.closest('.fig');
+    var box = svg.viewBox && svg.viewBox.baseVal;
+    if (!fig || !box || !box.width) return;
+    svg.style.maxWidth = 'none';
+    svg.style.height = 'auto';
+    svg.style.width = fig.classList.contains('fit') ? '100%' : Math.ceil(box.width) + 'px';
+  }
+  function scan() {
+    document.querySelectorAll('.diagram svg').forEach(sizeSvg);
+  }
+  new MutationObserver(scan).observe(document.body, { childList: true, subtree: true });
+  scan();
+
+  // Drag inside a diagram box to pan it; the boxes also scroll with the wheel, the scrollbars and the arrow keys.
+  var drag = null;
+  document.addEventListener('pointerdown', function (event) {
+    var box = event.target.closest('.diagram');
+    if (!box || event.button !== 0 || event.pointerType === 'touch') return;
+    if (box.closest('.fig').classList.contains('fit')) return;
+    drag = { box: box, x: event.clientX, y: event.clientY, left: box.scrollLeft, top: box.scrollTop, moved: false };
+  });
+  document.addEventListener('pointermove', function (event) {
+    if (!drag) return;
+    var dx = event.clientX - drag.x;
+    var dy = event.clientY - drag.y;
+    if (!drag.moved && Math.abs(dx) + Math.abs(dy) < 4) return;
+    drag.moved = true;
+    drag.box.classList.add('dragging');
+    drag.box.scrollLeft = drag.left - dx;
+    drag.box.scrollTop = drag.top - dy;
+  });
+  ['pointerup', 'pointercancel'].forEach(function (type) {
+    document.addEventListener(type, function () {
+      if (!drag) return;
+      drag.box.classList.remove('dragging');
+      drag = null;
+    });
+  });
+
+  document.addEventListener('click', function (event) {
+    var button = event.target.closest('button');
+    if (!button) return;
+    if (button.classList.contains('fit-toggle')) {
+      var fig = button.closest('.fig');
+      var fit = fig.classList.toggle('fit');
+      button.setAttribute('aria-pressed', String(fit));
+      button.textContent = fit ? '実寸で表示' : '全体を縮小して表示';
+      scan();
+    }
+    if (button.classList.contains('copy')) {
+      var code = button.closest('.src').querySelector('code');
+      var done = function () {
+        button.textContent = 'コピーしました';
+        setTimeout(function () { button.textContent = 'ソースをコピー'; }, 1600);
+      };
+      var select = function () {
+        var range = document.createRange();
+        range.selectNodeContents(code);
+        var selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        button.textContent = '選択しました。Ctrl+C でコピー';
+      };
+      try {
+        navigator.clipboard.writeText(code.textContent).then(done, select);
+      } catch (error) {
+        select();
+      }
+    }
+  });
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/11.12.0/mermaid.min.js"></script>
+<script>
+(function () {
+  if (!window.mermaid) return;
+  var style = getComputedStyle(document.documentElement);
+  function token(name) { return style.getPropertyValue(name).trim(); }
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: 'base',
+    fontFamily: '"Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif',
+    themeVariables: {
+      background: token('--surface'),
+      primaryColor: token('--sunken'),
+      primaryTextColor: token('--fg'),
+      primaryBorderColor: token('--line-strong'),
+      lineColor: token('--fg-soft'),
+      textColor: token('--fg'),
+      actorBkg: token('--sunken'),
+      actorBorder: token('--line-strong'),
+      actorTextColor: token('--fg'),
+      actorLineColor: token('--line-strong'),
+      signalColor: token('--fg'),
+      signalTextColor: token('--fg'),
+      labelBoxBkgColor: token('--sunken'),
+      labelBoxBorderColor: token('--line-strong'),
+      labelTextColor: token('--fg'),
+      loopTextColor: token('--fg'),
+      noteBkgColor: token('--note'),
+      noteBorderColor: token('--note-line'),
+      noteTextColor: token('--fg'),
+      fontSize: '14px'
+    },
+    sequence: { useMaxWidth: false, mirrorActors: true, actorMargin: 30, messageMargin: 34, noteMargin: 12, diagramMarginX: 12, diagramMarginY: 12 }
+  });
+  function run() { mermaid.run({ querySelector: 'pre.mermaid' }); }
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(run, run); else run();
+})();
+</script>
+</body>
+</html>
