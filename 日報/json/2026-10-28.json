@@ -1,0 +1,95 @@
+{
+ "schema": 1,
+ "date": "2026-10-28",
+ "window": {
+  "start": "2026-10-28T03:00:00+09:00",
+  "end": "2026-10-29T03:00:00+09:00"
+ },
+ "provisional": false,
+ "generatedAt": "2026-11-15T13:39:01+09:00",
+ "summary": [
+  "ECとCanvasの両方で、ユースケースの文書と実装の食い違いをまとめて直した。どちらも main に入っている。",
+  "ECでは、未完了の注文や出品中の商品がある会員は退会できなくなり、出店申請に確認画面と申請状況画面が付いた。",
+  "ECのセットアップ用スクリプトを setup.bat と start.bat にまとめ、会員の権限の値を大文字の USER/SELLER/ADMIN だけに限った。"
+ ],
+ "specs": [],
+ "changes": [
+  {
+   "id": "ec-commit-c0103b0",
+   "withSpec": false,
+   "title": "EC: 退会の制限、出店申請の画面、出店者の在庫更新をユースケースに合わせた",
+   "body": "退会ボタンを押したときにサーバーが確認し、未完了の注文、出品中の商品、未処理のキャンセル申請のどれかがあれば退会を断るようにした。出店申請には確認画面と申請状況画面を加え、出店者が管理できる店舗は自分の所属店舗だけにした。在庫の更新は専用のAPIで期待した在庫数と照らし合わせ、食い違えば409(競合を表す応答)で断るようにした(決めた内容は docs/decisions/2026-10-28-buyer-account-use-cases.md)。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "阿部桜雅"
+   ],
+   "links": [
+    {
+     "kind": "commit",
+     "label": "コミット c0103b0 feat: ユースケースに合わせて出店者の店舗・在庫・確認操作と退会・出店申請を…",
+     "url": "https://github.com/abeouga/kusakari-ec/commit/c0103b0c382090564ccbbc6b0b97ae3a098f3329"
+    }
+   ]
+  },
+  {
+   "id": "canvas-commit-0e37ef8",
+   "withSpec": false,
+   "title": "Canvas: 庭の複製を1回の処理にまとめ、ログインが切れても編集が消えないようにした",
+   "body": "庭の複製は、サーバーが1つのトランザクション(全部成功するか、全部取り消すかのまとまり)で行うようにし、途中で失敗しても空の庭が残らないようにした。未保存の編集がある状態でログインが切れたときはECのログイン画面へ移らず、編集を残したまま、ECへの再ログインと保存のやり直しができるようにした(決めた内容は docs/session-expiry-edits.md)。あわせて、庭の名前の上限を作成・変更とも60文字にそろえ、確定した輪郭の頂点を動かして形が成り立たなくなるときは反映せずにエラーを出すようにした。",
+   "repo": "kusakari-canvas",
+   "authors": [
+    "阿部桜雅"
+   ],
+   "links": [
+    {
+     "kind": "commit",
+     "label": "コミット 0e37ef8 feat: ユースケースに合わせて庭の複製・ログイン切れ・輪郭修正の挙動を直す",
+     "url": "https://github.com/abeouga/kusakari-canvas/commit/0e37ef8ea6f945bed97a8b467e8563ae005d8e07"
+    }
+   ]
+  },
+  {
+   "id": "ec-commit-894472f",
+   "withSpec": false,
+   "title": "ECのセットアップ用スクリプトを setup.bat と start.bat にまとめ、会員の権限の値を大文字だけに限った",
+   "body": "重複していたMySQLのセットアップ用スクリプトと一度きりの修復スクリプトを消し、セットアップと起動を setup.bat と start.bat で行う形にまとめた(Canvas 側の同じ修復スクリプトも消した)。データベースの変更 V14 で会員の権限を大文字の USER/SELLER/ADMIN にそろえて小文字・全角・末尾の空白を含む値を保存できなくし、権限は scripts/set-member-role.ps1 で付けるようにした。以前は別のPCで手入力した seller などの値も保存できてしまい、ログインはできても出店者の画面に入れなかったためだ。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "阿部桜雅"
+   ],
+   "links": [
+    {
+     "kind": "commit",
+     "label": "コミット 894472f fix: 古いセットアップスクリプトを削除し、出店者権限の値の揺れを直す",
+     "url": "https://github.com/abeouga/kusakari-ec/commit/894472fa697caaa695bfbf0b54070eb380724ac3"
+    },
+    {
+     "kind": "commit",
+     "label": "コミット 7bd01b3 chore: 使わなくなった1009修正スクリプトを削除する",
+     "url": "https://github.com/abeouga/kusakari-canvas/commit/7bd01b3d3d270f6b533472c77633f8a2c11f1043"
+    }
+   ]
+  },
+  {
+   "id": "ec-commit-ab05728",
+   "withSpec": false,
+   "title": "ECのフッターのロゴの大きさとリンクの見た目を直した",
+   "body": "フッターのロゴ画像を32px四方に固定し、元の画像の大きさで表示されてフッターが縦に伸びる不具合を直した。フッターのリンク(出店者ポータル・注文履歴)もボタンと同じ文字の大きさと色にし、下線を消した。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "阿部桜雅"
+   ],
+   "links": [
+    {
+     "kind": "commit",
+     "label": "コミット ab05728 fix: ECフッターのロゴの大きさとリンクの文字スタイルを直す",
+     "url": "https://github.com/abeouga/kusakari-ec/commit/ab05728989440454a4429abaed426aebd332fdc4"
+    }
+   ]
+  }
+ ],
+ "manual": {
+  "raw": "",
+  "items": []
+ }
+}

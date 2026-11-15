@@ -1,0 +1,273 @@
+/* Kusakari 日報の見た目。色と書体は page.html の :root で決めている。
+   ここでは役割の名前(--bg、--text、--accent など)だけを使う。明るい表示と暗い表示の切り替えは page.html 側で行う。
+   部品の形(ボタン・リンク・ラベル・お知らせ・入力欄・フォーカスの表示)は、デジタル庁デザインシステムの HTML 版の部品に合わせた。 */
+* { box-sizing: border-box; }
+html { background: var(--bg); }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.7;
+  letter-spacing: 0.02em;
+  -webkit-text-size-adjust: 100%;
+}
+h1, h2, h3, p, ol, ul { margin: 0; }
+ol, ul { padding: 0; list-style: none; }
+[hidden] { display: none !important; }
+
+/* フォーカスの表示(DADS: 太い線と、その内側の縁取り。暗い表示では色を入れ替える) */
+:focus-visible { outline: 4px solid var(--focus-line); outline-offset: 2px; box-shadow: 0 0 0 2px var(--focus-ring); }
+
+/* リンク(DADS のリンク) */
+a:any-link { color: var(--link); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+a:visited { color: var(--link-visited); }
+@media (hover: hover) { a:hover { color: var(--link-hover); text-decoration-thickness: 3px; } }
+a:focus-visible {
+  outline: 4px solid var(--focus-line); outline-offset: 2px; border-radius: 4px;
+  color: var(--focus-link-text); background-color: var(--yellow-300); box-shadow: 0 0 0 2px var(--yellow-300);
+}
+
+.shell {
+  display: grid;
+  grid-template-columns: minmax(240px, 288px) minmax(0, 1fr);
+  gap: 48px;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding-block: 32px 80px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+
+/* ---- 左: 日付の一覧(DADS のメニューリストに寄せる) ---- */
+.days {
+  position: sticky;
+  top: 24px;
+  align-self: start;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.days-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 12px; border-bottom: 4px solid var(--accent); }
+.brand { font-weight: 700; font-size: 20px; line-height: 1.5; color: var(--text-strong); }
+.days-toggle { display: none; }
+.day-list { display: flex; flex-direction: column; gap: 4px; }
+.day-link {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 12px;
+  row-gap: 4px;
+  padding: 12px 12px 12px 16px;
+  border-radius: 8px;
+  border-left: 4px solid transparent;
+  text-decoration: none !important;
+}
+.day-link:any-link, .day-link:visited { color: var(--text); }
+@media (hover: hover) { .day-link:hover { background: var(--surface-accent); color: var(--text-strong); } }
+.day-link[aria-current="page"] { background: var(--surface-accent); border-left-color: var(--accent); }
+.day-link[aria-current="page"] .d { color: var(--accent); }
+.day-link .d { font-family: var(--font-mono); font-weight: 700; font-size: 17px; }
+.day-link .w { color: var(--text-muted); font-size: 14px; margin-left: 4px; }
+.day-link .marks { display: flex; flex-wrap: wrap; gap: 4px 8px; justify-content: flex-end; align-items: center; font-size: 14px; color: var(--text-muted); line-height: 1.4; }
+.day-link .sum {
+  grid-column: 1 / -1;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-sub);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ---- 右: 1日分 ---- */
+.day { min-width: 0; display: flex; flex-direction: column; gap: 48px; }
+.empty { color: var(--text-muted); }
+.day-head { display: flex; flex-direction: column; gap: 8px; }
+.day-head h1 { font-size: 36px; line-height: 1.4; font-weight: 700; color: var(--text-strong); letter-spacing: 0.01em; }
+.day-head .line { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: center; color: var(--text-muted); font-size: 16px; }
+.mono { font-family: var(--font-mono); }
+.pager { display: flex; gap: 24px; font-size: 16px; }
+
+/* 暫定の知らせ(DADS のお知らせバナー、警告・左に色の帯) */
+.notice {
+  border: 2px solid var(--notice-line);
+  box-shadow: inset 16px 0 0 0 var(--notice-bar);
+  padding: 16px 24px 16px 40px;
+  color: var(--text);
+  max-width: 44em;
+}
+
+/* 3行まとめ(枠で囲む) */
+.summary {
+  display: flex; flex-direction: column; gap: 12px;
+  max-width: 48em;
+  counter-reset: sum;
+  padding: 24px;
+  border-radius: 12px;
+  background: var(--surface-accent);
+  border: 1px solid var(--line-accent);
+}
+.summary li {
+  counter-increment: sum;
+  display: grid;
+  grid-template-columns: 2em minmax(0, 1fr);
+  font-size: 18px;
+  line-height: 1.7;
+  color: var(--text-strong);
+}
+.summary li::before {
+  content: counter(sum);
+  display: inline-grid; place-items: center;
+  width: 1.5em; height: 1.5em; margin-top: 0.15em;
+  border-radius: 50%;
+  background: var(--accent); color: var(--on-accent);
+  font-family: var(--font-mono); font-weight: 700; font-size: 14px;
+}
+
+/* 見出し(DADS の見出し: 大きめ・太字、下に区切り線) */
+.block { display: flex; flex-direction: column; }
+.block-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; padding-bottom: 12px; border-bottom: 1px solid var(--line-strong); }
+.block-head h2 { font-size: 28px; line-height: 1.5; font-weight: 700; color: var(--text-strong); }
+.block-head .count {
+  font-family: var(--font-mono); font-weight: 700; font-size: 16px;
+  color: var(--accent); background: var(--surface-accent); border-radius: 999px; padding: 0 10px;
+}
+.block-head .note { color: var(--text-muted); font-size: 16px; flex-basis: 100%; }
+.block > .empty { padding: 16px 0; }
+
+.item {
+  display: grid;
+  grid-template-columns: 7.5em minmax(0, 1fr);
+  column-gap: 24px;
+  padding: 24px 0;
+  border-bottom: 1px solid var(--line);
+}
+.item .side { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding-top: 2px; }
+.item .main { min-width: 0; display: flex; flex-direction: column; gap: 8px; max-width: 46em; }
+.item h3 { font-size: 20px; line-height: 1.5; font-weight: 700; color: var(--text-strong); }
+.item .body { overflow-wrap: anywhere; }
+.item .reason {
+  font-size: 16px; color: var(--text-sub);
+  border-left: 4px solid var(--line); padding-left: 12px;
+}
+.item .reason b { font-weight: 700; color: var(--text-strong); }
+.meta { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 14px; color: var(--text-muted); }
+.links { display: flex; flex-direction: column; gap: 4px; font-size: 16px; }
+.links a { overflow-wrap: anywhere; }
+
+/* ラベル(DADS のチップラベル filled-1: 枠線+淡い背景、角丸8px) */
+.chip {
+  display: inline-flex; align-items: center;
+  min-height: 28px;
+  font-size: 14px;
+  line-height: 1;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--_line, var(--c-drop-line));
+  background: var(--_bg, var(--c-drop-bg));
+  color: var(--_text, var(--c-drop-text));
+  white-space: nowrap;
+}
+.chip.confirmed { --_line: var(--c-ok-line); --_bg: var(--c-ok-bg); --_text: var(--c-ok-text); }
+.chip.proposed { --_line: var(--c-prop-line); --_bg: var(--c-prop-bg); --_text: var(--c-prop-text); }
+.chip.in_progress { --_line: var(--c-wip-line); --_bg: var(--c-wip-bg); --_text: var(--c-wip-text); }
+.chip.dropped { --_line: var(--c-drop-line); --_bg: var(--c-drop-bg); --_text: var(--c-drop-text); }
+.chip.manual { --_line: var(--c-manual-line); --_bg: var(--c-manual-bg); --_text: var(--c-manual-text); }
+.chip.check { --_line: var(--c-check-line); --_bg: var(--c-check-bg); --_text: var(--c-check-text); }
+.chip.prov { --_line: var(--c-prov-line); --_bg: var(--c-prov-bg); --_text: var(--c-prov-text); }
+.chip.read { --_line: var(--c-read-line); --_bg: var(--c-read-bg); --_text: var(--c-read-text); font-family: var(--font-mono); font-weight: 400; }
+.day-link .chip { min-height: 24px; font-size: 13px; padding: 2px 6px; }
+
+/* ---- コメント(DADS のボタン・入力欄) ---- */
+.thread-slot { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.item-talk { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 4px; }
+.item-talk .thread-slot { align-self: stretch; margin-top: 0; }
+.btn {
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  min-height: 40px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid currentColor;
+  background: var(--bg);
+  color: var(--accent);
+  cursor: pointer;
+  text-underline-offset: 3px;
+}
+@media (hover: hover) { .btn:hover { background: var(--accent-hover-bg); color: var(--accent-strong); text-decoration: underline; } }
+.btn.primary { border: 4px double transparent; background: var(--accent); color: var(--on-accent); }
+@media (hover: hover) { .btn.primary:hover { background: var(--accent-strong); color: var(--on-accent); } }
+.btn.danger { color: var(--danger); }
+.btn:disabled { background: var(--disabled-bg); color: var(--disabled-text); border-color: transparent; cursor: default; text-decoration: none; }
+.thread-toggle { min-height: 36px; font-size: 14px; padding: 6px 12px; }
+.thread { display: flex; flex-direction: column; gap: 16px; background: var(--surface); border-radius: 12px; padding: 16px; }
+.thread .btn:not(.primary):not(:disabled) { background: transparent; }
+@media (hover: hover) { .thread .btn:not(.primary):not(:disabled):hover { background: var(--accent-hover-bg); } }
+.posts { display: flex; flex-direction: column; gap: 16px; }
+.post { display: flex; flex-direction: column; gap: 4px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.post .who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; font-size: 14px; color: var(--text-muted); }
+.post .who .name { font-weight: 700; color: var(--text-strong); font-size: 16px; }
+.post .who .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; align-self: center; background: var(--dot); }
+.post .who .tag { font-size: 14px; color: var(--caution-text); }
+.post .text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.post .acts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 14px; color: var(--text-sub); }
+.post .acts .btn { min-height: 32px; font-size: 14px; padding: 4px 12px; }
+.composer { display: flex; flex-direction: column; gap: 8px; }
+.composer textarea, .post textarea, .composer input {
+  font: inherit;
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line-input);
+  border-radius: 8px;
+  padding: 12px 16px;
+}
+.composer textarea::placeholder, .composer input::placeholder { color: var(--text-muted); }
+.composer textarea:hover, .composer input:hover { border-color: var(--line-input-hover); }
+.composer textarea, .post textarea { min-height: 6em; resize: vertical; }
+.composer .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+/* 画像: 付ける前の小さな見本、コメントに付いた画像 */
+.file-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.btn.attach { display: inline-flex; align-items: center; }
+.file-input:focus-visible + .btn.attach, .btn.attach:has(+ .file-input:focus-visible) { outline: 4px solid var(--focus-line); outline-offset: 2px; box-shadow: 0 0 0 2px var(--focus-ring); }
+.thumbs { display: flex; flex-wrap: wrap; gap: 8px; }
+.thumb { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.thumb img { width: 96px; height: 96px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); }
+.thumb .btn { min-height: 32px; font-size: 14px; padding: 4px 10px; }
+.post .images { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.img-btn { padding: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); cursor: zoom-in; overflow: hidden; max-width: 100%; }
+.img-btn img { display: block; width: 160px; height: 120px; object-fit: cover; }
+.img-btn.big { cursor: zoom-out; flex-basis: 100%; }
+.img-btn.big img { width: auto; height: auto; max-width: 100%; max-height: 80vh; object-fit: contain; }
+.img-missing { display: inline-grid; place-items: center; width: 160px; height: 120px; padding: 8px; font-size: 14px; color: var(--text-muted); }
+.composer .row input { width: auto; flex: 1 1 10em; min-width: 0; }
+.composer .msg, .thread .msg { font-size: 16px; color: var(--danger); }
+.thread .hint { color: var(--text-muted); }
+
+@media (max-width: 860px) {
+  .shell { grid-template-columns: minmax(0, 1fr); gap: 32px; padding-block: 16px 56px; }
+  .days { position: static; max-height: none; overflow: visible; }
+  .days-toggle {
+    display: inline-flex; align-items: center;
+    font: inherit; font-size: 14px; font-weight: 700;
+    min-height: 36px; padding: 6px 12px;
+    color: var(--accent); background: var(--bg);
+    border: 1px solid currentColor; border-radius: 8px; cursor: pointer;
+  }
+  .days:not(.open) .day-list { display: none; }
+  .day-head h1 { font-size: 28px; }
+  .block-head h2 { font-size: 24px; }
+  .summary { padding: 16px; }
+  .summary li { font-size: 17px; }
+  .item { grid-template-columns: minmax(0, 1fr); row-gap: 12px; }
+  .item .side { flex-direction: row; flex-wrap: wrap; padding-top: 0; }
+}

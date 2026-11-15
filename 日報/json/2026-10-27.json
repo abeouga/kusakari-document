@@ -1,0 +1,19 @@
+{
+ "schema": 1,
+ "date": "2026-10-27",
+ "window": {
+  "start": "2026-10-27T03:00:00+09:00",
+  "end": "2026-10-28T03:00:00+09:00"
+ },
+ "provisional": false,
+ "generatedAt": "2026-11-15T13:47:15+09:00",
+ "summary": [
+  "この日は kusakari-canvas と kusakari-ec のどちらにも、コミット・issue・PR の動きはなかった。"
+ ],
+ "specs": [],
+ "changes": [],
+ "manual": {
+  "raw": "",
+  "items": []
+ }
+}
