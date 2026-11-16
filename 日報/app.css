@@ -244,8 +244,16 @@ a:focus-visible {
 .thread { display: flex; flex-direction: column; gap: 16px; background: var(--surface); border-radius: 12px; padding: 16px; }
 .thread .btn:not(.primary):not(:disabled) { background: transparent; }
 @media (hover: hover) { .thread .btn:not(.primary):not(:disabled):hover { background: var(--accent-hover-bg); } }
+/* 投稿フォーム(.foot)はコメント欄の一番上に置き、下の線でコメントの一覧と分ける。 */
+.thread .foot { padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+.sort { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; font-size: 14px; color: var(--text-sub); }
+.sort[hidden] { display: none; }
+.sort .btn { min-height: 32px; font-size: 14px; padding: 4px 12px; }
+.thread .sort .btn[aria-pressed="true"]:not(:disabled) { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+@media (hover: hover) { .thread .sort .btn[aria-pressed="true"]:not(:disabled):hover { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--on-accent); } }
 .posts { display: flex; flex-direction: column; gap: 16px; }
 .post { display: flex; flex-direction: column; gap: 4px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.post:last-child { padding-bottom: 0; border-bottom: 0; }
 .post .who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; font-size: 14px; color: var(--text-muted); }
 .post .who .name { font-weight: 700; color: var(--text-strong); font-size: 16px; }
 .post .who .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; align-self: center; background: var(--dot); }

@@ -24,6 +24,7 @@
     not_granted: '画像を付けられるのは「編集者」として招待されている人だけです。',
   };
   var NICK_KEY = 'kusakari-nippo-nick';
+  var ORDER_KEY = 'kusakari-nippo-order'; // コメントの並び順('new' か 'old')。見ている人のブラウザに覚えておく
   // 新着の印を出し始めた時刻。これより前のコメントは、だれにとっても既読として扱う。
   var UNREAD_SINCE = '2026-11-16T08:57:00.000Z';
   var NEWS_MAX = 10;                  // ページの上の「新着コメント」に並べる数
@@ -42,6 +43,7 @@
     editing: null,    // { id, text } 編集中のコメント
     confirmDelete: null,
     open: {},         // 項目ID -> true。コメント欄を開いている項目
+    order: 'new',     // コメントの並び順。'new' は新しい順、'old' は古い順
     names: {},        // id -> { name, color }
     reads: null,      // 見ている人の既読の記録 { since, marks }。読めるまでは null(新着の印を出さない)
     readsRef: null,   // 既読の記録の保存先(見ている人だけが読み書きできる場所)
@@ -96,6 +98,9 @@
   }
   function readNick() { try { return localStorage.getItem(NICK_KEY) || ''; } catch (e) { return ''; } }
   function saveNick(value) { try { localStorage.setItem(NICK_KEY, value); } catch (e) { /* 保存できなくても動く */ } }
+  function readOrder() { try { return localStorage.getItem(ORDER_KEY) === 'old' ? 'old' : 'new'; } catch (e) { return 'new'; } }
+  function saveOrder(value) { try { localStorage.setItem(ORDER_KEY, value); } catch (e) { /* 保存できなくても動く */ } }
+  state.order = readOrder();
 
   // ---- 新着(まだ読んでいないコメント) ----
   // 既読の記録は、見ている人ごとに1つ。since より前のコメントはすべて既読。
@@ -256,7 +261,9 @@
       state.open[j.item] = true;
       refreshThreads();
       var article = document.getElementById('i-' + j.item);
-      target = (article && article.querySelector('.thread-slot')) || target;
+      var slot = article && article.querySelector('.thread-slot');
+      // 欄の上には投稿フォームがあるので、新着のコメントがあればそこへ移る。
+      target = (slot && slot.querySelector('.post.is-new')) || slot || target;
     }
     if (target) target.scrollIntoView({ block: inItem ? 'center' : 'start' });
   }
@@ -772,23 +779,49 @@
     refreshChecks();
     state.notice = null;
   }
+  /** 並び順の切り替え。選んだ順は、開いているすべてのコメント欄に効き、次に開いたときも同じ順になる。 */
+  function sortNode() {
+    function button(order, label) {
+      return h('button', { type: 'button', class: 'btn', 'data-order': order, 'aria-pressed': 'false', text: label, on: { click: function () {
+        if (state.order === order) return;
+        state.order = order;
+        saveOrder(order);
+        refreshThreads();
+      } } });
+    }
+    return h('div', { class: 'sort', role: 'group', 'aria-label': 'コメントの並び順' }, [
+      h('span', { class: 'sort-label', text: '並び順' }),
+      button('new', '新しい順'),
+      button('old', '古い順'),
+    ]);
+  }
   function renderThread(slot, key, ids) {
     var posts = postsFor(key, ids).map(function (p) {
       return key === '' && p.item ? Object.assign({}, p, { orphan: true }) : p;
     });
 
+    if (state.order === 'new') posts.reverse(); // postsFor は古い順で返す
+
+    // 上から、投稿フォーム(.foot)、並び順の切り替え(.sort)、コメントの一覧(.posts)。
+    // 投稿フォームと並び順のボタンは、書きかけの入力やフォーカスを失わないよう、作り直さない。
     var thread = slot.querySelector(':scope > .thread');
     if (!thread) {
-      thread = h('div', { class: 'thread' }, [h('div', { class: 'posts' }), h('div', { class: 'foot' })]);
+      thread = h('div', { class: 'thread' }, [h('div', { class: 'foot' }), sortNode(), h('div', { class: 'posts' })]);
       slot.appendChild(thread);
     }
 
+    var sort = thread.querySelector('.sort');
+    sort.hidden = posts.length < 2; // 並べ替えるものが無いときは出さない
+    sort.querySelectorAll('button').forEach(function (btn) {
+      btn.setAttribute('aria-pressed', btn.getAttribute('data-order') === state.order ? 'true' : 'false');
+    });
+
     var list = thread.querySelector('.posts');
     list.textContent = '';
+    if (state.notice) list.appendChild(h('p', { class: 'msg', text: state.notice }));
     if (!state.loaded) list.appendChild(h('p', { class: 'hint', text: state.slow ? 'コメントをまだ読み込めていません。通信の状態を確認してください。' : 'コメントを読み込んでいます。' }));
     else if (!posts.length) list.appendChild(h('p', { class: 'hint', text: 'まだコメントはありません。気づいたことや質問を書けます。' }));
     posts.forEach(function (p) { list.appendChild(postNode(p)); });
-    if (state.notice) list.appendChild(h('p', { class: 'msg', text: state.notice }));
 
     var foot = thread.querySelector('.foot');
     if (state.readOnly) {
