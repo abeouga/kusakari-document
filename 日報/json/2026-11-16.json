@@ -1,0 +1,285 @@
+{
+ "schema": 1,
+ "date": "2026-11-16",
+ "window": {
+  "start": "2026-11-16T03:00:00+09:00",
+  "end": "2026-11-17T03:00:00+09:00"
+ },
+ "provisional": false,
+ "generatedAt": "2026-11-17T07:15:37+09:00",
+ "summary": [
+  "組織から担当者を外す操作について、仕様の大半が決まった。外すとアカウントの削除（除名）になり、残りの論点は子 issue #167〜#170 に分けた。",
+  "EC と Canvas の DB-reset.bat が、準備から作り直しまで確認なしで進むようになり、ほかの PC でも成功した。",
+  "開発の記録を kusakari-document へ移す PR が EC と Canvas に1つずつ開いている。ほかの PC で MySQL に接続できない不具合が2件報告された（canvas #82、ec #165）。"
+ ],
+ "specs": [
+  {
+   "id": "ec-issue-153",
+   "status": "confirmed",
+   "needsCheck": false,
+   "title": "組織から外す操作は、アカウントの削除（除名）にする",
+   "body": "組織に所属しないアカウントは存在しないので、組織から外す操作はアカウントの削除（除名）にする。外した人が発行した招待キーは取り消し、その人が操作したキャンセルや返金の記録は残す。外したことは本人に通知し、誰がいつ外したかを記録し、外す前に確認を出す。",
+   "reason": "#153 の 11-16 のコメントで項目3〜10が決まり、その内容を #166 に引き継いで #153 を閉じたため。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "issue",
+     "label": "issue #153 [Plan] 組織から担当者を外す操作の仕様を決める",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/153"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #166 [Feature] 組織からの除名と、店舗に所属していないアカウントの扱い（#1…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/166"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #105",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/105"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #104",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/104"
+    }
+   ]
+  },
+  {
+   "id": "ec-issue-166",
+   "status": "proposed",
+   "needsCheck": false,
+   "title": "除名したときに、会員とログインをどう扱うかはまだ決まっていない",
+   "body": "除名した人の会員の情報は、キャンセルや返金の記録から参照されているので、消せない。そのため、会員を「削除済み」の状態で残すのか、ログイン（Cognito のユーザー）を削除するのか無効にするのかを決める必要がある。外した人は店舗側のアカウントのまま残すとした #104 の決定も、除名に合わせて改める。",
+   "reason": "#166 の本文で、子 issue をまだ作っていない未決の項目として並んでいるため。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "issue",
+     "label": "issue #166 [Feature] 組織からの除名と、店舗に所属していないアカウントの扱い（#1…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/166"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #104",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/104"
+    }
+   ]
+  },
+  {
+   "id": "ec-issue-167",
+   "status": "confirmed",
+   "needsCheck": true,
+   "title": "オーナーと自分自身は除名できず、ORG_ADMIN の人は除名できる",
+   "body": "オーナーは除名できないことにし、オーナーを譲る仕組みは別の issue で作る。どのロールでも、自分自身は除名できない。ORG_ADMIN の人は除名でき、ORG_ADMIN が別の ORG_ADMIN を除名することもできる。",
+   "reason": "本文の決定にある「ORG_ADMIN が別の ORG_ADMIN を除名できる」が、前提の「組織から外せるのはオーナーだけ（#105）」と食い違い、ORG_ADMIN の項目の最後も「オーナーは」で途切れている。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "issue",
+     "label": "issue #167 [Plan] 組織から外せない人を決める",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/167"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #105",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/105"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #166 [Feature] 組織からの除名と、店舗に所属していないアカウントの扱い（#1…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/166"
+    }
+   ]
+  },
+  {
+   "id": "ec-issue-168",
+   "status": "confirmed",
+   "needsCheck": true,
+   "title": "どの店舗にも所属していない人を、ORG_ADMIN 以上が画面で店舗に所属させる",
+   "body": "ORG_ADMIN 以上のロールを持つ人は、自分の組織でどの店舗にも所属していないアカウントを一覧で取得し、店舗に所属させられる。運営の ADMIN はこの操作に関わらず、ほかの組織のアカウントには触れられない。所属させたときのロールは無しにし、外す操作の前には確認のダイアログを出し、除名した人のデータは残して ORG_ADMIN が復帰させられるようにする。",
+   "reason": "項目6の「除名した人には通知しない」が #166 の「外したことを本人に通知する」と食い違い、「データを残して復帰できる」と除名をアカウントの削除とした #153 の決定の関係も読み取れない。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "issue",
+     "label": "issue #168 [Plan] 店舗に所属していないアカウントを店舗に所属させる操作と、外す前の確…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/168"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #166 [Feature] 組織からの除名と、店舗に所属していないアカウントの扱い（#1…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/166"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #153 [Plan] 組織から担当者を外す操作の仕様を決める",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/153"
+    }
+   ]
+  },
+  {
+   "id": "ec-issue-169",
+   "status": "proposed",
+   "needsCheck": false,
+   "title": "店舗に所属していない人には、店舗に依存しない通知だけを見せる",
+   "body": "どの店舗にも所属していないアカウントも店舗専用ページに入れるが、商品管理などのボタンは出さず、店舗に依存しない通知だけを見せる。「○○から注文が来ました」のような店舗に依存する通知は、外される前に見えていたものも見えなくする。そのため、通知の表に通知の種類を表す列を足す必要がある。",
+   "reason": "通知の範囲は本文で「決定」と書かれたが、除名した人への通知をこの issue で扱うかがまだ決まっておらず、実装も始まっていないため。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "issue",
+     "label": "issue #169 [Feature] どの店舗にも所属していないアカウントでも、店舗専用ページの通…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/169"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #166 [Feature] 組織からの除名と、店舗に所属していないアカウントの扱い（#1…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/166"
+    }
+   ]
+  },
+  {
+   "id": "ec-issue-170",
+   "status": "proposed",
+   "needsCheck": false,
+   "title": "担当者を外す操作の記録の仕組みを決める issue を作った",
+   "body": "誰がいつ、誰を組織や店舗の担当から外したかを残す仕組みを決める。記録する操作と内容、記録を入れる表の持ち方、記録を見られる人を決める必要がある。案はまだ出ていない。",
+   "reason": "issue を作っただけで、決めることの項目にまだ決定が無いため。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "issue",
+     "label": "issue #170 [Plan] 担当者を外す操作の記録の仕組みを決める",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/170"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #166 [Feature] 組織からの除名と、店舗に所属していないアカウントの扱い（#1…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/166"
+    }
+   ]
+  },
+  {
+   "id": "canvas-issue-83",
+   "status": "proposed",
+   "needsCheck": false,
+   "title": "開発の記録は kusakari-document に置き、docs には今の仕様と ADR だけを残す",
+   "body": "EC と Canvas の docs/ にある検証ログ・調査記録・日付ごとの経緯を kusakari-document へ移し、docs/ には今の仕様の説明と設計判断の記録（ADR）だけを残す。今の実装と食い違う文書は直すか消す。AGENTS.md（AI に作業の決まりを伝えるファイル）にも、記録の置き場所の決まりを足す。",
+   "reason": "EC と Canvas の PR はどちらも開いたままで、Canvas の PR には、一緒にマージする相手のリポジトリの書き方が正しいかを確かめるコメントが付いている。",
+   "repo": "kusakari-canvas",
+   "authors": [
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "issue",
+     "label": "issue #83 [Improve] 開発の記録の文書を kusakari-document へ移…",
+     "url": "https://github.com/abeouga/kusakari-canvas/issues/83"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #171 [Improve] 開発の記録の文書を kusakari-document へ移…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/171"
+    },
+    {
+     "kind": "pr",
+     "label": "PR #84 docs: 開発の記録を kusakari-document へ移し、docs …",
+     "url": "https://github.com/abeouga/kusakari-canvas/pull/84"
+    },
+    {
+     "kind": "pr",
+     "label": "PR #172 docs: 開発の記録を kusakari-document へ移し、docs …",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/172"
+    }
+   ]
+  }
+ ],
+ "changes": [
+  {
+   "id": "ec-pr-164",
+   "withSpec": false,
+   "title": "EC と Canvas の DB-reset.bat が、準備から作り直しまで確認なしで進むようになった",
+   "body": "DB-reset.bat（DB を消して最新の構成で作り直すスクリプト）を、アプリの停止と依存の準備まで自分で行うように変えた。確認の文字の入力、管理者への切り替え、ほかのプロセスが DB に接続しているときに止まる処理は、利用者の判断で外した。ほかの PC でも成功したので、DB の初期化の issue と、テスト用アカウント9つの issue を閉じた。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "pr",
+     "label": "PR #164 feat: DB-reset.bat を、準備まで自分で行い確認なしで最後まで進…",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/164"
+    },
+    {
+     "kind": "pr",
+     "label": "PR #79 feat: DB-reset.bat を、準備まで自分で行い確認なしで最後まで進…",
+     "url": "https://github.com/abeouga/kusakari-canvas/pull/79"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #106 [Feature] プロジェクトが使っている MySQL を特定して EC の …",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/106"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #63 [Feature] プロジェクトが使っている MySQL を特定して Canva…",
+     "url": "https://github.com/abeouga/kusakari-canvas/issues/63"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #157 [Feature] テスト用アカウントを9つに切り替え、各 PC の DB に種…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/157"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #103 [Feature] 店舗側アカウントの組織・複数店舗対応（#102 の実装の親 …",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/103"
+    }
+   ]
+  },
+  {
+   "id": "canvas-pr-81",
+   "withSpec": false,
+   "title": "Canvas の DB-reset.bat が uv を見つけられずに止まる不具合を直した",
+   "body": "ほかの PC で、DB-reset.bat が uv（Python の依存を管理する道具）を見つけられずに止まっていた。uv の探し方を setup.bat と同じものにまとめ、探す場所も増やした。それでも見つからないときは「先に setup.bat を実行してください」と表示し、DB に触れずに止まる。",
+   "repo": "kusakari-canvas",
+   "authors": [
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "pr",
+     "label": "PR #81 fix: DB-reset.bat が uv を見つけられずに止まる問題を直し、…",
+     "url": "https://github.com/abeouga/kusakari-canvas/pull/81"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #80 [Bug] DB-reset.batが正常に機能しない",
+     "url": "https://github.com/abeouga/kusakari-canvas/issues/80"
+    }
+   ]
+  }
+ ],
+ "manual": {
+  "raw": "",
+  "items": []
+ }
+}
