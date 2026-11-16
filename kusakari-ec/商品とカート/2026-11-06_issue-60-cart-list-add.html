@@ -1,0 +1,274 @@
+<!doctype html>
+<!-- 元の場所：kusakari-ec の未追跡ファイル docs/mockups/issue-60-cart-list-add.html（2026-11-16 に移動）。#60 の画面モックで、#60 は実装済み -->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>カートから買い物リストを追加（#60 画面モック）</title>
+<!--
+  Issue #60 の画面モックです。アプリには組み込まず、ブラウザで直接開いて確認します。
+  商品・価格・在庫は見た目確認用の固定値で、ECのAPI/MySQLには接続しません。
+  変更点:
+    1. カート右上の「カート / 庭の買い物リスト」セグメントコントロールをなくす
+    2. カートの商品カードの一番下に点線の「＋」カードを置く
+    3. ＋カードを押すと、庭の買い物リストから商品を選ぶポップアップを開き、選んだ商品をカートに追加する
+-->
+<style>
+  :root {
+    --green: #294c3e; --green-2: #285746; --ink: #293a31; --muted: #666e64; --line: #e1e4da;
+    --page: #fcfbf7; --card: #fff; --soft: #eef2e7; --seg: #e9ede5; --card-border: #d3d9cb; --focus: #bb9568;
+    font-family: 'DM Sans', 'Noto Sans JP', sans-serif; color: var(--ink);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  button:disabled { cursor: not-allowed; opacity: .45; }
+  button:focus-visible, a:focus-visible, label:focus-within { outline: 3px solid var(--focus); outline-offset: 3px; }
+  svg { flex: none; }
+  .mock-note { margin: 0; padding: 8px 16px; background: #fff6df; color: #6b5420; font-size: 12px; text-align: center; }
+  .topbar { display: flex; justify-content: space-between; padding: 6px 70px; background: var(--green); color: #fff; font-size: 10px; letter-spacing: .08em; }
+  header.site { display: flex; align-items: center; gap: 40px; padding: 18px 70px; border-bottom: 1px solid var(--line); background: var(--page); }
+  .brand { font-family: 'Noto Serif JP', Georgia, serif; font-size: 24px; color: var(--green); text-decoration: none; }
+  header.site nav { display: flex; gap: 24px; margin: 0 auto; font-size: 13px; }
+  header.site .actions { display: flex; gap: 24px; align-items: center; font-size: 13px; }
+  .badge { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--green); color: #fff; font-size: 11px; }
+
+  main { max-width: 1180px; margin: 0 auto; padding: 40px 24px 80px; }
+  .back-link { display: inline-flex; align-items: center; gap: 6px; padding-bottom: 6px; border-bottom: 1px solid var(--line); color: var(--ink); font-size: 13px; text-decoration: none; }
+  h2 { margin: 32px 0 20px; font-size: 24px; font-weight: 600; }
+  .steps { display: flex; gap: 8px; margin: 0 0 26px; padding: 0; list-style: none; counter-reset: s; font-size: 13px; color: var(--muted); }
+  .steps li { flex: 1; display: flex; align-items: center; gap: 8px; padding-top: 10px; border-top: 3px solid var(--line); counter-increment: s; }
+  .steps li::before { content: counter(s); display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--line); font-size: 12px; }
+  .steps li[aria-current] { border-color: var(--green); color: var(--green); font-weight: 600; }
+  .steps li[aria-current]::before { background: var(--green); color: #fff; }
+  .layout { display: grid; grid-template-columns: 1fr 340px; gap: 48px; align-items: start; }
+  .store { display: flex; align-items: center; gap: 12px; padding: 16px; background: var(--soft); }
+  .store small { display: block; margin-bottom: 4px; color: var(--muted); font-size: 10px; }
+  .store strong { font-size: 13px; font-weight: 500; }
+  .text-button { margin-left: auto; border: 0; background: none; text-decoration: underline; font-size: 12px; }
+
+  .cart-line { display: flex; align-items: flex-start; gap: 17px; padding: 23px 0; border-bottom: 1px solid var(--line); }
+  .cart-line img { width: 75px; height: 100px; object-fit: cover; background: #eee; }
+  .cart-line .main { flex: 1; }
+  .cart-line h3 { margin: 0 0 7px; font-size: 14px; font-weight: 500; }
+  .cart-line p { margin: 0 0 10px; color: var(--muted); font-size: 11px; }
+  .cart-line a { display: inline-block; margin-bottom: 8px; color: var(--green); font-size: 11px; }
+  .from-list { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; padding: 2px 8px; border-radius: 10px; background: var(--soft); color: var(--green); font-size: 10px; vertical-align: 2px; }
+  .qty { display: inline-flex; align-items: center; height: 30px; border: 1px solid #cbd3c4; }
+  .qty button { display: grid; place-items: center; height: 28px; padding: 5px 8px; border: 0; background: none; }
+  .qty span { min-width: 28px; font-size: 12px; text-align: center; }
+  .end { display: flex; flex-direction: column; align-items: flex-end; gap: 20px; }
+  .end strong { font-size: 14px; font-weight: 500; white-space: nowrap; }
+  .icon-button { display: grid; place-items: center; width: 34px; height: 34px; border: 0; border-radius: 8px; background: none; color: #8c9284; }
+  .icon-button:hover { background: var(--soft); }
+
+  /* 新規: 商品カードの一番下に置く点線の＋カード */
+  .add-card { display: flex; align-items: center; gap: 17px; width: 100%; margin-top: 16px; padding: 18px 20px; border: 2px dashed #b9c4b0; border-radius: 12px; background: transparent; text-align: left; transition: background .15s, border-color .15s; }
+  .add-card:hover { border-color: var(--green-2); background: #f3f6ee; }
+  .add-card .plus { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: var(--soft); color: var(--green); }
+  .add-card strong { display: block; font-size: 14px; font-weight: 600; color: var(--green); }
+  .add-card small { color: var(--muted); font-size: 12px; }
+
+  .summary { padding: 28px; border: 1px solid var(--card-border); background: var(--card); }
+  .eyebrow { margin: 0; color: var(--muted); font-size: 10px; letter-spacing: .14em; }
+  .summary h3 { margin: 6px 0 12px; font-size: 18px; font-weight: 500; }
+  .totals div { display: flex; justify-content: space-between; margin: 12px 0; font-size: 12px; }
+  .totals .grand { padding-top: 14px; border-top: 1px solid var(--line); font-size: 15px; }
+  .primary { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 48px; border: 0; border-radius: 8px; background: var(--green); color: #fff; font-size: 14px; }
+  .toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); padding: 12px 20px; border-radius: 10px; background: var(--green); color: #fff; font-size: 13px; opacity: 0; pointer-events: none; transition: opacity .2s; }
+  .toast.show { opacity: 1; }
+
+  /* 新規: 買い物リストから選ぶポップアップ */
+  dialog { width: min(720px, calc(100vw - 32px)); max-height: calc(100vh - 48px); padding: 0; border: 0; border-radius: 16px; background: var(--card); color: var(--ink); box-shadow: 0 24px 60px #1d2c2333; }
+  dialog::backdrop { background: #1d2c2366; }
+  .dlg { display: flex; flex-direction: column; max-height: calc(100vh - 48px); }
+  .dlg-head { display: flex; align-items: flex-start; gap: 12px; padding: 22px 24px 14px; }
+  .dlg-head h3 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
+  .dlg-head p { margin: 0; color: var(--muted); font-size: 12px; }
+  .dlg-head .icon-button { margin-left: auto; }
+  .gardens { display: flex; gap: 8px; padding: 0 24px 14px; overflow-x: auto; border-bottom: 1px solid var(--line); }
+  .garden { display: flex; align-items: center; gap: 10px; padding: 6px 14px 6px 6px; border: 1px solid var(--card-border); border-radius: 999px; background: var(--card); font-size: 13px; white-space: nowrap; }
+  .garden img { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; }
+  .garden small { color: var(--muted); font-size: 11px; }
+  .garden[aria-pressed="true"] { border-color: var(--green-2); background: var(--green-2); color: #fff; }
+  .garden[aria-pressed="true"] small { color: #dfe9e1; }
+  .toolbar { display: flex; align-items: center; gap: 12px; padding: 12px 24px; font-size: 12px; color: var(--muted); }
+  .toolbar button { margin-left: auto; border: 0; background: none; color: var(--green); font-size: 12px; text-decoration: underline; }
+  .items { display: grid; gap: 10px; padding: 0 24px 16px; overflow-y: auto; }
+  .item { display: flex; align-items: center; gap: 14px; padding: 12px; border: 1px solid var(--card-border); border-radius: 12px; cursor: pointer; transition: background .15s, border-color .15s; }
+  .item:hover { border-color: #9fb09a; }
+  .item:has(input:checked) { border-color: var(--green-2); background: #f1f5ee; }
+  .item input { width: 18px; height: 18px; accent-color: var(--green-2); }
+  .item img { width: 56px; height: 70px; border-radius: 8px; object-fit: cover; background: #eee; }
+  .item .info { flex: 1; min-width: 0; }
+  .item strong { display: block; font-size: 14px; font-weight: 600; }
+  .item small { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; }
+  .item .price { font-size: 14px; white-space: nowrap; }
+  .item.in-cart { cursor: default; opacity: .55; }
+  .tag { display: inline-block; margin-top: 6px; padding: 2px 8px; border-radius: 10px; background: var(--soft); color: var(--green); font-size: 11px; }
+  .dlg-foot { display: flex; align-items: center; gap: 16px; padding: 16px 24px; border-top: 1px solid var(--line); }
+  .dlg-foot span { font-size: 13px; }
+  .dlg-foot .primary { width: auto; margin-left: auto; padding: 0 24px; }
+  .ghost { min-height: 48px; padding: 0 18px; border: 1px solid var(--card-border); border-radius: 8px; background: var(--card); font-size: 14px; }
+
+  @media (max-width: 860px) {
+    .topbar, header.site nav { display: none; }
+    header.site { padding: 14px 16px; }
+    main { padding: 24px 16px 60px; }
+    .layout { grid-template-columns: 1fr; gap: 28px; }
+    .dlg-foot { flex-wrap: wrap; gap: 10px; }
+    .dlg-foot span { flex-basis: 100%; }
+    .dlg-foot .primary, .dlg-foot .ghost { flex: 1; margin-left: 0; white-space: nowrap; }
+    .item { gap: 10px; }
+    .item .price { font-size: 13px; }
+  }
+</style>
+</head>
+<body>
+<p class="mock-note">画面モック（issue #60）：商品・価格・在庫は固定値です。ECのAPIには接続していません。</p>
+<div class="topbar"><span>GREEN FOR YOUR EVERYDAY</span><span>ひと鉢からはじまる、緑のある暮らし。</span><span>植物のオンラインストア</span></div>
+<header class="site">
+  <a class="brand" href="#">kusakari.</a>
+  <nav><span>商品を探す</span><span>店舗を探す</span><span>Canvas</span><span>Kusakariについて</span></nav>
+  <div class="actions"><span>アカウント</span><span>注文履歴</span><span>カート <span class="badge" id="header-count">2</span></span></div>
+</header>
+
+<main>
+  <!-- 変更点1: 右上のセグメントコントロール（カート / 庭の買い物リスト）はなくなり、戻るリンクだけが残る -->
+  <a class="back-link" href="#"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m12 19-7-7 7-7M19 12H5"/></svg>戻る</a>
+
+  <h2 id="cart-title">ショッピングカート (2)</h2>
+  <ol class="steps" aria-label="購入の手順"><li aria-current="step">カート</li><li>お支払い・受け取り</li><li>注文完了</li></ol>
+
+  <div class="layout">
+    <div>
+      <div class="store">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+        <div><small>店舗受け取り</small><strong>二子玉川ガーデン</strong></div>
+        <button class="text-button" type="button">変更</button>
+      </div>
+      <div id="cart-items"></div>
+
+      <!-- 変更点2: 商品カードの一番下に点線の＋カード -->
+      <button class="add-card" type="button" id="open-picker" aria-haspopup="dialog">
+        <span class="plus"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span>
+        <span><strong>買い物リストから追加</strong><small>庭に配置した商品をえらんでカートに入れます</small></span>
+      </button>
+    </div>
+
+    <aside class="summary">
+      <p class="eyebrow">ORDER SUMMARY</p>
+      <h3>ご請求内容</h3>
+      <div class="totals">
+        <div><span>商品小計（税込）</span><span id="subtotal"></span></div>
+        <div><span>受取料金</span><span>¥0</span></div>
+        <div><span>うち消費税（内税10%）</span><span id="tax"></span></div>
+        <div class="grand"><strong>合計</strong><strong id="total"></strong></div>
+      </div>
+      <button class="primary" type="button">注文手続きへ</button>
+    </aside>
+  </div>
+</main>
+
+<!-- 変更点3: 買い物リストから商品を選んでカートに追加するポップアップ -->
+<dialog id="picker" aria-labelledby="picker-title">
+  <form class="dlg" method="dialog" id="picker-form">
+    <div class="dlg-head">
+      <div><h3 id="picker-title">買い物リストから追加</h3><p>庭をえらび、カートに入れる商品にチェックしてください。</p></div>
+      <button class="icon-button" type="submit" value="cancel" aria-label="閉じる"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="gardens" role="group" aria-label="庭" id="gardens"></div>
+    <div class="toolbar"><span id="pick-hint"></span><button type="button" id="select-all">すべて選択</button></div>
+    <div class="items" id="pick-items"></div>
+    <div class="dlg-foot">
+      <span id="pick-count">0点を選択中</span>
+      <button class="ghost" type="submit" value="cancel">キャンセル</button>
+      <button class="primary" type="button" id="add-selected" disabled>カートに追加</button>
+    </div>
+  </form>
+</dialog>
+<div class="toast" role="status" id="toast"></div>
+
+<script>
+  const IMG = '../../frontend/public/images/';
+  const products = {
+    monstera: { name: 'モンステラ・デリシオーサ', price: 4200, stock: 12, img: 'monstera.png' },
+    olive: { name: 'オリーブ', price: 9800, stock: 6, img: 'olive.png' },
+    lavender: { name: 'ラベンダー', price: 1650, stock: 30, img: 'lavender.png' },
+    kurochiku: { name: 'クロチク', price: 6300, stock: 19, img: 'plant-photo-grove-cane.png' },
+    eucalyptus: { name: 'ユーカリ・ポポラス', price: 8800, stock: 8, img: 'plant-photo-compound-tree.png' },
+    maple: { name: 'イロハモミジ', price: 12800, stock: 3, img: 'plant-photo-maple-tree.png' },
+  };
+  const gardens = [
+    { name: '庭', photo: 'plant-photo-round-tree.png', items: [['eucalyptus', 2], ['monstera', 1], ['kurochiku', 1]] },
+    { name: 'niwa', photo: 'plant-photo-grove-round.png', items: [['olive', 1], ['lavender', 3], ['maple', 1]] },
+    { name: 'テスト', photo: 'plant-photo-narrow-tree.png', items: [['kurochiku', 2], ['lavender', 1]] },
+  ];
+  const cart = [{ id: 'olive', qty: 1, garden: '' }, { id: 'lavender', qty: 2, garden: '' }];
+  let gardenIndex = 0;
+  const yen = (n) => '¥' + n.toLocaleString('ja-JP');
+  const $ = (id) => document.getElementById(id);
+  const icon = { minus: '<path d="M5 12h14"/>', plus: '<path d="M12 5v14M5 12h14"/>', trash: '<path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>' };
+  const svg = (k, s) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">${icon[k]}</svg>`;
+
+  function renderCart() {
+    $('cart-items').innerHTML = cart.map((line, i) => {
+      const p = products[line.id];
+      const from = line.garden ? `<span class="from-list">庭「${line.garden}」から</span>` : '';
+      return `<article class="cart-line"><img src="${IMG + p.img}" alt="${p.name}">
+        <div class="main"><h3>${p.name}${from}</h3><a href="#">この商品を庭に配置</a><p>${yen(p.price)} / 1鉢</p>
+          <div class="qty"><button type="button" data-i="${i}" data-d="-1" aria-label="${p.name}を1個減らす" ${line.qty <= 1 ? 'disabled' : ''}>${svg('minus', 14)}</button>
+          <span aria-label="数量">${line.qty}</span><button type="button" data-i="${i}" data-d="1" aria-label="${p.name}を1個増やす" ${line.qty >= p.stock ? 'disabled' : ''}>${svg('plus', 14)}</button></div></div>
+        <div class="end"><strong>${yen(p.price * line.qty)}</strong><button class="icon-button" type="button" data-del="${i}" aria-label="${p.name}を削除">${svg('trash', 17)}</button></div></article>`;
+    }).join('');
+    const sub = cart.reduce((s, l) => s + products[l.id].price * l.qty, 0);
+    const count = cart.reduce((s, l) => s + l.qty, 0);
+    $('subtotal').textContent = yen(sub); $('total').textContent = yen(sub); $('tax').textContent = yen(Math.floor(sub * 10 / 110));
+    $('cart-title').textContent = `ショッピングカート (${count})`; $('header-count').textContent = count;
+  }
+  $('cart-items').addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.del) cart.splice(+b.dataset.del, 1); else cart[+b.dataset.i].qty += +b.dataset.d;
+    renderCart();
+  });
+
+  function renderGardens() {
+    $('gardens').innerHTML = gardens.map((g, i) => `<button class="garden" type="button" data-g="${i}" aria-pressed="${i === gardenIndex}">
+      <img src="${IMG + g.photo}" alt=""><span>${g.name}<br><small>${g.items.length}種類</small></span></button>`).join('');
+  }
+  function renderItems() {
+    const g = gardens[gardenIndex];
+    $('pick-hint').textContent = `庭「${g.name}」に配置した商品 ${g.items.length}種類`;
+    $('pick-items').innerHTML = g.items.map(([id, need]) => {
+      const p = products[id]; const inCart = cart.some((l) => l.id === id);
+      const state = inCart ? '<span class="tag">カートに入っています</span>' : '';
+      return `<label class="item ${inCart ? 'in-cart' : ''}"><input type="checkbox" name="pick" value="${id}" data-need="${need}" ${inCart ? 'disabled' : ''}>
+        <img src="${IMG + p.img}" alt=""><span class="info"><strong>${p.name}</strong><small>必要数 ${need}点・店舗在庫 ${p.stock}点</small>${state}</span>
+        <span class="price">${yen(p.price * need)}</span></label>`;
+    }).join('');
+    updateCount();
+  }
+  function picked() { return [...document.querySelectorAll('input[name=pick]:checked')]; }
+  function updateCount() {
+    const n = picked().length; $('pick-count').textContent = `${n}点を選択中`;
+    $('add-selected').disabled = n === 0; $('add-selected').textContent = n ? `${n}点をカートに追加` : 'カートに追加';
+  }
+  $('gardens').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-g]'); if (!b) return;
+    gardenIndex = +b.dataset.g; renderGardens(); renderItems();
+  });
+  $('pick-items').addEventListener('change', updateCount);
+  $('select-all').addEventListener('click', () => {
+    document.querySelectorAll('input[name=pick]:not(:disabled)').forEach((c) => { c.checked = true; }); updateCount();
+  });
+  $('add-selected').addEventListener('click', () => {
+    const list = picked(); const garden = gardens[gardenIndex].name;
+    list.forEach((c) => cart.push({ id: c.value, qty: Math.min(+c.dataset.need, products[c.value].stock), garden }));
+    $('picker').close(); renderCart(); showToast(`${list.length}点をカートに追加しました`);
+  });
+  $('open-picker').addEventListener('click', () => { renderGardens(); renderItems(); $('picker').showModal(); });
+  function showToast(text) { const t = $('toast'); t.textContent = text; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 2200); }
+  renderCart();
+</script>
+</body>
+</html>
