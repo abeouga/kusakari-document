@@ -328,8 +328,8 @@ footer { border-top: 1px solid var(--line); margin-top: 96px; padding-top: 24px;
 
 <div class="note warn">
   <p class="note-title">この解説書が基準にしているコード</p>
-  <p>2026年11月11日時点の main ブランチです(kusakari-ec <code>a161aae</code>、kusakari-canvas <code>91b12c2</code>)。</p>
-  <p>EC では、DB の構成を作り直す作業(DB v3)が統合ブランチ <code>feature/shop-organization</code> で進んでいます。この解説書はその作業を含みません。変わる予定の箇所は<a href="#ec-v3">4章の冒頭</a>にまとめています。</p>
+  <p>2026年11月16日時点の main ブランチです(kusakari-ec <code>a9cbd69</code>、kusakari-canvas <code>796c239</code>)。</p>
+  <p>EC は、2026年11月12日〜14日に DB の構成を作り直しました(DB v3)。この解説書は、作り直した後の内容です。それより前のコードを知っている人のために、変わった点を<a href="#ec-v3">4章の冒頭</a>にまとめています。</p>
 </div>
 </section>
 
@@ -401,16 +401,16 @@ footer { border-top: 1px solid var(--line); margin-top: 96px; padding-top: 24px;
   <div class="file">GET /api/cart のレスポンス</div>
 <pre><code>{
   "revision": 3,
-  "storeId": 1,
-  "storeName": "Kusakari 東京店",
   "items": [
-    { "product": { "id": "olive", "name": "オリーブ", "priceYen": 3190 }, "quantity": 2, "lineTotalYen": 6380 }
+    { "product": { "id": "olive", "name": "オリーブ", "priceYen": 3190 }, "quantity": 2, "lineTotalYen": 6380,
+      "available": true, "storeId": 1, "storeName": "二子玉川ガーデン" }
   ],
   "totalYen": 6380,
   "itemCount": 2,
   "canCheckout": true
 }</code></pre>
 </div>
+<p>受け取る店舗(<code>storeId</code>、<code>storeName</code>)は、カート全体ではなく、<code>items</code> の1件ごとに入っています。商品は必ず1つの店舗のもので、その店舗で受け取るからです。</p>
 
 <h4>なぜ2つに分けるのか</h4>
 <ul>
@@ -457,7 +457,7 @@ footer { border-top: 1px solid var(--line); margin-top: 96px; padding-top: 24px;
 <div class="tw"><table class="w-wide">
   <thead><tr><th>プロジェクト</th><th>メソッドと URL</th><th>すること</th></tr></thead>
   <tbody>
-    <tr><th rowspan="6">EC</th><td><code>GET /api/products?storeId=1</code></td><td>店舗1で売っている商品の一覧を読む</td></tr>
+    <tr><th rowspan="6">EC</th><td><code>GET /api/products</code></td><td>いま購入できる商品の一覧を読む(全店舗の分)</td></tr>
     <tr><td><code>GET /api/cart</code></td><td>自分のカートを読む</td></tr>
     <tr><td><code>PUT /api/cart/items/{productId}</code></td><td>カートの中の、その商品の数量を指定した数にする(0 なら削除)</td></tr>
     <tr><td><code>POST /api/orders</code></td><td>カートの中身で注文を作る</td></tr>
@@ -483,7 +483,7 @@ footer { border-top: 1px solid var(--line); margin-top: 96px; padding-top: 24px;
     <tr><th>204</th><td>成功。返す本文はない</td><td><code>DELETE /api/gardens/{id}</code></td></tr>
     <tr><th>400</th><td>送った内容の形や値が正しくない</td><td>数量が 100 以上、必要な項目がない</td></tr>
     <tr><th>401</th><td>ログインしていない</td><td>ログインせずに <code>GET /api/cart</code></td></tr>
-    <tr><th>403</th><td>ログインしているが、その操作の権限がない</td><td>一般の会員が運営者用の API を呼ぶ</td></tr>
+    <tr><th>403</th><td>ログインしているが、その操作の権限がない</td><td>購入者が運営者用の API を呼ぶ。店舗側のアカウントがカートの API を呼ぶ</td></tr>
     <tr><th>404</th><td>対象が見つからない</td><td>他人の庭の ID を指定する</td></tr>
     <tr><th>409</th><td>ほかの操作とぶつかった。最新の状態を読み直す必要がある</td><td>別のタブでカートが更新されていた、在庫が足りない</td></tr>
     <tr><th>503</th><td>いまは処理できない</td><td>データベースや相手のサーバーにつながらない</td></tr>
@@ -722,7 +722,7 @@ public class CartController {
   <div class="scroll" tabindex="0">
   <svg viewBox="0 0 1080 520" role="img" aria-labelledby="f3t f3d">
     <title id="f3t">Kusakari のシステム全体像</title>
-    <desc id="f3d">ブラウザーの中に EC の画面と Canvas の画面がある。EC の画面は EC API を、Canvas の画面は Canvas API と EC API を呼ぶ。EC API と Canvas API は互いに呼び合う。EC API は MySQL の kusakari と Amazon Cognito を、Canvas API は MySQL の kusakari_canvas と OpenAI API を使う。</desc>
+    <desc id="f3d">ブラウザーの中に EC の画面と Canvas の画面がある。EC の画面は EC API を、Canvas の画面は Canvas API と EC API を呼ぶ。EC API と Canvas API は互いに呼び合う。EC API は MySQL の kusakari、Amazon Cognito、Stripe を、Canvas API は MySQL の kusakari_canvas と OpenAI API を使う。Stripe は、支払いの結果を EC API に知らせる。</desc>
     <rect class="sv-grp" x="200" y="16" width="680" height="134" rx="8"/>
     <text class="sv-s" x="216" y="42">ブラウザー</text>
     <rect class="sv-fe" x="230" y="54" width="270" height="80" rx="8"/>
@@ -741,9 +741,12 @@ public class CartController {
     <text class="sv-s" x="715" y="284" text-anchor="middle">FastAPI / Python</text>
     <text class="sv-m" x="715" y="310" text-anchor="middle">127.0.0.1:8080</text>
 
-    <rect class="sv-ex" x="10" y="236" width="160" height="80" rx="8"/>
-    <text class="sv-t" x="90" y="268" text-anchor="middle">Amazon Cognito</text>
-    <text class="sv-s" x="90" y="294" text-anchor="middle">ログインの確認</text>
+    <rect class="sv-ex" x="10" y="176" width="160" height="80" rx="8"/>
+    <text class="sv-t" x="90" y="208" text-anchor="middle">Amazon Cognito</text>
+    <text class="sv-s" x="90" y="234" text-anchor="middle">ログインの確認</text>
+    <rect class="sv-ex" x="10" y="296" width="160" height="80" rx="8"/>
+    <text class="sv-t" x="90" y="328" text-anchor="middle">Stripe</text>
+    <text class="sv-s" x="90" y="354" text-anchor="middle">カード決済(テスト)</text>
     <rect class="sv-ex" x="910" y="236" width="160" height="80" rx="8"/>
     <text class="sv-t" x="990" y="268" text-anchor="middle">OpenAI API</text>
     <text class="sv-s" x="990" y="294" text-anchor="middle">画像の生成</text>
@@ -760,7 +763,8 @@ public class CartController {
     <path class="sv-ar" d="M620 134 L472 224"/>
     <path class="sv-ar" d="M500 258 H576"/>
     <path class="sv-ar" d="M580 296 H504"/>
-    <path class="sv-ar" d="M230 276 H174"/>
+    <path class="sv-ar" d="M230 244 H174"/>
+    <path class="sv-ar" style="marker-start:url(#ah)" d="M226 310 H174"/>
     <path class="sv-ar" d="M850 276 H906"/>
     <path class="sv-ar" d="M365 324 V408"/>
     <path class="sv-ar" d="M715 324 V408"/>
@@ -770,14 +774,15 @@ public class CartController {
     <circle class="sv-bd" cx="566" cy="190" r="13"/><text class="sv-w" x="566" y="195" text-anchor="middle">C</text>
     <circle class="sv-bd" cx="540" cy="236" r="13"/><text class="sv-w" x="540" y="241" text-anchor="middle">D</text>
     <circle class="sv-bd" cx="540" cy="318" r="13"/><text class="sv-w" x="540" y="323" text-anchor="middle">E</text>
-    <circle class="sv-bd" cx="200" cy="254" r="13"/><text class="sv-w" x="200" y="259" text-anchor="middle">F</text>
-    <circle class="sv-bd" cx="880" cy="254" r="13"/><text class="sv-w" x="880" y="259" text-anchor="middle">G</text>
-    <circle class="sv-bd" cx="389" cy="366" r="13"/><text class="sv-w" x="389" y="371" text-anchor="middle">H</text>
-    <circle class="sv-bd" cx="739" cy="366" r="13"/><text class="sv-w" x="739" y="371" text-anchor="middle">I</text>
+    <circle class="sv-bd" cx="200" cy="220" r="13"/><text class="sv-w" x="200" y="225" text-anchor="middle">F</text>
+    <circle class="sv-bd" cx="200" cy="336" r="13"/><text class="sv-w" x="200" y="341" text-anchor="middle">G</text>
+    <circle class="sv-bd" cx="880" cy="254" r="13"/><text class="sv-w" x="880" y="259" text-anchor="middle">H</text>
+    <circle class="sv-bd" cx="389" cy="366" r="13"/><text class="sv-w" x="389" y="371" text-anchor="middle">I</text>
+    <circle class="sv-bd" cx="739" cy="366" r="13"/><text class="sv-w" x="739" y="371" text-anchor="middle">J</text>
   </svg>
   </div>
   <figcaption><span class="no">図3 Kusakari のシステム全体像</span>
-  <span class="how">読み方: 矢印は「呼び出す向き」です。矢印の根元がリクエストを送り、先が受け取って答えます。A〜I の中身は下の表にあります。アドレスは開発中のものです。</span></figcaption>
+  <span class="how">読み方: 矢印は「呼び出す向き」です。矢印の根元がリクエストを送り、先が受け取って答えます。両方に先がある G は、どちらからも呼ぶことを表します。A〜J の中身は下の表にあります。アドレスは開発中のものです。</span></figcaption>
 </figure>
 
 <div class="tw"><table class="w-wide">
@@ -785,12 +790,13 @@ public class CartController {
   <tbody>
     <tr><th>A</th><td>EC の画面 → EC API</td><td>商品・カート・注文・会員など、EC のすべての操作</td></tr>
     <tr><th>B</th><td>Canvas の画面 → Canvas API</td><td>庭の読み込みと保存、完成イメージの生成</td></tr>
-    <tr><th>C</th><td>Canvas の画面 → EC API</td><td>ログイン状態の確認、カートの件数、庭に置ける商品の一覧</td></tr>
+    <tr><th>C</th><td>Canvas の画面 → EC API</td><td>ログイン状態の確認、カートの件数、庭に置ける商品の一覧、置いた商品が今も買えるかの確認</td></tr>
     <tr><th>D</th><td>EC API → Canvas API</td><td>庭の買い物リストの取得、商品登録のときの植物3Dモデルの組み立て</td></tr>
-    <tr><th>E</th><td>Canvas API → EC API</td><td>リクエストを送ってきた人がログインしているかの確認、商品の画像の取得</td></tr>
+    <tr><th>E</th><td>Canvas API → EC API</td><td>リクエストを送ってきた人がログインしているか、購入者のアカウントかの確認。商品の画像の取得</td></tr>
     <tr><th>F</th><td>EC API → Amazon Cognito</td><td>メールアドレスとパスワードの確認。パスワードは Kusakari の DB に持たない</td></tr>
-    <tr><th>G</th><td>Canvas API → OpenAI API</td><td>完成イメージ画像の生成。EC API も、商品登録の入力補助で OpenAI API を呼ぶ(図では省略)</td></tr>
-    <tr><th>H・I</th><td>各 API → 自分の MySQL</td><td>データの保存。相手のデータベースには接続しない</td></tr>
+    <tr><th>G</th><td>EC API ⇄ Stripe</td><td>EC API が、カード決済の開始と返金を Stripe に頼む。支払いの結果は、Stripe が EC API を呼んで知らせる(<a href="#ec-flow-card">4章</a>)。使うのはテストモードだけで、実際のお金は動かない</td></tr>
+    <tr><th>H</th><td>Canvas API → OpenAI API</td><td>完成イメージ画像の生成。EC API も、商品登録の入力補助で OpenAI API を呼ぶ(図では省略)</td></tr>
+    <tr><th>I・J</th><td>各 API → 自分の MySQL</td><td>データの保存。相手のデータベースには接続しない</td></tr>
   </tbody>
 </table></div>
 
@@ -799,7 +805,7 @@ public class CartController {
 <div class="tw"><table class="w-wide">
   <thead><tr><th></th><th>持っているデータ</th><th>主なテーブル</th></tr></thead>
   <tbody>
-    <tr><th>EC</th><td>会員、店舗、商品、在庫、カート、注文、通知、出店申請</td><td class="wrap"><code>auth_members</code> <code>stores</code> <code>products</code> <code>inventory</code> <code>carts</code> <code>cart_items</code> <code>orders</code> <code>order_items</code> <code>notifications</code> <code>store_applications</code></td></tr>
+    <tr><th>EC</th><td>会員、組織、店舗、店舗の担当者と招待キー、商品、在庫、カート、注文、決済と返金、通知、出店申請、警告と停止の履歴</td><td class="wrap"><code>members</code> <code>organizations</code> <code>organization_members</code> <code>stores</code> <code>store_members</code> <code>store_invitations</code> <code>products</code> <code>inventory</code> <code>carts</code> <code>cart_items</code> <code>orders</code> <code>order_items</code> <code>payments</code> <code>refunds</code> <code>notifications</code> <code>organization_applications</code></td></tr>
     <tr><th>Canvas</th><td>庭、庭に置いたもの、庭の写真、3D素材の一覧、サムネイル、完成イメージの履歴</td><td class="wrap"><code>gardens</code> <code>placed_objects</code> <code>assets</code> <code>garden_thumbnails</code> <code>garden_image_history</code></td></tr>
   </tbody>
 </table></div>
@@ -827,21 +833,24 @@ public class CartController {
 <h2><span class="chap">4章</span>kusakari-ec</h2>
 <p>植物を探して注文する EC サイトです。画面は React、サーバーは Spring Boot(Java 21)、データベースは MySQL です。</p>
 
-<div class="note warn" id="ec-v3">
-  <p class="note-title">DB v3 の作業で変わる予定の箇所</p>
-  <p>統合ブランチ <code>feature/shop-organization</code> で、店舗側のアカウントを「組織 → 店舗 → 担当者」に作り直す作業が進んでいます。この章は main の内容なので、次の点は作業が進むと変わります。フォルダーの分け方、3層の分け方、デザインパターンは変わりません。</p>
+<div class="note" id="ec-v3">
+  <p class="note-title">前の構成から変わった点(DB v3)</p>
+  <p>EC は、2026年11月12日〜14日に、店舗側のアカウントを「組織 → 店舗 → 担当者」に作り直し、DB の構成を切り替えました。それより前のコードや資料を知っている人は、次の点に注意してください。フォルダーの分け方、3層の分け方は変わっていません。</p>
   <div class="tw" style="margin-bottom:8px"><table class="w-mid">
-    <thead><tr><th>この章の内容(main)</th><th>DB v3 の後</th></tr></thead>
+    <thead><tr><th>前(11月11日まで)</th><th>今</th></tr></thead>
     <tbody>
-      <tr><td>会員のテーブルは <code>auth_members</code>。種別は <code>role</code>(<code>USER</code> / <code>SELLER</code> / <code>ADMIN</code>)</td><td><code>members</code>。種別は <code>account_type</code>(5種類)</td></tr>
-      <tr><td>出店申請のテーブルは <code>store_applications</code></td><td><code>organization_applications</code>。組織・店舗の担当・招待キーのテーブルが増える</td></tr>
-      <tr><td>在庫(<code>inventory</code>)は「店舗と商品の組」ごとに1行</td><td>商品ごとに1行。商品は1つの店舗に属する</td></tr>
-      <tr><td>カートが店舗を持つ(<code>carts.store_id</code>、<code>cart_items.store_id</code>)</td><td>なくなる。受取店舗は商品から決まる</td></tr>
-      <tr><td>受取連絡先と支払方法は <code>order_details</code> に保存</td><td><code>orders</code> に入る。<code>order_details</code> と <code>cart_details</code> はなくなる</td></tr>
-      <tr><td>テーブル定義の履歴は V1〜V15 の15ファイル</td><td>1つにまとめ直す</td></tr>
+      <tr><td>会員のテーブルは <code>auth_members</code>。種別は <code>role</code>(<code>USER</code> / <code>SELLER</code> / <code>ADMIN</code>)</td><td><code>members</code>。種別は <code>account_type</code>。購入者 <code>USER</code>、出店を申請中 <code>SHOP_OWNER_APPLICANT</code>、組織のオーナー <code>SHOP_OWNER</code>、店舗の担当者 <code>SHOP_STAFF</code>、運営 <code>ADMIN</code> の5つ</td></tr>
+      <tr><td>出店申請のテーブルは <code>store_applications</code></td><td><code>organization_applications</code>。承認されると組織(<code>organizations</code>)ができ、オーナーが店舗を作る。担当者は、店舗の招待キーで登録する(<code>organization_members</code>、<code>store_members</code>、<code>store_invitations</code>)</td></tr>
+      <tr><td>在庫(<code>inventory</code>)は「店舗と商品の組」ごとに1行</td><td>商品ごとに1行。商品は1つの店舗に属する(<code>products.store_id</code>)</td></tr>
+      <tr><td>カートが店舗を持つ(<code>carts.store_id</code>、<code>cart_items.store_id</code>)</td><td>持たない。受け取る店舗は、商品の店舗</td></tr>
+      <tr><td>受取連絡先と支払方法は <code>order_details</code> に保存</td><td><code>orders</code> に入った。<code>order_details</code> はない</td></tr>
+      <tr><td>店舗の有効・無効は <code>stores.enabled</code> の1列</td><td>オーナーが決める公開(<code>published</code>)と、運営が決める停止(<code>suspended</code>)に分かれた。店舗の閉鎖、組織の受付停止、警告と停止の履歴が増えた</td></tr>
+      <tr><td>決済と返金のテーブルはない</td><td><code>payments</code> と <code>refunds</code>。カードの決済は Stripe のテストモードで行う</td></tr>
+      <tr><td>どのアカウントでも購入できる</td><td>購入できるのは、購入者と運営だけ。店舗側のアカウントと、出店を申請中のアカウントは、カート・注文・庭の買い物リストを使えない</td></tr>
+      <tr><td>テーブル定義の履歴は V1〜V15 の15ファイル</td><td>1つにまとめ直した <code>V1__schema.sql</code> と、その後の V2・V3</td></tr>
     </tbody>
   </table></div>
-  <p>出典: ブランチ <code>docs/126-db-v3-decision</code> の <code>docs/database-er.md</code> と <code>docs/database-v3-implementation-plan.md</code>。この解説書で影響を受けるのは、<a href="#ec-be-layer">カートの Entity</a>と、<a href="#ec-flow">図6・図7</a>の在庫とカートの部分です。</p>
+  <p>出典: <code>docs/database-er.md</code>、<code>docs/member-roles.md</code>、<code>docs/decisions/</code> の 2026-11-11 〜 2026-11-13 の記録。</p>
 </div>
 
 <!-- ---------- 4-1 ---------- -->
@@ -858,119 +867,154 @@ public class CartController {
    │  │  ├─ persistence/repository/     <span class="c">  DB の読み書き</span>
    │  │  ├─ dto/                        <span class="c">  API の入力・出力の形</span>
    │  │  └─ mapper/                     <span class="c">  Entity → DTO の変換</span>
-   │  ├─ commerce/                      <span class="c">カート・注文(中は catalog と同じ分け方 + session/)</span>
+   │  ├─ commerce/                      <span class="c">カート・注文・注文実績(中は catalog と同じ分け方 + session/)</span>
+   │  ├─ payment/                       <span class="c">カード決済と返金(Stripe)</span>
    │  ├─ member/                        <span class="c">受取連絡先・退会・運営者による会員の管理</span>
-   │  ├─ store/                         <span class="c">店舗プロフィール・出店申請と審査</span>
+   │  ├─ store/                         <span class="c">組織・店舗・担当者・招待キー・出店申請と審査・店舗の閉鎖</span>
+   │  ├─ moderation/                    <span class="c">運営による警告と停止の履歴(商品と店舗で共通)</span>
    │  ├─ notification/                  <span class="c">通知</span>
    │  ├─ auth/                          <span class="c">ログイン・会員登録・ログイン状態の確認</span>
    │  ├─ shopping/                      <span class="c">庭の買い物リスト(Canvas との連携)</span>
    │  └─ common/                        <span class="c">どの機能からも使うもの</span>
    └─ resources/
       ├─ application.properties         <span class="c">設定(ポート、DB の接続先など)</span>
-      └─ db/migration/V1__… 〜 V15__…   <span class="c">テーブル定義の変更の履歴(Flyway)</span></pre>
+      └─ db/migration/V1__… 〜 V3__…    <span class="c">テーブル定義の変更の履歴(Flyway)</span></pre>
 
-<h4>分け方の考え: 機能で縦に切り、その中を層で横に切る</h4>
+<h4>分け方の考え: まず機能で分け、その中を層で分ける</h4>
 <p><code>jp/kusakari/ec/</code> の直下は<strong>機能</strong>の名前です。その下は<strong>層</strong>(3層 + DTO + Mapper)の名前です。<code>docs/architecture.md</code> には、「機能単位に分け、その中で controller / service / persistence / dto / mapper を分離する」と書かれています。</p>
 
 <figure class="fig">
   <div class="scroll" tabindex="0">
-    <svg viewBox="0 0 1000 410" role="img" aria-labelledby="f4t f4d">
+    <svg viewBox="0 0 990 616" role="img" aria-labelledby="f4t f4d">
     <title id="f4t">EC の backend のフォルダーは、機能と層の表になっている</title>
-    <desc id="f4d">列は機能のフォルダーで、catalog、commerce、member、store、notification、auth、shopping の7つ。行は層のフォルダーで、controller、service、persistence、dto、mapper の5つ。catalog と commerce は5つの層すべてのフォルダーを持つ。member、store、notification は controller、service、persistence の3つを持つ。auth と shopping は層のフォルダーを作らず、クラス名で区別する。</desc>
-    <rect x="126" y="10" width="120" height="56" rx="6" fill="#197a4b"/>
-    <text class="sv-w" x="186.0" y="33" text-anchor="middle" style="font-family:var(--mono)">catalog/</text>
-    <text class="sv-w" x="186.0" y="55" text-anchor="middle" style="font-weight:400">商品・店舗</text>
-    <rect x="250" y="10" width="120" height="56" rx="6" fill="#197a4b"/>
-    <text class="sv-w" x="310.0" y="33" text-anchor="middle" style="font-family:var(--mono)">commerce/</text>
-    <text class="sv-w" x="310.0" y="55" text-anchor="middle" style="font-weight:400">カート・注文</text>
-    <rect x="374" y="10" width="120" height="56" rx="6" fill="#197a4b"/>
-    <text class="sv-w" x="434.0" y="33" text-anchor="middle" style="font-family:var(--mono)">member/</text>
-    <text class="sv-w" x="434.0" y="55" text-anchor="middle" style="font-weight:400">会員</text>
-    <rect x="498" y="10" width="120" height="56" rx="6" fill="#197a4b"/>
-    <text class="sv-w" x="558.0" y="33" text-anchor="middle" style="font-family:var(--mono)">store/</text>
-    <text class="sv-w" x="558.0" y="55" text-anchor="middle" style="font-weight:400">店舗・出店申請</text>
-    <rect x="622" y="10" width="120" height="56" rx="6" fill="#197a4b"/>
-    <text class="sv-w" x="682.0" y="33" text-anchor="middle" style="font-family:var(--mono)">notification/</text>
-    <text class="sv-w" x="682.0" y="55" text-anchor="middle" style="font-weight:400">通知</text>
-    <rect x="746" y="10" width="120" height="56" rx="6" fill="#197a4b"/>
-    <text class="sv-w" x="806.0" y="33" text-anchor="middle" style="font-family:var(--mono)">auth/</text>
-    <text class="sv-w" x="806.0" y="55" text-anchor="middle" style="font-weight:400">ログイン</text>
-    <rect x="870" y="10" width="120" height="56" rx="6" fill="#197a4b"/>
-    <text class="sv-w" x="930.0" y="33" text-anchor="middle" style="font-family:var(--mono)">shopping/</text>
-    <text class="sv-w" x="930.0" y="55" text-anchor="middle" style="font-weight:400">買い物リスト</text>
-    <text class="sv-m" x="116" y="106" text-anchor="end">controller/</text>
-    <rect class="sv-be" x="126" y="82" width="120" height="38" rx="6"/>
-    <text class="sv-s" x="186.0" y="106" text-anchor="middle">フォルダー</text>
-    <rect class="sv-be" x="250" y="82" width="120" height="38" rx="6"/>
-    <text class="sv-s" x="310.0" y="106" text-anchor="middle">フォルダー</text>
-    <rect class="sv-be" x="374" y="82" width="120" height="38" rx="6"/>
-    <text class="sv-s" x="434.0" y="106" text-anchor="middle">フォルダー</text>
-    <rect class="sv-be" x="498" y="82" width="120" height="38" rx="6"/>
-    <text class="sv-s" x="558.0" y="106" text-anchor="middle">フォルダー</text>
-    <rect class="sv-be" x="622" y="82" width="120" height="38" rx="6"/>
-    <text class="sv-s" x="682.0" y="106" text-anchor="middle">フォルダー</text>
-    <rect class="sv-dash" x="746" y="82" width="120" height="38" rx="6"/>
-    <text class="sv-s" x="806.0" y="106" text-anchor="middle">クラスだけ</text>
-    <rect class="sv-dash" x="870" y="82" width="120" height="38" rx="6"/>
-    <text class="sv-s" x="930.0" y="106" text-anchor="middle">クラスだけ</text>
-    <text class="sv-m" x="116" y="156" text-anchor="end">service/</text>
-    <rect class="sv-be" x="126" y="132" width="120" height="38" rx="6"/>
-    <text class="sv-s" x="186.0" y="156" text-anchor="middle">フォルダー</text>
-    <rect class="sv-be" x="250" y="132" width="120" height="38" rx="6"/>
-    <text class="sv-s" x="310.0" y="156" text-anchor="middle">フォルダー</text>
-    <rect class="sv-be" x="374" y="132" width="120" height="38" rx="6"/>
-    <text class="sv-s" x="434.0" y="156" text-anchor="middle">フォルダー</text>
-    <rect class="sv-be" x="498" y="132" width="120" height="38" rx="6"/>
-    <text class="sv-s" x="558.0" y="156" text-anchor="middle">フォルダー</text>
-    <rect class="sv-be" x="622" y="132" width="120" height="38" rx="6"/>
-    <text class="sv-s" x="682.0" y="156" text-anchor="middle">フォルダー</text>
-    <rect class="sv-dash" x="746" y="132" width="120" height="38" rx="6"/>
-    <text class="sv-s" x="806.0" y="156" text-anchor="middle">クラスだけ</text>
-    <rect class="sv-dash" x="870" y="132" width="120" height="38" rx="6"/>
-    <text class="sv-s" x="930.0" y="156" text-anchor="middle">クラスだけ</text>
-    <text class="sv-m" x="116" y="206" text-anchor="end">persistence/</text>
-    <rect class="sv-be" x="126" y="182" width="120" height="38" rx="6"/>
-    <text class="sv-s" x="186.0" y="206" text-anchor="middle">フォルダー</text>
-    <rect class="sv-be" x="250" y="182" width="120" height="38" rx="6"/>
-    <text class="sv-s" x="310.0" y="206" text-anchor="middle">フォルダー</text>
-    <rect class="sv-be" x="374" y="182" width="120" height="38" rx="6"/>
-    <text class="sv-s" x="434.0" y="206" text-anchor="middle">フォルダー</text>
-    <rect class="sv-be" x="498" y="182" width="120" height="38" rx="6"/>
-    <text class="sv-s" x="558.0" y="206" text-anchor="middle">フォルダー</text>
-    <rect class="sv-be" x="622" y="182" width="120" height="38" rx="6"/>
-    <text class="sv-s" x="682.0" y="206" text-anchor="middle">フォルダー</text>
-    <rect class="sv-dash" x="746" y="182" width="120" height="38" rx="6"/>
-    <text class="sv-s" x="806.0" y="206" text-anchor="middle">クラスだけ</text>
-    <rect class="sv-dash" x="870" y="182" width="120" height="38" rx="6"/>
-    <text class="sv-s" x="930.0" y="206" text-anchor="middle">クラスだけ</text>
-    <text class="sv-m" x="116" y="256" text-anchor="end">dto/</text>
-    <rect class="sv-be" x="126" y="232" width="120" height="38" rx="6"/>
-    <text class="sv-s" x="186.0" y="256" text-anchor="middle">フォルダー</text>
-    <rect class="sv-be" x="250" y="232" width="120" height="38" rx="6"/>
-    <text class="sv-s" x="310.0" y="256" text-anchor="middle">フォルダー</text>
-    <text class="sv-s" x="434.0" y="256" text-anchor="middle">―</text>
-    <text class="sv-s" x="558.0" y="256" text-anchor="middle">―</text>
-    <text class="sv-s" x="682.0" y="256" text-anchor="middle">―</text>
-    <text class="sv-s" x="806.0" y="256" text-anchor="middle">―</text>
-    <rect class="sv-dash" x="870" y="232" width="120" height="38" rx="6"/>
-    <text class="sv-s" x="930.0" y="256" text-anchor="middle">クラスだけ</text>
-    <text class="sv-m" x="116" y="306" text-anchor="end">mapper/</text>
-    <rect class="sv-be" x="126" y="282" width="120" height="38" rx="6"/>
-    <text class="sv-s" x="186.0" y="306" text-anchor="middle">フォルダー</text>
-    <rect class="sv-be" x="250" y="282" width="120" height="38" rx="6"/>
-    <text class="sv-s" x="310.0" y="306" text-anchor="middle">フォルダー</text>
-    <text class="sv-s" x="434.0" y="306" text-anchor="middle">―</text>
-    <text class="sv-s" x="558.0" y="306" text-anchor="middle">―</text>
-    <text class="sv-s" x="682.0" y="306" text-anchor="middle">―</text>
-    <text class="sv-s" x="806.0" y="306" text-anchor="middle">―</text>
-    <text class="sv-s" x="930.0" y="306" text-anchor="middle">―</text>
-    <rect class="sv-be" x="126" y="344" width="864" height="48" rx="6"/>
-    <text class="sv-m" x="116" y="373" text-anchor="end">common/</text>
-    <text class="sv-s" x="558.0" y="373" text-anchor="middle">どの機能からも使うもの: エラーの返し方、接続元の確認、Canvas への接続設定</text>
+    <desc id="f4d">行は機能のフォルダーで、catalog、commerce、payment、member、store、moderation、notification、auth、shopping の9つ。列は層のフォルダーで、controller、service、persistence、dto、mapper の5つ。catalog と commerce は5つの層すべてのフォルダーを持つ。payment、member、store、notification は controller、service、persistence の3つを持つ。moderation は service、persistence、dto の3つを持ち、controller を持たない。auth と shopping は層のフォルダーを作らず、クラス名で区別する。</desc>
+    <rect x="254" y="10" width="142" height="56" rx="6" fill="#197a4b"/>
+    <text class="sv-w" x="325" y="33" text-anchor="middle" style="font-family:var(--mono)">controller/</text>
+    <text class="sv-w" x="325" y="55" text-anchor="middle" style="font-weight:400">HTTP の入口</text>
+    <rect x="400" y="10" width="142" height="56" rx="6" fill="#197a4b"/>
+    <text class="sv-w" x="471" y="33" text-anchor="middle" style="font-family:var(--mono)">service/</text>
+    <text class="sv-w" x="471" y="55" text-anchor="middle" style="font-weight:400">業務のルール</text>
+    <rect x="546" y="10" width="142" height="56" rx="6" fill="#197a4b"/>
+    <text class="sv-w" x="617" y="33" text-anchor="middle" style="font-family:var(--mono)">persistence/</text>
+    <text class="sv-w" x="617" y="55" text-anchor="middle" style="font-weight:400">DB の読み書き</text>
+    <rect x="692" y="10" width="142" height="56" rx="6" fill="#197a4b"/>
+    <text class="sv-w" x="763" y="33" text-anchor="middle" style="font-family:var(--mono)">dto/</text>
+    <text class="sv-w" x="763" y="55" text-anchor="middle" style="font-weight:400">API の形</text>
+    <rect x="838" y="10" width="142" height="56" rx="6" fill="#197a4b"/>
+    <text class="sv-w" x="909" y="33" text-anchor="middle" style="font-family:var(--mono)">mapper/</text>
+    <text class="sv-w" x="909" y="55" text-anchor="middle" style="font-weight:400">Entity → DTO</text>
+    <rect x="10" y="78" width="236" height="46" rx="6" fill="#197a4b"/>
+    <text class="sv-w" x="22" y="97" style="font-family:var(--mono)">catalog/</text>
+    <text class="sv-w" x="22" y="116" style="font-weight:400">商品・店舗・在庫</text>
+    <rect class="sv-be" x="254" y="78" width="142" height="46" rx="6"/>
+    <text class="sv-s" x="325" y="106" text-anchor="middle">フォルダー</text>
+    <rect class="sv-be" x="400" y="78" width="142" height="46" rx="6"/>
+    <text class="sv-s" x="471" y="106" text-anchor="middle">フォルダー</text>
+    <rect class="sv-be" x="546" y="78" width="142" height="46" rx="6"/>
+    <text class="sv-s" x="617" y="106" text-anchor="middle">フォルダー</text>
+    <rect class="sv-be" x="692" y="78" width="142" height="46" rx="6"/>
+    <text class="sv-s" x="763" y="106" text-anchor="middle">フォルダー</text>
+    <rect class="sv-be" x="838" y="78" width="142" height="46" rx="6"/>
+    <text class="sv-s" x="909" y="106" text-anchor="middle">フォルダー</text>
+    <rect x="10" y="130" width="236" height="46" rx="6" fill="#197a4b"/>
+    <text class="sv-w" x="22" y="149" style="font-family:var(--mono)">commerce/</text>
+    <text class="sv-w" x="22" y="168" style="font-weight:400">カート・注文</text>
+    <rect class="sv-be" x="254" y="130" width="142" height="46" rx="6"/>
+    <text class="sv-s" x="325" y="158" text-anchor="middle">フォルダー</text>
+    <rect class="sv-be" x="400" y="130" width="142" height="46" rx="6"/>
+    <text class="sv-s" x="471" y="158" text-anchor="middle">フォルダー</text>
+    <rect class="sv-be" x="546" y="130" width="142" height="46" rx="6"/>
+    <text class="sv-s" x="617" y="158" text-anchor="middle">フォルダー</text>
+    <rect class="sv-be" x="692" y="130" width="142" height="46" rx="6"/>
+    <text class="sv-s" x="763" y="158" text-anchor="middle">フォルダー</text>
+    <rect class="sv-be" x="838" y="130" width="142" height="46" rx="6"/>
+    <text class="sv-s" x="909" y="158" text-anchor="middle">フォルダー</text>
+    <rect x="10" y="182" width="236" height="46" rx="6" fill="#197a4b"/>
+    <text class="sv-w" x="22" y="201" style="font-family:var(--mono)">payment/</text>
+    <text class="sv-w" x="22" y="220" style="font-weight:400">カード決済・返金</text>
+    <rect class="sv-be" x="254" y="182" width="142" height="46" rx="6"/>
+    <text class="sv-s" x="325" y="210" text-anchor="middle">フォルダー</text>
+    <rect class="sv-be" x="400" y="182" width="142" height="46" rx="6"/>
+    <text class="sv-s" x="471" y="210" text-anchor="middle">フォルダー</text>
+    <rect class="sv-be" x="546" y="182" width="142" height="46" rx="6"/>
+    <text class="sv-s" x="617" y="210" text-anchor="middle">フォルダー</text>
+    <text class="sv-s" x="763" y="210" text-anchor="middle">―</text>
+    <text class="sv-s" x="909" y="210" text-anchor="middle">―</text>
+    <rect x="10" y="234" width="236" height="46" rx="6" fill="#197a4b"/>
+    <text class="sv-w" x="22" y="253" style="font-family:var(--mono)">member/</text>
+    <text class="sv-w" x="22" y="272" style="font-weight:400">会員</text>
+    <rect class="sv-be" x="254" y="234" width="142" height="46" rx="6"/>
+    <text class="sv-s" x="325" y="262" text-anchor="middle">フォルダー</text>
+    <rect class="sv-be" x="400" y="234" width="142" height="46" rx="6"/>
+    <text class="sv-s" x="471" y="262" text-anchor="middle">フォルダー</text>
+    <rect class="sv-be" x="546" y="234" width="142" height="46" rx="6"/>
+    <text class="sv-s" x="617" y="262" text-anchor="middle">フォルダー</text>
+    <text class="sv-s" x="763" y="262" text-anchor="middle">―</text>
+    <text class="sv-s" x="909" y="262" text-anchor="middle">―</text>
+    <rect x="10" y="286" width="236" height="46" rx="6" fill="#197a4b"/>
+    <text class="sv-w" x="22" y="305" style="font-family:var(--mono)">store/</text>
+    <text class="sv-w" x="22" y="324" style="font-weight:400">組織・店舗・出店申請</text>
+    <rect class="sv-be" x="254" y="286" width="142" height="46" rx="6"/>
+    <text class="sv-s" x="325" y="314" text-anchor="middle">フォルダー</text>
+    <rect class="sv-be" x="400" y="286" width="142" height="46" rx="6"/>
+    <text class="sv-s" x="471" y="314" text-anchor="middle">フォルダー</text>
+    <rect class="sv-be" x="546" y="286" width="142" height="46" rx="6"/>
+    <text class="sv-s" x="617" y="314" text-anchor="middle">フォルダー</text>
+    <text class="sv-s" x="763" y="314" text-anchor="middle">―</text>
+    <text class="sv-s" x="909" y="314" text-anchor="middle">―</text>
+    <rect x="10" y="338" width="236" height="46" rx="6" fill="#197a4b"/>
+    <text class="sv-w" x="22" y="357" style="font-family:var(--mono)">moderation/</text>
+    <text class="sv-w" x="22" y="376" style="font-weight:400">警告と停止の履歴</text>
+    <text class="sv-s" x="325" y="366" text-anchor="middle">―</text>
+    <rect class="sv-be" x="400" y="338" width="142" height="46" rx="6"/>
+    <text class="sv-s" x="471" y="366" text-anchor="middle">フォルダー</text>
+    <rect class="sv-be" x="546" y="338" width="142" height="46" rx="6"/>
+    <text class="sv-s" x="617" y="366" text-anchor="middle">フォルダー</text>
+    <rect class="sv-be" x="692" y="338" width="142" height="46" rx="6"/>
+    <text class="sv-s" x="763" y="366" text-anchor="middle">フォルダー</text>
+    <text class="sv-s" x="909" y="366" text-anchor="middle">―</text>
+    <rect x="10" y="390" width="236" height="46" rx="6" fill="#197a4b"/>
+    <text class="sv-w" x="22" y="409" style="font-family:var(--mono)">notification/</text>
+    <text class="sv-w" x="22" y="428" style="font-weight:400">通知</text>
+    <rect class="sv-be" x="254" y="390" width="142" height="46" rx="6"/>
+    <text class="sv-s" x="325" y="418" text-anchor="middle">フォルダー</text>
+    <rect class="sv-be" x="400" y="390" width="142" height="46" rx="6"/>
+    <text class="sv-s" x="471" y="418" text-anchor="middle">フォルダー</text>
+    <rect class="sv-be" x="546" y="390" width="142" height="46" rx="6"/>
+    <text class="sv-s" x="617" y="418" text-anchor="middle">フォルダー</text>
+    <text class="sv-s" x="763" y="418" text-anchor="middle">―</text>
+    <text class="sv-s" x="909" y="418" text-anchor="middle">―</text>
+    <rect x="10" y="442" width="236" height="46" rx="6" fill="#197a4b"/>
+    <text class="sv-w" x="22" y="461" style="font-family:var(--mono)">auth/</text>
+    <text class="sv-w" x="22" y="480" style="font-weight:400">ログイン・権限</text>
+    <rect class="sv-dash" x="254" y="442" width="142" height="46" rx="6"/>
+    <text class="sv-s" x="325" y="470" text-anchor="middle">クラスだけ</text>
+    <rect class="sv-dash" x="400" y="442" width="142" height="46" rx="6"/>
+    <text class="sv-s" x="471" y="470" text-anchor="middle">クラスだけ</text>
+    <rect class="sv-dash" x="546" y="442" width="142" height="46" rx="6"/>
+    <text class="sv-s" x="617" y="470" text-anchor="middle">クラスだけ</text>
+    <text class="sv-s" x="763" y="470" text-anchor="middle">―</text>
+    <text class="sv-s" x="909" y="470" text-anchor="middle">―</text>
+    <rect x="10" y="494" width="236" height="46" rx="6" fill="#197a4b"/>
+    <text class="sv-w" x="22" y="513" style="font-family:var(--mono)">shopping/</text>
+    <text class="sv-w" x="22" y="532" style="font-weight:400">買い物リスト</text>
+    <rect class="sv-dash" x="254" y="494" width="142" height="46" rx="6"/>
+    <text class="sv-s" x="325" y="522" text-anchor="middle">クラスだけ</text>
+    <rect class="sv-dash" x="400" y="494" width="142" height="46" rx="6"/>
+    <text class="sv-s" x="471" y="522" text-anchor="middle">クラスだけ</text>
+    <rect class="sv-dash" x="546" y="494" width="142" height="46" rx="6"/>
+    <text class="sv-s" x="617" y="522" text-anchor="middle">クラスだけ</text>
+    <rect class="sv-dash" x="692" y="494" width="142" height="46" rx="6"/>
+    <text class="sv-s" x="763" y="522" text-anchor="middle">クラスだけ</text>
+    <text class="sv-s" x="909" y="522" text-anchor="middle">―</text>
+    <rect x="10" y="556" width="236" height="48" rx="6" fill="#197a4b"/>
+    <text class="sv-w" x="22" y="585" style="font-family:var(--mono)">common/</text>
+    <rect class="sv-be" x="254" y="556" width="726" height="48" rx="6"/>
+    <text class="sv-s" x="617" y="585" text-anchor="middle">どの機能からも使うもの: エラーの返し方、接続元の確認、Canvas への接続設定</text>
     </svg>
   </div>
   <figcaption><span class="no">図4 EC の backend は「機能 × 層」の表になっている</span>
-  <span class="how">読み方: 列が機能のフォルダー、行が層のフォルダーです。「フォルダー」はその名前のフォルダーがあること、「クラスだけ」はフォルダーを作らずにクラス名(<code>〜Controller</code>、<code>〜Service</code> など)で役割を表していることを示します。</span></figcaption>
+  <span class="how">読み方: 行が機能のフォルダー、列が層のフォルダーです。「フォルダー」はその名前のフォルダーがあること、「クラスだけ」はフォルダーを作らずにクラス名(<code>〜Controller</code>、<code>〜Service</code> など)で役割を表していることを示します。「―」は、その層のクラスがないことを示します。</span></figcaption>
 </figure>
 
 <div class="tw"><table class="w-wide">
@@ -986,7 +1030,8 @@ public class CartController {
   <p class="note-title">表どおりでない所</p>
   <ul>
     <li><code>auth/</code> と <code>shopping/</code> は、層のフォルダーを作らず、クラスを直接置いています。理由は docs に書かれていません。クラス名の末尾(<code>AuthController</code>、<code>AuthService</code>、<code>AuthMemberRepository</code>)で層が分かります。</li>
-    <li>店舗のテーブルを表す <code>StoreEntity</code> と <code>StoreRepository</code> は、<code>store/</code> ではなく <code>catalog/persistence/</code> にあります。<code>store/</code> にあるのは、店舗プロフィールの編集と出店申請です。</li>
+    <li>店舗のテーブルを表す <code>StoreEntity</code> と <code>StoreRepository</code> は、<code>store/</code> ではなく <code>catalog/persistence/</code> にあります。<code>store/</code> にあるのは、組織・担当者・招待キー・出店申請のテーブルと、店舗の作成や閉鎖などの処理です。</li>
+    <li><code>moderation/</code> には <code>controller/</code> がありません。警告と停止の入口は、対象ごとに <code>catalog/controller/ProductModerationController</code>(商品)と <code>store/controller/StoreModerationController</code>(店舗)にあります。<code>moderation/</code> は、その両方から使う履歴のテーブルと読み方だけを持ちます。</li>
     <li><code>commerce/</code> には <code>session/</code> があります。リクエストから「その人のカート」を求める <code>CartSessionResolver</code> が入っています。</li>
   </ul>
 </div>
@@ -1012,7 +1057,7 @@ public CartView updateItem(
   <li>クラスに付いた <code>@RequestMapping("/api/cart")</code> と合わせて、<code>PUT /api/cart/items/{productId}</code> が来たらこのメソッドを呼びます。</li>
   <li><code>@PathVariable</code> を付けた引数には、URL の <code>{productId}</code> の部分が入ります。<code>/api/cart/items/olive</code> なら <code>"olive"</code> です。</li>
   <li><code>@RequestBody</code> を付けた引数には、本文の JSON を <code>ItemRequest</code> に変換したものが入ります。<code>@Valid</code> は、<code>ItemRequest</code> に書かれた条件(下の DTO)を検査する指定です。条件に合わなければ、このメソッドは呼ばれず、400 が返ります。</li>
-  <li><code>sessions.resolve(...)</code> で、ログインしている会員のカートの ID を求めます。あとは Service に渡して、結果を返すだけです。Controller には、在庫や数量の判断が1行もありません。</li>
+  <li><code>sessions.resolve(...)</code> で、ログインしている会員のカートの ID を求めます。ログインしていなければ 401、店舗側のアカウント(購入できないアカウント)なら 403 を返すのも、この中です。あとは Service に渡して、結果を返すだけです。Controller には、在庫や数量の判断が1行もありません。</li>
 </ol>
 
 <h4>2. DTO: 入力の形</h4>
@@ -1037,15 +1082,15 @@ public class CartService {
   public CartView updateItem(String id, String productId, ItemRequest request) {
     CartEntity cart = requireLockedCart(id);<span class="mk">3</span>
     checkRevision(cart, request.revision());<span class="mk">4</span>
-    <span class="dim">// …(省略: 商品と、今カートにある行 existing を読む)</span>
-    if (request.quantity() &gt; product.stock()) {<span class="mk">5</span>
+    <span class="dim">// …(省略: 今カートにある行 existing と、商品の今の状態 listing を読む。買えない商品は 409 で断る)</span>
+    if (request.quantity() &gt; listing.product().stock()) {<span class="mk">5</span>
       throw new ApiException(409, "OUT_OF_STOCK", "受取店舗の在庫が不足しています。");
     }
-    <span class="dim">// …(省略: 販売終了の確認、カートは50種類までの確認)</span>
+    <span class="dim">// …(省略: カートは50種類までの確認)</span>
     if (request.quantity() == 0) {<span class="mk">6</span>
       existing.ifPresent(items::delete);
     } else {
-      CartItemEntity item = existing.orElseGet(() -&gt; new CartItemEntity(itemId, 0, product.sellerStoreId()));
+      CartItemEntity item = existing.orElseGet(() -&gt; new CartItemEntity(itemId, 0));
       item.setQuantity(request.quantity());
       items.save(item);
     }
@@ -1058,7 +1103,7 @@ public class CartService {
   <li><code>@Transactional</code> を付けると、メソッドの1回の呼び出しが1つの<strong>トランザクション</strong>になります。メソッドが最後まで進めば DB の変更がまとめて確定し、途中で例外が出れば、そこまでの変更がすべて取り消されます。</li>
   <li>カートの行を、ロックして読みます。ロックしている間、ほかの処理は同じカートを変更できません。</li>
   <li>画面が持っていた版番号(<code>revision</code>)と、DB の版番号を比べます。違えば、別のタブなどでカートが変わっているので、409 を返します(<a href="#ec-be-pattern">同時更新への備え</a>)。</li>
-  <li>業務のルールです。在庫より多い数量は、例外を投げて断ります。例外を JSON に変えるのは別のクラスの仕事です(<a href="#ec-be-pattern">例外の一元処理</a>)。</li>
+  <li>業務のルールです。在庫より多い数量は、例外を投げて断ります。例外を JSON に変えるのは別のクラスの仕事です(<a href="#ec-be-pattern">例外の一元処理</a>)。<code>listing</code> は <code>CatalogService</code> から受け取った「商品と、いま買えるかどうか」です。店舗が閉鎖中、運営が商品を停止した、などで買えない商品は、この行の前で同じように断っています。</li>
   <li>数量が 0 なら行を消し、そうでなければ行を保存します。DB の操作は、Repository(<code>items</code>)のメソッドを呼ぶだけです。</li>
   <li>版番号を1つ進め、最新のカートを DTO(<code>CartView</code>)に組み立てて返します。</li>
 </ol>
@@ -1094,11 +1139,9 @@ public class CartEntity {
   @Column(length = 36, columnDefinition = "CHAR(36)")
   private String id;
 
-  @Column(name = "member_id", length = 36, columnDefinition = "CHAR(36)")<span class="mk">4</span>
+  /** カートは会員ごとに1つ。未ログインではカートを使えない。 */
+  @Column(name = "member_id", nullable = false, length = 36, columnDefinition = "CHAR(36)")<span class="mk">4</span>
   private String memberId;
-
-  @Column(name = "store_id", nullable = false)
-  private long storeId = 1;
 
   @Column(nullable = false)
   private long revision;
@@ -1113,7 +1156,7 @@ public class CartEntity {
   <li><code>@Entity</code> と <code>@Table(name = "carts")</code> で、このクラスのオブジェクト1つが <code>carts</code> テーブルの1行に対応します。</li>
   <li><code>@Getter</code>・<code>@Setter</code> は、<code>getId()</code> や <code>setMemberId(...)</code> を自動で作ります(Lombok というライブラリの機能)。</li>
   <li><code>@Id</code> が主キーです。</li>
-  <li><code>@Column(name = "member_id")</code> で、フィールド <code>memberId</code> が列 <code>member_id</code> に対応します。</li>
+  <li><code>@Column(name = "member_id")</code> で、フィールド <code>memberId</code> が列 <code>member_id</code> に対応します。<code>nullable = false</code> は、空にできない列という意味です。カートは必ず会員のものなので、持ち主のいないカートは保存できません。店舗の列はありません。受け取る店舗は、カートに入れた商品から決まります。</li>
   <li>値を変えるメソッドです。Repository で読んだ Entity のフィールドを変えると、トランザクションが終わるときに <code>UPDATE</code> が自動で実行されます。Service が <code>cart.incrementRevision()</code> を呼んだだけで、<code>save</code> を呼ばなくても版番号が保存されるのは、このためです。</li>
 </ol>
 
@@ -1151,27 +1194,38 @@ public class CartEntity {
     <tr><td class="wrap"><code>common/web/ApiException</code></td><td>例外</td><td>業務のエラーを表す。ステータスコード・<code>code</code>・メッセージを持つ</td></tr>
     <tr><td class="wrap"><code>common/web/ApiErrors</code></td><td>例外の変換</td><td>投げられた例外を <code>{code, message}</code> の JSON に変える</td></tr>
     <tr><td class="wrap"><code>common/CanvasClientConfiguration</code></td><td>設定</td><td>Canvas API を呼ぶための HTTP クライアントを作る</td></tr>
-    <tr><th rowspan="5">auth</th><td class="wrap"><code>auth/AuthConfiguration</code></td><td>設定</td><td>どの URL がログインなしで使えるか、ログイン成功の後に何をするかを決める(Spring Security)</td></tr>
+    <tr><th rowspan="6">auth</th><td class="wrap"><code>auth/AuthConfiguration</code></td><td>設定</td><td>どの URL がログインなしで使えるか、ログイン成功の後に何をするかを決める(Spring Security)</td></tr>
     <tr><td class="wrap"><code>auth/AuthController</code></td><td>Controller</td><td class="wrap"><code>/api/auth/me</code>(ログイン状態)、<code>/api/auth/csrf</code>、<code>/api/auth/verify</code></td></tr>
-    <tr><td class="wrap"><code>auth/AuthService</code></td><td>Service</td><td class="wrap"><code>current()</code> でログイン中の会員を返す。<code>requireSeller()</code>・<code>requireAdmin()</code> で権限を確かめる</td></tr>
-    <tr><td class="wrap"><code>auth/AuthMember</code> / <code>AuthMemberRepository</code></td><td>Entity / Repository</td><td>会員(<code>auth_members</code>)。パスワードは持たない</td></tr>
+    <tr><td class="wrap"><code>auth/AuthService</code></td><td>Service</td><td class="wrap"><code>current()</code> でログイン中の会員を返す。<code>requireBuyer()</code>・<code>requireSeller(storeId)</code>・<code>requireAdmin()</code> などで、会員の種別と店舗でのロールを確かめる</td></tr>
+    <tr><td class="wrap"><code>auth/AuthMember</code> / <code>AuthMemberRepository</code></td><td>Entity / Repository</td><td>会員(<code>members</code>)。種別(<code>account_type</code>)は、購入者・出店を申請中・組織のオーナー・店舗の担当者・運営の5つ。パスワードは持たない</td></tr>
     <tr><td class="wrap"><code>auth/SessionValidityFilter</code></td><td>Filter</td><td>ログインの有効期限を確かめ、切れていれば更新する</td></tr>
-    <tr><th rowspan="6">catalog</th><td class="wrap"><code>catalog/controller/CatalogController</code></td><td>Controller</td><td class="wrap"><code>/api/products</code>、<code>/api/stores</code>、<code>/api/materials/quote</code></td></tr>
-    <tr><td class="wrap"><code>catalog/service/CatalogService</code></td><td>Service</td><td>商品に、店舗の在庫と公開状態を合わせて、一覧を作る</td></tr>
+    <tr><td class="wrap"><code>auth/StoreCapabilityPolicy</code></td><td>権限の表</td><td>店舗での立場(オーナー、店長など)と、できることの対応表</td></tr>
+    <tr><th rowspan="7">catalog</th><td class="wrap"><code>catalog/controller/CatalogController</code></td><td>Controller</td><td class="wrap"><code>/api/products</code>、<code>/api/stores</code>、<code>/api/products/references</code>、<code>/api/materials/quote</code></td></tr>
+    <tr><td class="wrap"><code>catalog/service/CatalogService</code></td><td>Service</td><td>商品に、在庫・公開状態と、店舗・組織の状態を合わせて、「いま買えるか」を決め、一覧を作る</td></tr>
     <tr><td class="wrap"><code>catalog/persistence/repository/ProductRepository</code> / <code>InventoryRepository</code></td><td>Repository</td><td>商品(<code>products</code>)、在庫(<code>inventory</code>)</td></tr>
     <tr><td class="wrap"><code>catalog/mapper/ProductMapper</code></td><td>Mapper</td><td class="wrap"><code>ProductEntity</code> → <code>ProductView</code></td></tr>
     <tr><td class="wrap"><code>catalog/controller/ProductEditorController</code> / <code>catalog/service/ProductEditorService</code></td><td>Controller / Service</td><td>出店者による商品の登録・編集・削除</td></tr>
     <tr><td class="wrap"><code>catalog/service/CanvasModelClient</code></td><td>外部 API の窓口</td><td>商品の植物3Dモデルの組み立てを Canvas API に頼む</td></tr>
-    <tr><th rowspan="6">commerce</th><td class="wrap"><code>commerce/controller/CartController</code> / <code>commerce/service/CartService</code></td><td>Controller / Service</td><td>カートを読む、数量を変える、店舗を変える</td></tr>
-    <tr><td class="wrap"><code>commerce/session/CartSessionResolver</code></td><td>補助</td><td>リクエストから「その人のカートの ID」を求める</td></tr>
-    <tr><td class="wrap"><code>commerce/controller/OrderController</code> / <code>commerce/service/CheckoutService</code></td><td>Controller / Service</td><td>注文の確定。在庫のロック、金額の再確認、在庫の減算、注文の保存を1つのトランザクションで行う</td></tr>
+    <tr><td class="wrap"><code>catalog/controller/ProductModerationController</code> / <code>catalog/service/ProductModerationService</code></td><td>Controller / Service</td><td>運営による商品の警告・公開停止・再開。操作のたびに履歴を残し、店舗へ通知する</td></tr>
+    <tr><th rowspan="7">commerce</th><td class="wrap"><code>commerce/controller/CartController</code> / <code>commerce/service/CartService</code></td><td>Controller / Service</td><td>カートを読む、数量を変える。読むときに、店舗の閉鎖などで買えなくなった明細を外して知らせる</td></tr>
+    <tr><td class="wrap"><code>commerce/session/CartSessionResolver</code></td><td>補助</td><td>リクエストから「その人のカートの ID」を求める。購入者でなければ断る</td></tr>
+    <tr><td class="wrap"><code>commerce/controller/OrderController</code> / <code>commerce/service/CheckoutService</code></td><td>Controller / Service</td><td>注文の確定。在庫のロック、金額の再確認、在庫の減算、注文の保存を1つのトランザクションで行う。注文は、受け取る店舗ごとに1件できる</td></tr>
     <tr><td class="wrap"><code>commerce/service/OrderService</code></td><td>Service</td><td>購入者の注文の一覧、受取情報の編集、履歴からの削除</td></tr>
     <tr><td class="wrap"><code>commerce/controller/OrderWorkflowController</code> / <code>commerce/service/OrderWorkflowService</code></td><td>Controller / Service</td><td>出店者の受取準備・引き渡し(<code>changeStatus</code>)、キャンセルの申請と回答</td></tr>
     <tr><td class="wrap"><code>commerce/mapper/OrderResponseMapper</code></td><td>Mapper</td><td class="wrap"><code>OrderEntity</code> と明細 → <code>OrderView</code></td></tr>
+    <tr><td class="wrap"><code>commerce/controller/SalesReportController</code> / <code>commerce/service/SalesReportService</code></td><td>Controller / Service</td><td>店舗の注文実績と、販売手数料の表示。読むだけで、注文は変えない</td></tr>
+    <tr><th rowspan="4">payment</th><td class="wrap"><code>payment/controller/PaymentController</code> / <code>payment/service/StripeWebhookService</code></td><td>Controller / Service</td><td class="wrap"><code>/api/payments/stripe/webhook</code>。Stripe からの知らせを受け取る。同じ知らせが2回届いても、処理は1回にする</td></tr>
+    <tr><td class="wrap"><code>payment/service/PaymentService</code></td><td>Service</td><td>カード決済。支払い待ちの注文を、支払いの成功で受け付け、失敗で取り消す</td></tr>
+    <tr><td class="wrap"><code>payment/service/RefundService</code> / <code>PaymentExpiryJob</code></td><td>Service / 定期処理</td><td>キャンセルが承認された注文の返金。支払われないままの注文を、1分ごとに調べて取り消し、在庫を戻す</td></tr>
+    <tr><td class="wrap"><code>payment/service/StripeGateway</code></td><td>外部 API の窓口</td><td>Stripe(テストモード)を呼ぶ。鍵がなければ、カード決済を使えなくする</td></tr>
     <tr><th rowspan="2">shopping</th><td class="wrap"><code>shopping/ShoppingController</code> / <code>ShoppingService</code></td><td>Controller / Service</td><td>庭の買い物リストを読み、選んだ商品をカートに入れる</td></tr>
     <tr><td class="wrap"><code>shopping/CanvasShoppingClient</code></td><td>外部 API の窓口</td><td>Canvas API から、庭に置いたものの一覧を取る</td></tr>
+    <tr><th rowspan="4">store</th><td class="wrap"><code>store/service/StoreApplicationService</code> / <code>StoreService</code></td><td>Service</td><td>出店申請と審査(承認されると組織ができる)。オーナーによる店舗の作成・公開・プロフィールの編集</td></tr>
+    <tr><td class="wrap"><code>store/service/StaffAccountService</code> / <code>StoreInvitationService</code></td><td>Service</td><td>担当者の一覧とロールの割り振り。担当者を登録するための招待キーの発行と取り消し</td></tr>
+    <tr><td class="wrap"><code>store/service/StoreClosureService</code> / <code>OrganizationSuspensionService</code></td><td>Service</td><td>店舗の閉鎖。運営による組織の受付停止と停止。終わっていない注文がなくなった時点で、閉鎖済み・停止に進む</td></tr>
+    <tr><td class="wrap"><code>store/service/StoreModerationService</code></td><td>Service</td><td>運営による店舗の警告・利用停止・再開</td></tr>
     <tr><th rowspan="3">そのほか</th><td class="wrap"><code>member/service/MemberService</code></td><td>Service</td><td>受取連絡先、退会、運営者による会員の一覧と停止</td></tr>
-    <tr><td class="wrap"><code>store/service/StoreApplicationService</code> / <code>StoreService</code></td><td>Service</td><td>出店申請と審査、店舗プロフィール、運営者による店舗の停止</td></tr>
+    <tr><td class="wrap"><code>moderation/service/ModerationHistory</code></td><td>補助</td><td>警告と停止の履歴の読み方。商品と店舗で共通</td></tr>
     <tr><td class="wrap"><code>notification/service/NotificationService</code></td><td>Service</td><td>会員・店舗あての通知を保存し、一覧を返す</td></tr>
   </tbody>
 </table></div>
@@ -1211,7 +1265,7 @@ public class CartEntity {
 public interface ProductMapper {
   @Mapping(target = "stock", source = "stock")<span class="mk">2</span>
   <span class="dim">// …(省略)</span>
-  ProductView toView(ProductEntity product, int stock, String publicationStatus, Long sellerStoreId);
+  ProductView toView(ProductEntity product, int stock, String publicationStatus, String sellerStoreName);
   <span class="dim">// …(省略)</span>
 }</code></pre>
 </div>
@@ -1271,8 +1325,8 @@ public class ApiErrors {
 <h4>7. 同時更新への備え(版番号とロック)</h4>
 <dl>
   <dt>何か</dt><dd>2つの操作が同じデータを同時に変えようとしたときに、片方の変更が黙って消えるのを防ぐ。</dd>
-  <dt>どこにあるか</dt><dd><strong>版番号</strong>: カートは <code>revision</code> を持ち、変更のたびに1つ増えます。画面は、読んだときの <code>revision</code> を変更のリクエストに付けます。DB の値と違えば、<code>checkRevision</code> が 409 を返します。<br><strong>ロック</strong>: <code>findLocked</code> で行をロックし、確認から保存までの間に割り込まれないようにします。<code>CheckoutService</code> は、店舗 → 商品 → 在庫の順に、ID の小さい順でロックします。</dd>
-  <dt>なぜ使うか</dt><dd>2つのタブで同じカートを開いて数量を変えたとき、後から押した方に「カートが更新されました」と知らせるため。同じ在庫の最後の1個を2人が同時に注文したとき、2人とも成功しないようにするため。ロックの順番を決めておくのは、2つの注文が互いのロックを待ち続けて止まるのを防ぐためです。</dd>
+  <dt>どこにあるか</dt><dd><strong>版番号</strong>: カートは <code>revision</code> を持ち、変更のたびに1つ増えます。画面は、読んだときの <code>revision</code> を変更のリクエストに付けます。DB の値と違えば、<code>checkRevision</code> が 409 を返します。<br><strong>ロック</strong>: <code>findLocked</code> で行をロックし、確認から保存までの間に割り込まれないようにします。<code>CheckoutService</code> は、店舗 → 組織 → 商品 → 在庫の順に、それぞれ ID の小さい順でロックします。</dd>
+  <dt>なぜ使うか</dt><dd>2つのタブで同じカートを開いて数量を変えたとき、後から押した方に「カートが更新されました」と知らせるため。同じ在庫の最後の1個を2人が同時に注文したとき、2人とも成功しないようにするため。店舗と組織もロックするのは、運営が店舗を停止した直後や、組織が受付を止めた直後に、注文が通ってしまわないようにするためです。ロックの順番を決めておくのは、2つの注文が互いのロックを待ち続けて止まるのを防ぐためです。</dd>
 </dl>
 </div>
 
@@ -1280,7 +1334,7 @@ public class ApiErrors {
 <h4>8. 冪等キー(同じ注文を2回作らない)</h4>
 <dl>
   <dt>何か</dt><dd>リクエストに、画面が作った一意の ID を付ける。サーバーは、同じ ID のリクエストが2回届いても、処理を1回しか行わない。</dd>
-  <dt>どこにあるか</dt><dd>注文のリクエストの <code>requestId</code>。画面(<code>useShop.js</code>)が <code>crypto.randomUUID()</code> で作ります。<code>CheckoutService.placeOrder</code> は、最初に <code>orders.findByCartIdAndRequestIdOrderByStoreIdAsc</code> で同じ ID の注文を探し、あれば新しく作らずにそれを返します。</dd>
+  <dt>どこにあるか</dt><dd>注文のリクエストの <code>requestId</code>。画面(<code>useShop.js</code>)が <code>crypto.randomUUID()</code> で作ります。<code>CheckoutService.placeOrder</code> は、最初に <code>orders.findByCartIdAndRequestIdOrderByStoreIdAsc</code> で同じ ID の注文を探し、あれば新しく作らずにそれを返します。<br>同じ考えは、カード決済にも使っています。Stripe に決済を頼むときは同じ <code>requestId</code> を付けるので、頼み直しても決済は1つです。Stripe からの知らせは、知らせの ID を <code>stripe_events</code> テーブルに記録し、同じ ID の2回目は何もしません(<code>StripeWebhookService</code>)。</dd>
   <dt>なぜ使うか</dt><dd>通信が途中で切れると、画面は「注文できたのか」が分かりません。同じ <code>requestId</code> で送り直せば、できていた場合は同じ注文が返り、できていなかった場合だけ新しく作られます。</dd>
 </dl>
 </div>
@@ -1289,8 +1343,8 @@ public class ApiErrors {
 <h4>9. 外部 API の窓口クラス</h4>
 <dl>
   <dt>何か</dt><dd>ほかのサーバーを呼ぶコードを、専用のクラスにまとめる。</dd>
-  <dt>どこにあるか</dt><dd><code>shopping/CanvasShoppingClient</code>、<code>catalog/service/CanvasModelClient</code>(Canvas API)、<code>catalog/service/PlantSuggestionClient</code>(OpenAI API)。Canvas API との通信に使う部品(<code>RestClient</code>)は <code>CanvasClientConfiguration</code> が作り、ログインの Cookie を Canvas へ引き継ぐ処理もそこにあります。</dd>
-  <dt>なぜ使うか</dt><dd>相手の URL、通信の失敗の扱い(「接続できません」を 503 の <code>ApiException</code> に変える)が1か所に集まります。Service は <code>canvas.detail(gardenId)</code> と呼ぶだけで、通信の細かいことを知りません。</dd>
+  <dt>どこにあるか</dt><dd><code>shopping/CanvasShoppingClient</code>、<code>catalog/service/CanvasModelClient</code>(Canvas API)、<code>catalog/service/PlantSuggestionClient</code>(OpenAI API)、<code>payment/service/StripeGateway</code>(Stripe)。Canvas API との通信に使う部品(<code>RestClient</code>)は <code>CanvasClientConfiguration</code> が作り、ログインの Cookie を Canvas へ引き継ぐ処理もそこにあります。</dd>
+  <dt>なぜ使うか</dt><dd>相手の URL、通信の失敗の扱い(「接続できません」を 503 の <code>ApiException</code> に変える)が1か所に集まります。Service は <code>canvas.detail(gardenId)</code> と呼ぶだけで、通信の細かいことを知りません。<br>Stripe を呼ぶのは、DB のトランザクションが確定した後です(<code>PaymentService.start</code>、<code>AfterCommit</code>)。相手の返事を待つ間、在庫や注文の行をロックしたままにしないためです。</dd>
 </dl>
 </div>
 
@@ -1298,9 +1352,37 @@ public class ApiErrors {
 <h4>10. マイグレーション(テーブル定義の履歴)</h4>
 <dl>
   <dt>何か</dt><dd>テーブルの作成や変更を、番号の付いた SQL ファイルとして積み重ねる。DB は「何番まで実行したか」を覚えていて、起動のときに続きだけを実行する。</dd>
-  <dt>どこにあるか</dt><dd><code>backend/src/main/resources/db/migration/</code> の <code>V1__catalog_and_commerce.sql</code> 〜 <code>V15__cart_item_pickup_store.sql</code>。Flyway というライブラリが実行します。</dd>
+  <dt>どこにあるか</dt><dd><code>backend/src/main/resources/db/migration/</code> の3つのファイル。<code>V1__schema.sql</code>(全部のテーブルの定義)、<code>V2__sample_data.sql</code>(サンプルの店舗と商品)、<code>V3__organization_moderation_events.sql</code>(組織の停止の履歴のテーブル)です。Flyway というライブラリが実行します。DB v3 への切り替えのときに、それまでの V1〜V15 を1つにまとめ直しました。</dd>
   <dt>なぜ使うか</dt><dd>全員の DB が同じ形になり、「いつ、どの列を足したか」が Git の履歴に残ります。設定の <code>spring.jpa.hibernate.ddl-auto=validate</code> で、Entity とテーブルの形が合っているかを起動のときに確かめています。</dd>
 </dl>
+</div>
+
+<div class="pat">
+<h4>11. 権限の対応表を1か所に持つ</h4>
+<dl>
+  <dt>何か</dt><dd>「どの立場の人が、何をできるか」を1つの表として書き、できるかどうかの判定を、その表を見るメソッドに集める。</dd>
+  <dt>どこにあるか</dt><dd><code>auth/StoreCapabilityPolicy</code>(店舗の注文実績を見られるか)と、<code>store/service/StaffPolicy</code>(担当者の一覧、ロールの割り振り、招待キー)。店舗側のアカウントには、オーナー、<code>ORG_ADMIN</code>(組織の人事の担当)、<code>MANAGER</code>(店長)、<code>STAFF</code>(スタッフ)という立場があります。</dd>
+  <dt>なぜ使うか</dt><dd>立場が増えると、「この操作は誰ができるか」の <code>if</code> が、あちこちの Service に散らばります。表にしておけば、立場やできることを足すときに直す場所が1か所で済み、表を読めば決まりの全体が分かります。</dd>
+</dl>
+<div class="codebox">
+  <div class="file">auth/StoreCapabilityPolicy.java(途中を省略)</div>
+<pre><code>static final Map&lt;Capability, Set&lt;Position&gt;&gt; TABLE = Map.of(<span class="mk">1</span>
+  Capability.VIEW_STORE_SALES,
+  EnumSet.of(Position.OWNER, Position.MANAGER, Position.STAFF, Position.ADMIN),
+  Capability.VIEW_CLOSED_STORE_SALES,
+  EnumSet.of(Position.OWNER, Position.ORG_ADMIN, Position.ADMIN)
+);
+<span class="dim">// …(省略)</span>
+public boolean can(AuthMember member, StoreEntity store, Capability capability) {
+  Set&lt;Position&gt; allowed = TABLE.get(capability);<span class="mk">2</span>
+  return positionsAt(member, store).stream().anyMatch(allowed::contains);<span class="mk">3</span>
+}</code></pre>
+</div>
+<ol class="read">
+  <li><code>Map</code> は、「キーと値の組」の集まりです。キーが「できること」(<code>Capability</code>)、値が「それをできる立場の集まり」(<code>Position</code> の <code>Set</code>)です。営業中の店舗の注文実績(<code>VIEW_STORE_SALES</code>)はオーナー・店長・スタッフ・運営が、閉鎖済みの店舗の注文実績(<code>VIEW_CLOSED_STORE_SALES</code>)はオーナー・<code>ORG_ADMIN</code>・運営が見られる、と読めます。</li>
+  <li>表から、その「できること」を許された立場の集まりを取り出します。</li>
+  <li><code>positionsAt</code> で、その会員がその店舗で持っている立場を求めます。そのうち1つでも表に入っていれば、<code>true</code> を返します。</li>
+</ol>
 </div>
 
 <!-- ---------- 4-5 ---------- -->
@@ -1330,7 +1412,7 @@ packages/site-header/         <span class="c">EC と Canvas で共通のヘッ�
     <tr><th><code>useShop.js</code></th><td>カート・商品・注文の state と、「数量を変える」「注文する」などの操作</td><td>「読み込み中はボタンを押せなくする」「失敗したらカートを読み直す」という順序の決まりを、1か所に書く</td></tr>
     <tr><th><code>api.js</code></th><td>API 1つにつき関数1つ。URL とメソッドはここにしか書かない</td><td>API の URL が変わっても、直すのはこのファイルだけ</td></tr>
     <tr><th><code>types.js</code></th><td>JSON の項目名と型の説明</td><td>エディターが項目名の打ち間違いを見つけられる。<code>npm run typecheck</code> で検査する</td></tr>
-    <tr><th><code>workspace/</code></th><td>ログイン後の管理の画面(注文履歴、商品管理、会員管理、出店審査など)</td><td>買い物の画面とは使う人も操作も違う。「一覧を読む → 操作する → 読み直す」の形が多いので、専用の hook(<code>useResource.js</code>)を使う</td></tr>
+    <tr><th><code>workspace/</code></th><td>ログイン後の管理の画面(注文履歴、商品管理、店舗と担当者の管理、注文実績、会員管理、出店審査、組織管理など)</td><td>買い物の画面とは使う人も操作も違う。「一覧を読む → 操作する → 読み直す」の形が多いので、専用の hook(<code>useResource.js</code>)を使う</td></tr>
     <tr><th><code>packages/site-header/</code></th><td>ヘッダー(ロゴ、ナビゲーション、カートの件数)</td><td>EC と Canvas で同じものを使うため、<code>frontend/</code> の外に出して、部品として配れるようにしている</td></tr>
   </tbody>
 </table></div>
@@ -1456,26 +1538,26 @@ sequenceDiagram
   box rgb(230,245,236) バックエンド:EC API
     participant Ctl as CatalogController
     participant Svc as CatalogService
-    participant Repo as ProductRepository&lt;br/&gt;InventoryRepository
+    participant Repo as ProductRepository&lt;br/&gt;InventoryRepository&lt;br/&gt;ほか
   end
   box rgb(255,238,226) データベース
     participant DB as MySQL
   end
   App-&gt;&gt;Shop: useShop() を呼ぶ
   Shop-&gt;&gt;Shop: useEffect →&lt;br/&gt;initialize() → refresh()
-  Note over Shop,Api: 先に api.cart() で&lt;br/&gt;GET /api/cart を呼び、&lt;br/&gt;受取店舗の storeId を知る
-  Shop-&gt;&gt;Api: api.products(storeId)
-  Api-&gt;&gt;Ctl: GET /api/products&lt;br/&gt;?storeId=1
-  Ctl-&gt;&gt;Svc: products(storeId)
-  Svc-&gt;&gt;Repo: findByActiveTrue()
+  Note over Shop,Api: 先に api.cart() で&lt;br/&gt;GET /api/cart を呼ぶ。&lt;br/&gt;未ログインなら 401 が返り、&lt;br/&gt;カートなしで先へ進む
+  Shop-&gt;&gt;Api: api.products()
+  Api-&gt;&gt;Ctl: GET /api/products
+  Ctl-&gt;&gt;Svc: products(null)
+  Svc-&gt;&gt;Repo: products&lt;br/&gt;.findAllNotDeleted()
   Repo-&gt;&gt;DB: SELECT … FROM&lt;br/&gt;products
   DB--&gt;&gt;Repo: 行
   Repo--&gt;&gt;Svc: ProductEntity の&lt;br/&gt;リスト
-  Svc-&gt;&gt;Repo: findAllAtStore(storeId)
-  Repo-&gt;&gt;DB: SELECT … FROM&lt;br/&gt;inventory
+  Svc-&gt;&gt;Repo: inventory / stores /&lt;br/&gt;organizations の&lt;br/&gt;findAllById(…)
+  Repo-&gt;&gt;DB: SELECT … FROM&lt;br/&gt;inventory / stores /&lt;br/&gt;organizations
   DB--&gt;&gt;Repo: 行
-  Repo--&gt;&gt;Svc: InventoryEntity の&lt;br/&gt;リスト
-  Svc-&gt;&gt;Svc: ProductMapper.toView()&lt;br/&gt;商品 + 在庫&lt;br/&gt;→ ProductView
+  Repo--&gt;&gt;Svc: 在庫・店舗・組織の&lt;br/&gt;Entity のリスト
+  Svc-&gt;&gt;Svc: ProductMapper.toView()&lt;br/&gt;商品 + 在庫 + 店舗名&lt;br/&gt;→ ProductView。&lt;br/&gt;買えない商品を除く
   Svc--&gt;&gt;Ctl: ProductView の&lt;br/&gt;リスト
   Ctl--&gt;&gt;Api: 200 + JSON
   Api--&gt;&gt;Shop: 商品の配列
@@ -1488,8 +1570,9 @@ sequenceDiagram
 </figure>
 <ul>
   <li><strong>1〜2</strong>: 画面が表示されると、<code>useEffect</code> が読み込みを始めます。利用者は何も押していません。</li>
-  <li><strong>6〜13</strong>: 商品と在庫は別のテーブルなので、Repository を2回呼びます。</li>
-  <li><strong>14</strong>: Entity をそのまま返さず、DTO(<code>ProductView</code>)に詰め替えます。このとき、在庫の数と公開状態を商品に合わせます。</li>
+  <li><strong>3〜5</strong>: 商品の一覧は、店舗を指定せずに読みます。返るのは、全店舗の、いま購入できる商品です。<code>products(null)</code> の <code>null</code> は「店舗を絞らない」という意味です。</li>
+  <li><strong>6〜13</strong>: 商品・在庫・店舗・組織は別のテーブルです。先に商品を読み、次に、その商品の在庫と、店舗・組織の状態を、それぞれの Repository で読みます。</li>
+  <li><strong>14</strong>: Entity をそのまま返さず、DTO(<code>ProductView</code>)に詰め替えます。このとき、在庫の数・公開状態・店舗の名前を商品に合わせます。店舗が閉鎖中、組織が受付を止めている、運営が商品を停止した、出店者が非公開にしている、などの理由でいま買えない商品は、一覧から除きます。</li>
   <li><strong>18〜19</strong>: <code>setProducts</code> で state が変わるので、React が <code>Catalog.jsx</code> をもう一度実行し、商品が並びます。</li>
 </ul>
 
@@ -1526,8 +1609,8 @@ sequenceDiagram
   Repo-&gt;&gt;DB: SELECT … FROM carts&lt;br/&gt;… FOR UPDATE
   DB--&gt;&gt;Repo: 行(ロック済み)
   Repo--&gt;&gt;Svc: CartEntity
-  Svc-&gt;&gt;Svc: checkRevision() と&lt;br/&gt;在庫の確認
-  alt revision が違う、または在庫が足りない
+  Svc-&gt;&gt;Svc: checkRevision() と、&lt;br/&gt;買える商品か、&lt;br/&gt;在庫は足りるかの確認
+  alt revision が違う、買えない商品、または在庫が足りない
     Svc--&gt;&gt;Ctl: ApiException(409)&lt;br/&gt;を投げる
     Ctl--&gt;&gt;Api: 409 +&lt;br/&gt;{ code, message }
     Api--&gt;&gt;Shop: ApiError を投げる
@@ -1548,7 +1631,9 @@ sequenceDiagram
   <span class="how">読み方: <code>alt</code> の枠は場合分けです。上の段が断られる場合、下の段がうまくいく場合で、どちらか片方だけが起きます。</span></figcaption>
 </figure>
 <ul>
+  <li><strong>2</strong>: ログインしていない人が押した場合、<code>add</code> はサーバーを呼ばずに、ログインの画面へ進みます。カートは会員のものだからです。</li>
   <li><strong>3〜4</strong>: 画面は「1個足す」ではなく、「数量を(今の数量 + 足す数)にする」と、読んだときの <code>revision</code> を送ります。</li>
+  <li><strong>6</strong>: カートの ID を求めるときに、購入者かどうかも確かめます。店舗側のアカウントと、出店を申請中のアカウントは購入できないので、ここで 403 が返ります。</li>
   <li><strong>4 と 5 の間</strong>: 書き込み(GET 以外)のリクエストには、先に <code>GET /api/auth/csrf</code> で受け取った値を付けます。Kusakari の画面から送られたリクエストだと、サーバーが確かめるための値です。<code>auth.js</code> の <code>authFetch</code> が行います。</li>
   <li><strong>13〜16</strong>: Service が投げた例外は、<code>ApiErrors</code> が 409 のレスポンスに変えます。画面側では <code>api.js</code> が <code>ApiError</code> にし、<code>useShop.js</code> の <code>run</code> が受け取ります。</li>
   <li><strong>19〜20</strong>: Service のメソッドを抜けると、トランザクションが確定します。<code>cart_items</code> の行と、<code>carts.revision</code> の +1 が、まとめて保存されます。</li>
@@ -1589,34 +1674,49 @@ sequenceDiagram
   alt 同じ requestId の注文がすでにある
     Svc--&gt;&gt;Ctl: 前に作った注文を&lt;br/&gt;そのまま返す
   else 初めての requestId
-    Svc-&gt;&gt;Repo: stores.lock() →&lt;br/&gt;products.findLocked() →&lt;br/&gt;inventory.lockAtStore()
-    Repo-&gt;&gt;DB: SELECT … FOR UPDATE&lt;br/&gt;(店舗 → 商品 → 在庫)
-    Svc-&gt;&gt;Svc: cartService.view(cart)&lt;br/&gt;在庫と合計金額を&lt;br/&gt;計算し直す
-    break 在庫が足りない、または合計が expectedTotalYen と違う
+    Svc-&gt;&gt;Repo: stores.lock() →&lt;br/&gt;organizations.lockShared() →&lt;br/&gt;products.lockSharedSuspension() →&lt;br/&gt;inventory.lockAll()
+    Repo-&gt;&gt;DB: SELECT … FOR UPDATE /&lt;br/&gt;FOR SHARE&lt;br/&gt;(店舗 → 組織 → 商品 → 在庫)
+    Svc-&gt;&gt;Svc: 店舗と組織が受付中かを&lt;br/&gt;確かめ、cartService.view(cart)&lt;br/&gt;で在庫と合計金額を&lt;br/&gt;計算し直す
+    break 受付を止めた店舗がある、在庫が足りない、または合計が expectedTotalYen と違う
       Svc--&gt;&gt;Ctl: ApiException(409)&lt;br/&gt;変更は取り消される
     end
-    Svc-&gt;&gt;Repo: orders.save() /&lt;br/&gt;orderDetails.save() /&lt;br/&gt;orderItems.save()
+    Svc-&gt;&gt;Repo: orders.save() /&lt;br/&gt;orderItems.save()&lt;br/&gt;(カードなら payments も)
     Svc-&gt;&gt;Svc: stock.setQuantity(&lt;br/&gt;在庫 − 数量)
     Svc-&gt;&gt;Repo: cartItems.deleteAll(items)&lt;br/&gt;cart.incrementRevision()
-    Repo-&gt;&gt;DB: INSERT orders,&lt;br/&gt;order_details, order_items&lt;br/&gt;UPDATE inventory&lt;br/&gt;DELETE cart_items
+    Repo-&gt;&gt;DB: INSERT orders, order_items&lt;br/&gt;(カードなら payments も)&lt;br/&gt;UPDATE inventory&lt;br/&gt;DELETE cart_items
     Note over Svc,DB: メソッドを抜けると確定(コミット)
     Svc--&gt;&gt;Ctl: CheckoutResult&lt;br/&gt;(受取店舗ごとの注文)
   end
+  Note over Ctl: カードのときだけ、確定の後に&lt;br/&gt;PaymentService.start() が&lt;br/&gt;Stripe に決済を頼む
   Ctl--&gt;&gt;Api: 200 + JSON
   Api--&gt;&gt;Shop: 注文
-  Shop-&gt;&gt;Shop: setLastOrders(…)&lt;br/&gt;→ refresh()
-  Shop--&gt;&gt;View: 注文完了の表示に&lt;br/&gt;変わる
+  Shop-&gt;&gt;Shop: 店頭払いは setLastOrders(…)、&lt;br/&gt;カードは setPendingPayment(…)&lt;br/&gt;→ refresh()
+  Shop--&gt;&gt;View: 店頭払いは注文完了の表示、&lt;br/&gt;カードはカードの入力欄に&lt;br/&gt;変わる
 </pre>
   </div>
   <figcaption><span class="no">図7 注文を確定するときの流れ(EC)</span>
-  <span class="how">読み方: <code>break</code> の枠は、条件に当てはまったらそこで処理をやめることを表します。「各 Repository」は、カート・注文・在庫・店舗・商品などの Repository をまとめて描いたものです。</span></figcaption>
+  <span class="how">読み方: <code>break</code> の枠は、条件に当てはまったらそこで処理をやめることを表します。「各 Repository」は、カート・注文・在庫・店舗・組織・商品などの Repository をまとめて描いたものです。カードで支払う場合の続きは、図の下で説明します。</span></figcaption>
 </figure>
 <ul>
-  <li><strong>4〜5</strong>: 画面は、<code>requestId</code>(冪等キー)と、利用者が見ていた <code>revision</code> と合計金額(<code>expectedTotalYen</code>)を送ります。価格そのものは送りません。</li>
+  <li><strong>4〜5</strong>: 画面は、<code>requestId</code>(冪等キー)と、利用者が見ていた <code>revision</code> と合計金額(<code>expectedTotalYen</code>)、支払い方法(<code>paymentMethod</code>)を送ります。価格そのものは送りません。</li>
   <li><strong>10〜11</strong>: 同じ <code>requestId</code> の注文があれば、送り直しと判断して、同じ注文を返します。</li>
-  <li><strong>12〜15</strong>: 在庫をロックしてから、サーバーが在庫と合計金額を計算し直します。画面が見ていた金額と違えば、注文せずに 409 を返します。</li>
-  <li><strong>16〜19</strong>: 注文の保存、在庫の減算、カートを空にする、の3つは同じトランザクションです。どれか1つでも失敗すれば、3つとも起きなかったことになります。「在庫は減ったが注文がない」という状態になりません。</li>
+  <li><strong>12〜15</strong>: 店舗・組織・商品・在庫をロックしてから、店舗と組織が注文を受け付けているかを確かめ、サーバーが在庫と合計金額を計算し直します。画面が見ていた金額と違えば、注文せずに 409 を返します。</li>
+  <li><strong>16〜19</strong>: 注文の保存、在庫の減算、カートを空にする、の3つは同じトランザクションです。どれか1つでも失敗すれば、3つとも起きなかったことになります。「在庫は減ったが注文がない」という状態になりません。カートに複数の店舗の商品が入っていれば、注文は店舗ごとに1件ずつできます。</li>
 </ul>
+
+<h4 id="ec-flow-card">カードで支払う場合の続き</h4>
+<p>支払い方法は、カード(<code>CARD</code>)と店頭払い(<code>PAY_AT_STORE</code>)の2つです。店頭払いは、図7 の時点で注文が「注文受付」になり、購入者と店舗に通知が届きます。カードは、図7 でできるのが「支払い待ち」の注文で、支払いが確かめられてから「注文受付」になります。</p>
+<p>カードの決済には、<strong>Stripe</strong> という外部の決済サービスを使います。使うのはテストモードだけで、実際のお金は動きません。</p>
+<ol>
+  <li>図7 のトランザクションで、支払い待ちの注文と、決済の行(<code>payments</code> テーブル)を保存します。在庫は、この時点で減らします。</li>
+  <li>確定(コミット)の後、<code>PaymentService.start</code> が <code>StripeGateway</code> を通して Stripe に決済を頼みます。Stripe は、その決済を指す値(<code>clientSecret</code>)を返します。EC API は、それを注文と一緒に画面へ返します。</li>
+  <li>画面(<code>components/CardPayment.jsx</code>)は、Stripe が用意したカードの入力欄を表示します。入力した内容は、ブラウザーから Stripe へ送られます。EC API は、カード番号を受け取りません。</li>
+  <li>支払いの結果は、Stripe が EC API の <code>POST /api/payments/stripe/webhook</code> を呼んで知らせます。外部のサービスが、出来事を知らせるためにこちらの API を呼ぶ仕組みを、<strong>Webhook</strong> と呼びます。<code>PaymentController</code> は、本当に Stripe から来た知らせかを署名で確かめてから、<code>StripeWebhookService</code> に渡します。</li>
+  <li>成功の知らせなら、<code>PaymentService</code> が注文を「注文受付」にして、購入者と店舗に通知します。失敗の知らせなら、注文を取り消して在庫を戻します。支払われないまま時間が過ぎた注文は、<code>PaymentExpiryJob</code> が1分ごとに調べて、同じように取り消します。</li>
+  <li>画面は、その間 <code>GET /api/orders/{id}</code> を繰り返し呼んで、注文の状態を見ています。「注文受付」になったら、注文完了の表示に変わります。</li>
+</ol>
+<p><strong>なぜ、画面から「支払えました」と送らせないのか。</strong>ブラウザーの中のプログラムは、利用者が書き換えられます(<a href="#b-front">2章</a>)。支払いが済んだかどうかは、Stripe から EC API へ直接届いた知らせだけで決めます。</p>
+<p><strong>なぜ、確定の後で Stripe を呼ぶのか。</strong>Stripe の返事を待つ間、在庫や注文の行をロックしたままにしないためです。先に注文を保存しておけば、Stripe との通信が失敗しても、同じ <code>requestId</code> で送り直すだけで続きから進められます。</p>
 </section>
 
 <!-- ============================== 5章 ============================== -->
@@ -1651,7 +1751,7 @@ sequenceDiagram
 │  ├─ calibration.py、placement_bounds.py  <span class="c">写真と庭の位置合わせの計算</span>
 │  ├─ plants/                      <span class="c">植物の3Dモデルを組み立てる規則(今の版)</span>
 │  ├─ plant_legacy/                <span class="c">同じ規則の古い版。保存済みのデータを確かめるために残す</span>
-│  └─ migrations.py、local_mysql.py、setup_*.py  <span class="c">起動の前の準備</span>
+│  └─ migrations.py、local_mysql.py、setup_*.py、reset_database.py  <span class="c">起動の前の準備と、開発用 DB の作り直し</span>
 └─ verification/                   <span class="c">本物の MySQL を使って確かめる検証スクリプト</span></pre>
 
 <h4>分け方の考え: フォルダーではなく、ファイル名で役割を分ける</h4>
@@ -1870,7 +1970,7 @@ async def domain_error(_request, error: ApiError):
     <tr><th><code>validation.py</code></th><td>検査</td><td><code>validate_document</code>。位置・回転・倍率・ID の重複・写真の条件</td></tr>
     <tr><th><code>service.py</code></th><td>業務処理と DB 操作</td><td><code>list_gardens</code>、<code>create_garden</code>、<code>get_garden</code>、<code>update_garden</code>、<code>delete_garden</code>、<code>duplicate_garden</code>、<code>owned_garden</code></td></tr>
     <tr><th><code>models.py</code></th><td>Entity</td><td><code>Garden</code>(庭)、<code>PlacedObject</code>(置いたもの)、<code>Asset</code>(3D素材)、<code>GardenThumbnail</code></td></tr>
-    <tr><th><code>auth.py</code></th><td>ログインの確認</td><td><code>AuthBoundary</code>。受け取った Cookie を付けて EC API に問い合わせ、会員の ID を得る</td></tr>
+    <tr><th><code>auth.py</code></th><td>ログインの確認</td><td><code>AuthBoundary</code>。受け取った Cookie を付けて EC API に問い合わせ、会員の ID と種別を得る。購入者と運営のほかは、403 で断る</td></tr>
     <tr><th><code>errors.py</code></th><td>例外</td><td><code>ApiError</code>、<code>bad_request</code>(400)、<code>not_found</code>(404)</td></tr>
     <tr><th><code>media.py</code></th><td>画像の保存先</td><td><code>MediaStore</code>。設定によって、DB か S3 のどちらかに保存する</td></tr>
     <tr><th><code>history_routes.py</code> ほか3つ</th><td>完成イメージの履歴</td><td>一覧・保存・1件の取得・削除。<code>history_router</code> が URL の対応を作って返す</td></tr>
@@ -1925,7 +2025,7 @@ async def domain_error(_request, error: ApiError):
 <h4>5. ミドルウェアでログインを確かめる</h4>
 <dl>
   <dt>何か</dt><dd>すべてのリクエストが通る場所で、ログインを確かめる。</dd>
-  <dt>どこにあるか</dt><dd><code>main.py</code> の <code>backend_identity</code> と、<code>auth.py</code> の <code>AuthBoundary.authenticate</code>。Canvas は自分ではログインを判定せず、受け取った Cookie を付けて EC API に問い合わせます(<a href="#link">6章</a>)。</dd>
+  <dt>どこにあるか</dt><dd><code>main.py</code> の <code>backend_identity</code> と、<code>auth.py</code> の <code>AuthBoundary.authenticate</code>。Canvas は自分ではログインを判定せず、受け取った Cookie を付けて EC API に問い合わせます(<a href="#link">6章</a>)。EC API が返す会員の種別も、ここで見ます。Canvas は購入者のための機能なので、店舗側のアカウントと、出店を申請中のアカウントには 403 を返します。例外は <code>POST /api/model-assemblies/resolve</code> の1つだけです。EC の商品登録の画面が、植物3Dモデルの組み立てに使うためです。</dd>
   <dt>なぜ使うか</dt><dd>入口の関数ごとに確認を書くと、書き忘れが起きるため。ログインの仕組みを EC の1か所だけに持つため。</dd>
 </dl>
 </div>
@@ -1994,7 +2094,7 @@ async def domain_error(_request, error: ApiError):
    ├─ components/     <span class="c">ふつうの画面の部品(パネル、ダイアログ、ボタン)</span>
    ├─ three/          <span class="c">3D の描画と操作</span>
    ├─ stores/         <span class="c">編集中の庭(editorStore.js)</span>
-   ├─ hooks/          <span class="c">部品をまたぐ処理(自動保存、サムネイル、EC の商品の読み込み)</span>
+   ├─ hooks/          <span class="c">部品をまたぐ処理(自動保存、サムネイル、EC の商品の読み込み、買えなくなった商品の整理)</span>
    ├─ api/            <span class="c">HTTP 通信</span>
    ├─ domain/         <span class="c">編集のルールと計算</span>
    ├─ capture/        <span class="c">画面を画像にする</span>
@@ -2009,7 +2109,7 @@ async def domain_error(_request, error: ApiError):
     <tr><th><code>domain/</code></th><td>庭のルール(範囲の中か、200個までか、倍率は 0.25〜3 か)と計算</td><td>React、HTTP、3D。ここの関数は、引数だけで結果が決まる</td></tr>
     <tr><th><code>stores/</code></th><td>編集中の庭と、「置く」「動かす」「消す」の操作</td><td>HTTP、3D の描き方</td></tr>
     <tr><th><code>api/</code></th><td>API の URL とメソッド、エラーの変換</td><td>画面、編集のルール</td></tr>
-    <tr><th><code>hooks/</code></th><td>いつ保存するか、いつサムネイルを作るか</td><td>見た目</td></tr>
+    <tr><th><code>hooks/</code></th><td>いつ保存するか、いつサムネイルを作るか、いつ買えなくなった商品を庭から外すか</td><td>見た目</td></tr>
     <tr><th><code>three/</code></th><td>3D の描き方、マウスの位置から庭の上の座標を求める方法</td><td>HTTP</td></tr>
     <tr><th><code>components/</code></th><td>ふつうの HTML の部品の見た目</td><td>3D の描き方の細かい所</td></tr>
     <tr><th><code>pages/</code></th><td>1画面に、どの部品を並べるか</td><td>―</td></tr>
@@ -2072,7 +2172,7 @@ async def domain_error(_request, error: ApiError):
   <tbody>
     <tr><th><code>pages/App.jsx</code></th><td>URL を見て、庭の一覧(<code>GardenListPage</code>)か、編集画面(<code>EditorPage</code>)を選ぶ</td></tr>
     <tr><th><code>pages/EditorPage.jsx</code></th><td>編集画面の全体。庭を読み込み、写真の表示と 3D の表示を切り替え、保存の状態を表示する</td></tr>
-    <tr><th><code>components/AuthGate.jsx</code></th><td>ログインを確かめてから、中身を表示する。未ログインなら EC のログイン画面へ送る</td></tr>
+    <tr><th><code>components/AuthGate.jsx</code></th><td>ログインを確かめてから、中身を表示する。未ログインなら EC のログイン画面へ送る。店舗側のアカウントには、購入者のアカウントで使う機能だと表示する</td></tr>
     <tr><th><code>components/CommercePanel.jsx</code></th><td>右側の、商品と買い物リストのパネル</td></tr>
     <tr><th><code>components/PhotoOverlay.jsx</code></th><td>庭の写真の上に、3D を重ねて表示する</td></tr>
     <tr><th><code>three/GardenCanvas.jsx</code></th><td>3D の庭の全体。光、カメラ、地面、置いたものを並べる</td></tr>
@@ -2080,7 +2180,8 @@ async def domain_error(_request, error: ApiError):
     <tr><th><code>three/PlacedObject.jsx</code></th><td>置いたもの1つ。ドラッグでの移動、回転、拡大縮小</td></tr>
     <tr><th><code>stores/editorStore.js</code></th><td>編集中の庭(<code>document</code>)、未保存の印(<code>isDirty</code>)、選択中のもの、操作の関数</td></tr>
     <tr><th><code>hooks/useGardenAutosave.js</code></th><td>変更を見つけて、0.5秒後に保存する</td></tr>
-    <tr><th><code>hooks/useCommerce.js</code></th><td>EC API から、カート・商品・買い物リストを読む</td></tr>
+    <tr><th><code>hooks/useCommerce.js</code></th><td>EC API から、カート・商品・買い物リストと、庭に置いた商品の今の状態を読む</td></tr>
+    <tr><th><code>hooks/useUnavailablePlacements.js</code></th><td>庭を開いたときに1回だけ、もう買えない商品を庭から外し、外した商品の名前を知らせる。外すかどうかの判断は <code>domain/productAvailability.js</code> の関数が行う</td></tr>
     <tr><th><code>api/http.js</code>、<code>api/gardens.js</code></th><td>共通の送り方(<code>requestJson</code>)と、庭の API(<code>gardenApi</code>)</td></tr>
     <tr><th><code>api/auth.js</code>、<code>api/commerce.js</code></th><td>EC API の呼び出し(ログインの確認、カート、商品)</td></tr>
     <tr><th><code>domain/gardenEditing.js</code></th><td>置く・動かす・消すのルール(<code>addObject</code>、<code>changeObjectTransform</code>、<code>removeObject</code>)</td></tr>
@@ -2218,7 +2319,7 @@ useEffect(() =&gt; {
 <h4>6. 入口で確かめる部品(<code>AuthGate</code>)</h4>
 <dl>
   <dt>何か</dt><dd>ほかの部品を包み、条件を満たしたときだけ中身を表示する部品。</dd>
-  <dt>どこにあるか</dt><dd><code>components/AuthGate.jsx</code>。<code>App.jsx</code> が、すべての画面を <code>&lt;AuthGate&gt;…&lt;/AuthGate&gt;</code> で包みます。EC の <code>GET /api/auth/me</code> でログインを確かめ、済んでいれば中身(<code>children</code>)を表示し、そうでなければ EC のログイン画面へ送ります。確かめた会員の情報は、<code>AuthContext</code> を通して、中のどの部品からも読めます。</dd>
+  <dt>どこにあるか</dt><dd><code>components/AuthGate.jsx</code>。<code>App.jsx</code> が、すべての画面を <code>&lt;AuthGate&gt;…&lt;/AuthGate&gt;</code> で包みます。EC の <code>GET /api/auth/me</code> でログインを確かめ、済んでいれば中身(<code>children</code>)を表示し、そうでなければ EC のログイン画面へ送ります。ログインしていても、店舗側のアカウントと出店を申請中のアカウントには、中身の代わりに「Canvas は購入者のアカウントで使えます。」と表示します(Canvas API も同じ条件で 403 を返します)。植物のプレビューの画面だけは <code>&lt;AuthGate buyerOnly={false}&gt;</code> と書いて、この制限を外しています。EC の商品登録の画面が、この画面を中に表示するためです。確かめた会員の情報は、<code>AuthContext</code> を通して、中のどの部品からも読めます。</dd>
   <dt>なぜ使うか</dt><dd>各画面にログインの確認を書かずに済むため。</dd>
 </dl>
 </div>
@@ -2254,8 +2355,8 @@ sequenceDiagram
   Api-&gt;&gt;Main: GET /api/gardens/{id}
   Main-&gt;&gt;Auth: backend_identity →&lt;br/&gt;auth.authenticate(&lt;br/&gt;request)
   Auth-&gt;&gt;EC: GET /api/auth/me(Cookie を付けて)
-  EC--&gt;&gt;Auth: ログイン中の会員の ID
-  Auth--&gt;&gt;Main: request.state&lt;br/&gt;.owner_id に入れる
+  EC--&gt;&gt;Auth: ログイン中の会員の&lt;br/&gt;ID と種別
+  Auth--&gt;&gt;Main: 購入者か運営なら、&lt;br/&gt;ID を request.state&lt;br/&gt;.owner_id に入れる
   Main-&gt;&gt;Svc: get(id, db, owner) → service.get_garden(…)
   Svc-&gt;&gt;DB: SELECT … FROM gardens&lt;br/&gt;WHERE id = …&lt;br/&gt;AND owner_id = …
   Svc-&gt;&gt;DB: SELECT … FROM&lt;br/&gt;placed_objects&lt;br/&gt;WHERE garden_id = …
@@ -2272,11 +2373,12 @@ sequenceDiagram
   <span class="how">読み方: 右端の EC API は、Canvas とは別のサーバーです。Canvas API が、ログインを確かめるために呼びます。</span></figcaption>
 </figure>
 <ul>
-  <li><strong>3〜6</strong>: Canvas API は、自分ではログインを判定しません。ブラウザーから受け取った Cookie を付けて、EC API に「この人は誰か」を聞きます。</li>
+  <li><strong>3〜6</strong>: Canvas API は、自分ではログインを判定しません。ブラウザーから受け取った Cookie を付けて、EC API に「この人は誰か」を聞きます。返ってきた種別が、店舗側のアカウントか、出店を申請中のアカウントなら、ここで 403 を返して終わります。</li>
   <li><strong>8</strong>: 庭を探す条件に、必ず <code>owner_id</code> を入れます。他人の庭の ID を指定しても、見つかりません。</li>
   <li><strong>11</strong>: Entity をそのまま返さず、GardenDocument に詰め替えます。</li>
   <li><strong>15</strong>: 読んだ庭のコピーを、編集用にストアへ置きます。</li>
 </ul>
+<p><strong>開いた後に、買えなくなった商品を外す。</strong>庭が開くと、画面(<code>hooks/useCommerce.js</code>)は EC API の <code>POST /api/products/references</code> を呼び、庭に置いた商品が今も買えるかを聞きます。商品が削除された、店舗が閉鎖した、運営が店舗や組織を停止した、という元に戻らない理由の商品は、<code>hooks/useUnavailablePlacements.js</code> が庭から外し、外した商品の名前を表示します。保存は、次の「自動で保存する」の流れに任せます。在庫切れや非公開のような一時的な理由の商品は、庭に残し、買い物リストに「在庫なし」「現在は購入できません」と表示します。EC API に聞けなかったときは、買えるかどうかが分からないので、何も外しません。</p>
 
 <h4>置いて、自動で保存する</h4>
 <figure class="fig seq">
@@ -2413,7 +2515,7 @@ sequenceDiagram
     <text class="sv-s" x="500" y="48" text-anchor="middle">共通ヘッダーの部品を配る</text>
     <circle class="sv-bd" cx="500" cy="70" r="13"/><text class="sv-w" x="500" y="75" text-anchor="middle">4</text>
     <circle class="sv-bd" cx="503" cy="192" r="13"/><text class="sv-w" x="503" y="197" text-anchor="middle">1</text>
-    <text class="sv-s" x="530" y="236">カートの件数、商品の一覧、ログイン状態</text>
+    <text class="sv-s" x="530" y="236">カートの件数、商品の一覧と状態、ログイン状態</text>
     <circle class="sv-bd" cx="372" cy="305" r="13"/><text class="sv-w" x="372" y="310" text-anchor="middle">2</text>
     <text class="sv-s" x="394" y="296">ログインの確認、商品の画像</text>
     <circle class="sv-bd" cx="372" cy="348" r="13"/><text class="sv-w" x="372" y="353" text-anchor="middle">3</text>
@@ -2427,7 +2529,7 @@ sequenceDiagram
 <div class="tw"><table class="w-wide">
   <thead><tr><th>番号</th><th>誰が → 誰を</th><th>書かれているファイル</th><th>呼ぶ API</th></tr></thead>
   <tbody>
-    <tr><th>1</th><td>Canvas の画面 → EC API</td><td class="wrap">Canvas の <code>components/AuthGate.jsx</code>、<code>api/auth.js</code>、<code>api/commerce.js</code></td><td class="wrap"><code>GET /api/auth/me</code>、<code>GET /api/auth/csrf</code>、<code>GET /api/cart</code>、<code>GET /api/products</code>、<code>POST /api/materials/quote</code>、<code>GET /api/shopping-lists/{gardenId}/saved-items</code></td></tr>
+    <tr><th>1</th><td>Canvas の画面 → EC API</td><td class="wrap">Canvas の <code>components/AuthGate.jsx</code>、<code>api/auth.js</code>、<code>api/commerce.js</code></td><td class="wrap"><code>GET /api/auth/me</code>、<code>GET /api/auth/csrf</code>、<code>GET /api/cart</code>、<code>GET /api/products</code>、<code>POST /api/products/references</code>、<code>GET /api/shopping-lists/{gardenId}/saved-items</code></td></tr>
     <tr><th>2</th><td>Canvas API → EC API</td><td class="wrap">Canvas の <code>auth.py</code>、<code>ai_catalog.py</code></td><td class="wrap"><code>GET /api/auth/me</code>、<code>POST /api/auth/verify</code>、<code>POST /api/materials/quote</code>、<code>POST /api/products/references</code>、<code>GET /api/stores</code></td></tr>
     <tr><th>3</th><td>EC API → Canvas API</td><td class="wrap">EC の <code>shopping/CanvasShoppingClient</code>、<code>catalog/service/CanvasModelClient</code></td><td class="wrap"><code>GET /api/shopping-lists</code>、<code>GET /api/gardens/{id}/shopping-list</code>、<code>POST /api/gardens</code>、<code>GET /api/gardens/{id}/thumbnail</code>、<code>POST /api/model-assemblies/resolve</code></td></tr>
     <tr><th>4</th><td>EC → Canvas(部品を配る)</td><td class="wrap">EC の <code>packages/site-header/</code> → Canvas の <code>vendor/kusakari-site-header-0.1.13.tgz</code></td><td>―</td></tr>
@@ -2440,8 +2542,9 @@ sequenceDiagram
   <li>利用者が EC でログインすると、EC API は <code>KUSAKARI_SESSION</code> という名前の <strong>Cookie</strong> をブラウザーに渡します。Cookie は、サーバーがブラウザーに預ける小さな値で、ブラウザーは同じサーバーへのリクエストに毎回付けて送ります。</li>
   <li>開発中は、EC も Canvas も同じ <code>127.0.0.1</code> で動いています。Cookie はポート番号を区別しないので、ブラウザーは Canvas へのリクエストにも同じ Cookie を付けます。</li>
   <li>Canvas API(<code>auth.py</code>)は、受け取った Cookie をそのまま付けて、EC API の <code>GET /api/auth/me</code>(書き込みのときは <code>POST /api/auth/verify</code>)を呼びます。</li>
-  <li>EC API が返した会員の ID を、Canvas API は庭の持ち主(<code>gardens.owner_id</code>)として使います。</li>
+  <li>EC API は、会員の ID と種別(<code>accountType</code>)を返します。Canvas API は、種別が購入者(<code>USER</code>)か運営(<code>ADMIN</code>)のときだけ先へ進み、ID を庭の持ち主(<code>gardens.owner_id</code>)として使います。</li>
 </ol>
+<p>購入できるアカウントの決まりは、EC と Canvas で同じです。EC では、店舗側のアカウント(組織のオーナーと店舗の担当者)と、出店を申請中のアカウントは、カート・注文・庭の買い物リストを使えません。Canvas は、置いたものを EC のカートに入れるための機能なので、同じアカウントには庭の一覧も編集画面も開かせません。</p>
 <p>EC API が Canvas API を呼ぶとき(図12 の 3)も同じで、<code>CanvasClientConfiguration</code> が、利用者の Cookie を Canvas へのリクエストに引き継ぎます。Canvas API は、それをまた EC に見せて確かめます。こうすると、Canvas は「EC から来たリクエストだから信用する」という特別な扱いをせず、いつも同じ方法で本人を確かめられます。</p>
 
 <h3>やり取りする値の決まり</h3>
@@ -2473,8 +2576,10 @@ sequenceDiagram
     <tr><th>トランザクション</th><td><code>@Transactional</code> を付けたメソッド</td><td><code>with session.begin():</code> のブロック</td></tr>
     <tr><th>エラーの返し方</th><td><code>ApiException</code> を投げ、<code>ApiErrors</code> が JSON にする</td><td><code>ApiError</code> を投げ、<code>exception_handler</code> が JSON にする</td></tr>
     <tr><th>ログインの確認</th><td>自分で行う(Spring Security と Amazon Cognito)</td><td>EC API に問い合わせる</td></tr>
+    <tr><th>使える人</th><td>買い物は購入者と運営。出店者の画面は、組織のオーナーと店舗の担当者(立場ごとに、できることが違う)</td><td>購入者と運営だけ</td></tr>
+    <tr><th>呼び出す外部サービス</th><td>Amazon Cognito、Stripe(テストモード)、OpenAI API</td><td>OpenAI API</td></tr>
     <tr><th>同時更新への備え</th><td>カートの <code>revision</code> と行のロック</td><td>庭の <code>revision</code> と行のロック</td></tr>
-    <tr><th>テーブル定義の履歴</th><td>Flyway。SQL ファイル(V1〜V15)</td><td>Alembic。Python ファイル(0001〜0008)</td></tr>
+    <tr><th>テーブル定義の履歴</th><td>Flyway。SQL ファイル(V1〜V3)</td><td>Alembic。Python ファイル(0001〜0008)</td></tr>
     <tr><th>frontend の分け方</th><td>役割ごとのファイル(<code>api.js</code>、<code>useShop.js</code>)と、画面のフォルダー</td><td>役割ごとのフォルダー(<code>api/</code>、<code>stores/</code>、<code>domain/</code> など)</td></tr>
     <tr><th>frontend の状態の持ち方</th><td><code>useState</code> をまとめた hook(<code>useShop</code>)を、上から props で渡す</td><td>ストア(Zustand)に編集中の庭、TanStack Query にサーバーのデータ</td></tr>
     <tr><th>保存のしかた</th><td>操作のたびに、その操作の API を呼ぶ</td><td>庭の全体を、0.5秒後に自動で保存する</td></tr>
@@ -2522,6 +2627,7 @@ sequenceDiagram
   <dt>ロック</dt><dd>読んだ行を、処理が終わるまで、ほかの処理が変更できないようにすること。</dd>
   <dt>版番号(revision)</dt><dd>変更のたびに1つ増える番号。読んだときの番号と違えば、ほかの誰かが変更している。</dd>
   <dt>冪等キー</dt><dd>同じリクエストが2回届いても、処理を1回にするための ID。注文の <code>requestId</code>。</dd>
+  <dt>Webhook</dt><dd>外部のサービスが、出来事(支払いの成功など)を知らせるために、こちらの API を呼ぶ仕組み。EC は、Stripe からの知らせをこれで受け取る。</dd>
   <dt>DI</dt><dd>使う相手のオブジェクトを、自分で作らず、外から受け取る書き方。</dd>
   <dt>アノテーション</dt><dd>Java で、クラスやメソッドに付ける <code>@</code> で始まる目印。</dd>
   <dt>デコレーター</dt><dd>Python で、関数に働きを付け足す <code>@</code> で始まる行。</dd>
@@ -2536,7 +2642,7 @@ sequenceDiagram
 </dl>
 
 <footer>
-  <p>作成: 2026年11月13日。基準にしたコード: kusakari-ec <code>a161aae</code>、kusakari-canvas <code>91b12c2</code>(どちらも 2026年11月11日の main)。</p>
+  <p>作成: 2026年11月13日。更新: 2026年11月17日。基準にしたコード: kusakari-ec <code>a9cbd69</code>、kusakari-canvas <code>796c239</code>(どちらも 2026年11月16日の main)。</p>
   <p>見た目は、<a href="https://design.digital.go.jp/dads/">デジタル庁デザインシステムβ版</a>の色・書体・行間の定義を参考にしています。図(図5〜7、図9〜11)の表示には Mermaid を読み込むため、ネットワークへの接続が必要です。</p>
 </footer>
 </section>
