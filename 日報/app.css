@@ -182,12 +182,44 @@ a:focus-visible {
 .chip.checked { --_line: var(--c-ok-line); --_bg: var(--c-ok-bg); --_text: var(--c-ok-text); cursor: help; }
 .chip.prov { --_line: var(--c-prov-line); --_bg: var(--c-prov-bg); --_text: var(--c-prov-text); }
 .chip.read { --_line: var(--c-read-line); --_bg: var(--c-read-bg); --_text: var(--c-read-text); font-family: var(--font-mono); font-weight: 400; }
+.chip.new { --_line: var(--accent); --_bg: var(--accent); --_text: var(--on-accent); }
 .day-link .chip { min-height: 24px; font-size: 13px; padding: 2px 6px; }
+
+/* ---- 新着コメント(ページの上の一覧) ---- */
+.news {
+  display: flex; flex-direction: column; gap: 12px;
+  max-width: 48em;
+  padding: 16px 24px;
+  border: 2px solid var(--accent);
+  border-radius: 12px;
+}
+.news-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.news-head h2 { font-size: 20px; line-height: 1.5; font-weight: 700; color: var(--text-strong); }
+.news-head .btn { min-height: 36px; font-size: 14px; padding: 6px 12px; }
+.news-list { display: flex; flex-direction: column; }
+.news-list li { border-top: 1px solid var(--line); }
+.news-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 12px;
+  width: 100%;
+  padding: 10px 4px;
+  font: inherit; text-align: left;
+  color: var(--text);
+  background: none; border: 0; border-radius: 4px;
+  cursor: pointer;
+}
+@media (hover: hover) { .news-row:hover { background: var(--surface-accent); } }
+.news-row .when { grid-row: 1 / span 2; font-weight: 700; color: var(--accent); }
+.news-row .where { font-weight: 700; color: var(--link); text-decoration: underline; text-underline-offset: 3px; overflow-wrap: anywhere; }
+.news-row .what { font-size: 14px; color: var(--text-sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.news-more { font-size: 14px; color: var(--text-muted); }
 
 /* ---- コメント(DADS のボタン・入力欄) ---- */
 .thread-slot { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
 .item-talk { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 4px; }
 .item-talk .thread-slot { align-self: stretch; margin-top: 0; }
+.talk-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .btn {
   font: inherit;
   font-size: 16px;
@@ -219,6 +251,8 @@ a:focus-visible {
 .post .who .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; align-self: center; background: var(--dot); }
 .post .who .tag { font-size: 14px; color: var(--caution-text); }
 .post .who .tag.ok { color: var(--c-ok-text); font-weight: 700; }
+.post .who .tag.new { color: var(--on-accent); background: var(--accent); font-weight: 700; font-size: 13px; line-height: 1; padding: 3px 6px; border-radius: 6px; align-self: center; }
+.post.is-new { border-left: 4px solid var(--accent); padding-left: 12px; }
 .post .text { white-space: pre-wrap; overflow-wrap: anywhere; }
 .post .acts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 14px; color: var(--text-sub); }
 .post .acts .btn { min-height: 32px; font-size: 14px; padding: 4px 12px; }

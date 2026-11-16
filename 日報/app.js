@@ -24,6 +24,9 @@
     not_granted: '画像を付けられるのは「編集者」として招待されている人だけです。',
   };
   var NICK_KEY = 'kusakari-nippo-nick';
+  // 新着の印を出し始めた時刻。これより前のコメントは、だれにとっても既読として扱う。
+  var UNREAD_SINCE = '2026-11-16T08:57:00.000Z';
+  var NEWS_MAX = 10;                  // ページの上の「新着コメント」に並べる数
 
   var state = {
     date: null,       // 表示中の日付
@@ -40,7 +43,15 @@
     confirmDelete: null,
     open: {},         // 項目ID -> true。コメント欄を開いている項目
     names: {},        // id -> { name, color }
+    reads: null,      // 見ている人の既読の記録 { since, marks }。読めるまでは null(新着の印を出さない)
+    readsRef: null,   // 既読の記録の保存先(見ている人だけが読み書きできる場所)
+    readsWriting: false,
+    readsDirty: false,
+    fresh: {},        // コメントID -> true。この日を表示している間に既読にしたコメント(「新着」の印を残す)
+    talkSeen: false,  // 「この日の会話」が画面に見えているか
+    jump: null,       // { date, item } 「新着コメント」の行から移る先
   };
+  var talkObserver = null;
 
   // ---- 小さな道具 ----
   function h(tag, props, children) {
@@ -86,6 +97,170 @@
   function readNick() { try { return localStorage.getItem(NICK_KEY) || ''; } catch (e) { return ''; } }
   function saveNick(value) { try { localStorage.setItem(NICK_KEY, value); } catch (e) { /* 保存できなくても動く */ } }
 
+  // ---- 新着(まだ読んでいないコメント) ----
+  // 既読の記録は、見ている人ごとに1つ。since より前のコメントはすべて既読。
+  // marks は「日付|項目ID」(日報全体の欄は項目IDが空)ごとの、最後に読んだ時刻。
+  // 自分のコメントは、いつも既読として扱う。
+  function isUnread(post) {
+    var r = state.reads;
+    if (!r || !state.me || !state.me.id) return false;
+    if (post.author && post.author === state.me.id) return false;
+    if (!(post.at > r.since)) return false;
+    var mark = r.marks[post.date + '|' + post.item];
+    return !(mark && post.at <= mark);
+  }
+  function isNew(post) { return isUnread(post) || Boolean(state.reads && state.fresh[post.id]); }
+  function unreadCounts() {
+    var counts = {};
+    state.posts.forEach(function (p) { if (isUnread(p)) counts[p.date] = (counts[p.date] || 0) + 1; });
+    return counts;
+  }
+  /** いま見えているコメント欄の新着を、既読にする。開いている項目の欄と、画面に入った「この日の会話」が対象。 */
+  function markSeen() {
+    if (!state.reads || document.visibilityState !== 'visible') return;
+    var ids = itemIds();
+    var now = new Date().toISOString();
+    // 先に対象を集める(印を付けながら調べると、同じ欄の2件目からが既読に見えてしまう)。
+    var seen = state.posts.filter(function (p) {
+      if (p.date !== state.date || !isUnread(p)) return false;
+      var key = ids[p.item] ? p.item : ''; // 日報から消えた項目へのコメントは「この日の会話」に出ている
+      return key === '' ? state.talkSeen : Boolean(state.open[key]);
+    });
+    if (!seen.length) return;
+    seen.forEach(function (p) {
+      state.fresh[p.id] = true;
+      // ほかの人の時計が進んでいても既読になるよう、コメントの時刻より前には戻さない。
+      var k = p.date + '|' + p.item;
+      var mark = p.at > now ? p.at : now;
+      if (!(state.reads.marks[k] >= mark)) state.reads.marks[k] = mark;
+    });
+    saveReads();
+    renderList();
+  }
+  function markAllRead() {
+    if (!state.reads) return;
+    var now = new Date().toISOString();
+    var newest = state.posts.length ? state.posts[0].at : '';
+    state.reads = { since: newest > now ? newest : now, marks: {} };
+    saveReads();
+    renderList();
+    refreshThreads();
+  }
+  /** 既読の記録を保存する。同じ記録への書き込みは1つずつ行い、途中で変わった分は終わってからもう一度書く。 */
+  function saveReads() {
+    if (!state.readsRef || !state.reads) return;
+    if (state.readsWriting) { state.readsDirty = true; return; }
+    state.readsWriting = true;
+    state.readsDirty = false;
+    var r = state.reads;
+    var marks = Object.keys(r.marks).filter(function (k) { return r.marks[k] > r.since; })
+      .map(function (k) { return { k: k, t: r.marks[k] }; });
+    state.readsRef.set({ since: r.since, marks: marks }).then(function () {
+      state.readsWriting = false;
+      if (state.readsDirty) saveReads();
+    }, function (error) {
+      state.readsWriting = false;
+      // 書き込めない人(閲覧だけの招待など)は既読を残せないので、新着の印をやめる。
+      if (error && error.code === 'invalid_argument') stopReads();
+    });
+  }
+  function stopReads() {
+    state.reads = null;
+    state.readsRef = null;
+    renderList();
+    refreshThreads();
+  }
+  function startReads() {
+    if (!state.db || !state.me || !state.me.id) return;
+    try { state.readsRef = state.db.doc('data/users/' + state.me.id + '/reads'); }
+    catch (e) { state.readsRef = null; return; }
+    state.readsRef.onSnapshot(function (snap) {
+      if (!state.readsRef) return;
+      var d = (snap.exists && snap.data()) || {};
+      // 既読は進むだけなので、手元の記録と保存先の記録の、新しいほうを取る(別の端末で読んだ分も合わさる)。
+      var local = state.reads || { since: UNREAD_SINCE, marks: {} };
+      var since = typeof d.since === 'string' && d.since > local.since ? d.since : local.since;
+      var marks = {};
+      Object.keys(local.marks).forEach(function (k) { marks[k] = local.marks[k]; });
+      (Array.isArray(d.marks) ? d.marks : []).forEach(function (m) {
+        if (!m || typeof m.k !== 'string' || typeof m.t !== 'string') return;
+        if (!(marks[m.k] >= m.t)) marks[m.k] = m.t;
+      });
+      state.reads = { since: since, marks: marks };
+      renderList();
+      refreshThreads();
+    }, function () { stopReads(); });
+  }
+
+  // ページの上の「新着コメント」。日をまたいで、まだ読んでいないコメントを新しい順に並べる。
+  function itemTitle(date, itemId) {
+    var day = NIPPO.days[date];
+    if (!day) return null;
+    var found = day.specs.concat(day.changes, day.manual ? day.manual.items : []).filter(function (i) { return i.id === itemId; })[0];
+    return found ? found.title : '日報から消えた項目';
+  }
+  var quietLoads = {};
+  /** 項目の題名を出すために、表示していない日のデータを読み込む。 */
+  function loadDayQuietly(date) {
+    if (NIPPO.days[date] || quietLoads[date]) return;
+    quietLoads[date] = true;
+    var script = document.createElement('script');
+    script.src = 'data/' + date + '.js';
+    script.onload = function () { refreshNews(); };
+    document.head.appendChild(script);
+  }
+  function refreshNews() {
+    var box = document.getElementById('news');
+    if (!box) return;
+    var known = {};
+    NIPPO.index.forEach(function (e) { known[e.date] = true; });
+    var list = state.posts.filter(function (p) { return known[p.date] && isUnread(p); });
+    var rows = list.slice(0, NEWS_MAX).map(function (p) {
+      if (p.item) loadDayQuietly(p.date);
+      var where = p.item ? (itemTitle(p.date, p.item) || '項目へのコメント') : 'この日の会話';
+      var said = p.text ? p.text.replace(/\s+/g, ' ').slice(0, 60) : '(画像)';
+      return { post: p, when: p.date.slice(5).replace('-', '/'), where: where, what: displayName(p) + '「' + said + '」' };
+    });
+    // 中身が同じなら作り直さない(キーボードで操作している途中に、フォーカスが外れないようにする)。
+    var sig = list.length + '\n' + rows.map(function (r) { return r.post.id + r.where + r.what; }).join('\n');
+    if (box.getAttribute('data-sig') === sig) return;
+    box.setAttribute('data-sig', sig);
+    box.textContent = '';
+    box.hidden = !list.length;
+    if (!list.length) return;
+    box.appendChild(h('div', { class: 'news-head' }, [
+      h('h2', { text: '新着コメント ' + list.length + '件' }),
+      h('button', { type: 'button', class: 'btn', text: 'すべて既読にする', on: { click: markAllRead } }),
+    ]));
+    box.appendChild(h('ol', { class: 'news-list' }, rows.map(function (r) {
+      return h('li', {}, [h('button', { type: 'button', class: 'news-row', on: { click: function () { jumpTo(r.post); } } }, [
+        h('span', { class: 'mono when', text: r.when }),
+        h('span', { class: 'where', text: r.where }),
+        h('span', { class: 'what', text: r.what }),
+      ])]);
+    })));
+    if (list.length > rows.length) box.appendChild(h('p', { class: 'news-more', text: 'ほか ' + (list.length - rows.length) + ' 件。日付の一覧の「新着」から開けます。' }));
+  }
+  function jumpTo(post) {
+    state.jump = { date: post.date, item: post.item };
+    if (post.date !== state.date) { location.hash = '#d-' + post.date; return; } // 日付が変わると、表示のあとで applyJump が呼ばれる
+    applyJump();
+  }
+  function applyJump() {
+    var j = state.jump;
+    if (!j || j.date !== state.date || !NIPPO.days[state.date]) return;
+    state.jump = null;
+    var target = document.getElementById('talk');
+    var inItem = Boolean(j.item && itemIds()[j.item]);
+    if (inItem) {
+      state.open[j.item] = true;
+      refreshThreads();
+      var article = document.getElementById('i-' + j.item);
+      target = (article && article.querySelector('.thread-slot')) || target;
+    }
+    if (target) target.scrollIntoView({ block: inItem ? 'center' : 'start' });
+  }
+
   // ---- 日付の一覧 ----
   // ---- 要確認を外す ----
   // 「要確認を外す」ボタンで書いたコメント(close: true)が1件でも残っている項目は「確認済み」と表示する。
@@ -124,6 +299,7 @@
   function renderList() {
     var list = document.getElementById('day-list');
     list.textContent = '';
+    var unread = unreadCounts();
     NIPPO.index.forEach(function (entry) {
       var marks = [];
       if (entry.provisional) marks.push(h('span', { class: 'chip prov', text: '暫定' }));
@@ -132,6 +308,7 @@
       marks.push(h('span', { text: '確定 ' + entry.counts.confirmed + ' ・ 提案 ' + entry.counts.proposed }));
       var comments = state.db ? countFor(entry.date) : 0;
       if (comments) marks.push(h('span', { class: 'mono', text: 'コメント ' + comments }));
+      if (unread[entry.date]) marks.push(h('span', { class: 'chip new', text: '新着 ' + unread[entry.date] }));
       list.appendChild(h('li', {}, [
         h('a', { class: 'day-link', href: '#d-' + entry.date, 'aria-current': entry.date === state.date ? 'page' : null }, [
           h('span', {}, [h('span', { class: 'd', text: entry.date.slice(5).replace('-', '/') }), h('span', { class: 'w', text: weekday(entry.date) })]),
@@ -160,7 +337,9 @@
         if (area) area.focus();
       }
     });
-    var wrap = h('div', { class: 'item-talk' }, [toggle, threadSlot(item.id)]);
+    var fresh = h('span', { class: 'chip new', 'data-new': item.id });
+    fresh.hidden = true;
+    var wrap = h('div', { class: 'item-talk' }, [h('div', { class: 'talk-row' }, [toggle, fresh]), threadSlot(item.id)]);
     wrap.hidden = !state.db;
     return wrap;
   }
@@ -210,6 +389,9 @@
       h('span', { class: 'mono', text: shortStamp(day.window.start) + ' → ' + shortStamp(day.window.end) }),
       h('span', { text: '作成 ' + shortStamp(day.generatedAt) }),
     ];
+    var news = h('section', { class: 'news', id: 'news', 'aria-label': '新着コメント' });
+    news.hidden = true;
+    main.appendChild(news);
     var head = [h('h1', { text: longDate(day.date) }), h('div', { class: 'line' }, headLine)];
     if (pager.length) head.push(h('div', { class: 'pager' }, pager));
     if (day.provisional) {
@@ -244,14 +426,32 @@
       return itemNode(c, chips);
     }), 'この日の変更はありません。'));
 
+    var talkNew = h('span', { class: 'chip new', 'data-new': '' });
+    talkNew.hidden = true;
     var talk = h('section', { class: 'block', id: 'talk' }, [
-      h('div', { class: 'block-head' }, [h('h2', { text: 'この日の会話' }), h('span', { class: 'note', text: '日報全体についてのコメント' })]),
+      h('div', { class: 'block-head' }, [h('h2', { text: 'この日の会話' }), talkNew, h('span', { class: 'note', text: '日報全体についてのコメント' })]),
       threadSlot(''),
     ]);
     talk.hidden = !state.db;
     main.appendChild(talk);
 
+    // 「この日の会話」は、画面に入ったときに既読にする(半分以上、または120px以上が見えたとき)。
+    if (talkObserver) talkObserver.disconnect();
+    talkObserver = null;
+    state.talkSeen = !('IntersectionObserver' in window);
+    if (!state.talkSeen) {
+      talkObserver = new IntersectionObserver(function (entries) {
+        var e = entries[entries.length - 1];
+        var seen = e.isIntersecting && (e.intersectionRatio >= 0.5 || e.intersectionRect.height >= 120);
+        if (seen === state.talkSeen) return;
+        state.talkSeen = seen;
+        if (seen) refreshThreads();
+      }, { threshold: [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1] });
+      talkObserver.observe(talk);
+    }
+
     refreshThreads();
+    applyJump();
   }
 
   // ---- コメント ----
@@ -285,6 +485,8 @@
     if (known && known.color) dot.style.background = known.color;
     var who = [dot, h('span', { class: 'name', text: displayName(post) }), h('span', { class: 'mono', text: postStamp(post.at) })];
     if (post.editedAt) who.push(h('span', { text: '編集済み' }));
+    var fresh = isNew(post);
+    if (fresh) who.push(h('span', { class: 'tag new', text: '新着' }));
     if (post.close && !post.orphan) who.push(h('span', { class: 'tag ok', text: '要確認を外した' }));
     if (post.orphan) who.push(h('span', { class: 'tag', text: '日報から消えた項目 ' + post.item + ' へのコメント' }));
     var children = [h('div', { class: 'who' }, who)];
@@ -313,7 +515,7 @@
       }
       if (acts.length) children.push(h('div', { class: 'acts' }, acts));
     }
-    return h('div', { class: 'post' }, children);
+    return h('div', { class: fresh ? 'post is-new' : 'post' }, children);
   }
 
   function composerNode(key) {
@@ -548,6 +750,7 @@
     if (!state.db) return;
     if (!NIPPO.days[state.date]) return;
     var ids = itemIds();
+    markSeen();
     document.querySelectorAll('.thread-toggle').forEach(function (btn) {
       var key = btn.getAttribute('data-key');
       var n = postsFor(key, ids).length;
@@ -560,6 +763,12 @@
       slot.hidden = !visible;
       if (visible) renderThread(slot, key, ids);
     });
+    document.querySelectorAll('[data-new]').forEach(function (chip) {
+      var n = postsFor(chip.getAttribute('data-new'), ids).filter(isUnread).length;
+      chip.hidden = !n;
+      chip.textContent = '新着 ' + n;
+    });
+    refreshNews();
     refreshChecks();
     state.notice = null;
   }
@@ -624,6 +833,7 @@
       whoAmI.then(function (me) {
         state.me = me;
         document.querySelectorAll('.item-talk, #talk').forEach(function (n) { n.hidden = false; });
+        startReads();
         var timer = setTimeout(function () { state.slow = true; refreshThreads(); }, 10000);
         // 購読は1回だけ。新しい順に1000件までを受け取り、日付や項目ごとの絞り込みは画面側でする。
         db.collection('posts').orderBy('at', 'desc').limit(1000).onSnapshot(function (snap) {
@@ -668,6 +878,8 @@
     state.editing = null;
     state.confirmDelete = null;
     state.open = {};
+    state.fresh = {};
+    state.talkSeen = false;
     renderList();
     document.getElementById('days').classList.remove('open');
     document.getElementById('days-toggle').setAttribute('aria-expanded', 'false');
@@ -703,6 +915,8 @@
     this.setAttribute('aria-expanded', open ? 'true' : 'false');
   });
   window.addEventListener('hashchange', route);
+  // ほかのタブから戻ったときに、開いているコメント欄の新着を既読にする。
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') refreshThreads(); });
   route();
   startComments();
 })();
