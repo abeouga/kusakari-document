@@ -17,7 +17,8 @@
   var IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
   var IMAGE_ERRORS = {
     too_large: '画像が大きすぎます(1枚20MBまで)。',
-    unsupported_type: 'PNG・JPEG・GIF・WebP の画像を選んでください。',
+    unsupported_type: 'この形式の画像は付けられません。PNG・JPEG・GIF・WebP の画像を選んでください。',
+    invalid_request: '画像を保存できませんでした。別の画像で試してください。',
     quota_or_state: '画像を保存できる量の上限に達しています。',
     rate_limited: '続けて送りすぎました。少し待ってからもう一度試してください。',
     not_granted: '画像を付けられるのは「編集者」として招待されている人だけです。',
@@ -86,6 +87,37 @@
   function saveNick(value) { try { localStorage.setItem(NICK_KEY, value); } catch (e) { /* 保存できなくても動く */ } }
 
   // ---- 日付の一覧 ----
+  // ---- 要確認を外す ----
+  // 「要確認を外す」ボタンで書いたコメント(close: true)が1件でも残っている項目は「確認済み」と表示する。
+  // 日報のデータの needsCheck は変えない。表示だけを、ページを開いたときにコメントから決める。
+  function closersOf(date, itemId) {
+    return state.posts.filter(function (p) { return p.close && p.date === date && p.item === itemId; })
+      .sort(function (a, b) { return a.at < b.at ? -1 : 1; });
+  }
+  function openChecks(entry) {
+    var ids = entry.needsCheckIds;
+    if (!state.db || !Array.isArray(ids)) return entry.counts.needsCheck;
+    return ids.filter(function (id) { return !closersOf(entry.date, id).length; }).length;
+  }
+  function needsCheckItem(itemId) {
+    var day = NIPPO.days[state.date];
+    return Boolean(day && day.specs.some(function (s) { return s.id === itemId && s.needsCheck; }));
+  }
+  function refreshChecks() {
+    document.querySelectorAll('[data-check]').forEach(function (chip) {
+      var closers = closersOf(state.date, chip.getAttribute('data-check'));
+      if (closers.length) {
+        var names = closers.map(displayName).filter(function (n, i, a) { return a.indexOf(n) === i; });
+        chip.className = 'chip checked';
+        chip.textContent = '確認済み';
+        chip.title = names.join('、') + ' が要確認を外しました';
+      } else {
+        chip.className = 'chip check';
+        chip.textContent = '要確認';
+        chip.removeAttribute('title');
+      }
+    });
+  }
   function countFor(date) {
     return state.posts.filter(function (p) { return p.date === date; }).length;
   }
@@ -95,7 +127,8 @@
     NIPPO.index.forEach(function (entry) {
       var marks = [];
       if (entry.provisional) marks.push(h('span', { class: 'chip prov', text: '暫定' }));
-      if (entry.counts.needsCheck) marks.push(h('span', { class: 'chip check', text: '要確認 ' + entry.counts.needsCheck }));
+      var open = openChecks(entry);
+      if (open) marks.push(h('span', { class: 'chip check', text: '要確認 ' + open }));
       marks.push(h('span', { text: '確定 ' + entry.counts.confirmed + ' ・ 提案 ' + entry.counts.proposed }));
       var comments = state.db ? countFor(entry.date) : 0;
       if (comments) marks.push(h('span', { class: 'mono', text: 'コメント ' + comments }));
@@ -155,7 +188,7 @@
   function specNodes(day, status) {
     return day.specs.filter(function (s) { return s.status === status; }).map(function (s) {
       var chips = [h('span', { class: 'chip ' + s.status, text: STATUS[s.status] })];
-      if (s.needsCheck) chips.push(h('span', { class: 'chip check', text: '要確認' }));
+      if (s.needsCheck) chips.push(h('span', { class: 'chip check', 'data-check': s.id, text: '要確認' }));
       return itemNode(s, chips);
     });
   }
@@ -252,6 +285,7 @@
     if (known && known.color) dot.style.background = known.color;
     var who = [dot, h('span', { class: 'name', text: displayName(post) }), h('span', { class: 'mono', text: postStamp(post.at) })];
     if (post.editedAt) who.push(h('span', { text: '編集済み' }));
+    if (post.close && !post.orphan) who.push(h('span', { class: 'tag ok', text: '要確認を外した' }));
     if (post.orphan) who.push(h('span', { class: 'tag', text: '日報から消えた項目 ' + post.item + ' へのコメント' }));
     var children = [h('div', { class: 'who' }, who)];
 
@@ -320,23 +354,38 @@
         ]));
       });
     }
-    function addFiles(list) {
-      var files = Array.prototype.filter.call(list || [], function (f) { return f && /^image\//.test(f.type); });
-      if (!files.length) return false;
+    // Android などでは、選んだ画像の形式(type)が空のまま届くことがある。そのときはファイル名の拡張子で画像かを見る。
+    // PNG・JPEG・GIF・WebP 以外の画像(HEIC など)も受け取り、保存の前に JPEG か WebP に変換する(変換できなければ知らせる)。
+    function isImageFile(f) {
+      if (!f) return false;
+      if (/^image\//.test(f.type)) return true;
+      return !f.type && /\.(jpe?g|png|gif|webp|heic|heif|avif|bmp)$/i.test(f.name || '');
+    }
+    function addFiles(list, fromPicker) {
+      var all = Array.prototype.slice.call(list || []);
+      var files = all.filter(isImageFile);
+      if (!files.length) {
+        if (all.length && fromPicker) showMsg('画像として読み込めないファイルでした。PNG・JPEG・GIF・WebP の画像を選んでください。');
+        return false;
+      }
       var room = MAX_IMAGES - pending.length;
       if (room <= 0) { showMsg('画像は1つのコメントに' + MAX_IMAGES + '枚までです。'); return true; }
-      files.slice(0, room).forEach(function (f) {
-        if (IMAGE_TYPES.indexOf(f.type) < 0) { showMsg('PNG・JPEG・GIF・WebP の画像を選んでください。'); return; }
-        pending.push({ file: f, url: URL.createObjectURL(f) });
-      });
+      files.slice(0, room).forEach(function (f) { pending.push({ file: f, url: URL.createObjectURL(f) }); });
       if (files.length > room) showMsg('画像は1つのコメントに' + MAX_IMAGES + '枚までです。');
       drawThumbs();
       return true;
     }
     if (state.assets) {
-      var picker = h('input', { id: (key ? 'f-' + key : 'f-day'), type: 'file', accept: IMAGE_TYPES.join(','), multiple: true, class: 'file-input' });
-      picker.addEventListener('change', function () { showMsg(''); addFiles(picker.files); picker.value = ''; });
-      row.push(h('label', { class: 'btn attach', for: picker.id, text: '画像を付ける' }));
+      // accept は image/* にする。形式を細かく並べると、Android では写真の選択画面ではなくファイルの画面が開き、写真を選べないことがある。
+      var picker = h('input', { id: (key ? 'f-' + key : 'f-day'), type: 'file', accept: 'image/*', multiple: true, class: 'file-input', tabindex: '-1', 'aria-hidden': 'true' });
+      picker.addEventListener('change', function () {
+        showMsg('');
+        addFiles(picker.files, true);
+        picker.value = '';
+      });
+      var attach = h('button', { type: 'button', class: 'btn attach', text: '画像を付ける' });
+      attach.addEventListener('click', function () { picker.click(); });
+      row.push(attach);
       row.push(picker);
       area.addEventListener('paste', function (e) {
         var items = e.clipboardData ? e.clipboardData.files : null;
@@ -347,14 +396,26 @@
         if (e.dataTransfer && addFiles(e.dataTransfer.files)) e.preventDefault();
       });
     }
-    row.push(send);
+    // 投稿する操作のボタンはひとまとめにする(1行に収まれば右端、折り返したら次の行の左に並ぶ)。
+    var submitGroup = h('div', { class: 'submit' }, [send]);
+    row.push(submitGroup);
+    // 要確認の項目のコメント欄にだけ、「要確認を外す」ボタンを出す。外す理由を書いてから押す。
+    var closeBtn = null;
+    if (key && needsCheckItem(key)) {
+      closeBtn = h('button', { type: 'button', class: 'btn close-check', text: '要確認を外す' });
+      submitGroup.appendChild(closeBtn);
+      closeBtn.addEventListener('click', function () { submit(true); });
+    }
+    send.addEventListener('click', function () { submit(false); });
 
-    send.addEventListener('click', function () {
+    function submit(close) {
       var text = area.value.trim();
+      if (close && !text) { showMsg('要確認を外す理由を入力してから押してください。'); area.focus(); return; }
       if (!text && !pending.length) { showMsg('コメントを入力してください。'); return; }
       var nickValue = nick ? nick.value.trim() : '';
       if (nick) saveNick(nickValue);
       send.disabled = true;
+      if (closeBtn) closeBtn.disabled = true;
       showMsg(pending.length ? '画像を保存しています。' : '');
       var uploaded = [];
       // 画像を1枚ずつ縮めて保存し、そのあとでコメントを書き込む。
@@ -368,6 +429,7 @@
           item: key,
           text: text.slice(0, MAX_TEXT),
           images: uploaded,
+          close: Boolean(close),
           author: (state.me && state.me.id) || null,
           nick: nickValue,
           at: new Date().toISOString(),
@@ -379,29 +441,44 @@
         drawThumbs();
         showMsg('');
         send.disabled = false;
+        if (closeBtn) closeBtn.disabled = false;
       }).catch(function (error) {
         // コメントを書き込めなかったときは、このとき保存した画像を消す(どのコメントにも付かない画像を残さない)。
         if (uploaded.length && state.assets) uploaded.forEach(function (id) { state.assets.delete(id).catch(function () {}); });
         send.disabled = false;
+        if (closeBtn) closeBtn.disabled = false;
         showMsg((error && error.code && IMAGE_ERRORS[error.code]) || writeError(error));
         if (state.readOnly) refreshThreads();
       });
-    });
-    return h('div', { class: 'composer' }, [area, thumbs, h('div', { class: 'row' }, row), msg]);
+    }
+    var parts = [area, thumbs, h('div', { class: 'row' }, row)];
+    // Android の Claude アプリでは、画像を選ぶ画面が開かない(アプリの中のブラウザが対応していない)。そのときだけ案内を出す。
+    if (state.assets && inAndroidApp()) {
+      parts.push(h('p', { class: 'app-hint', text: 'Android の Claude アプリでは画像を選べません。Chrome で claude.ai を開くと付けられます。' }));
+    }
+    parts.push(msg);
+    return h('div', { class: 'composer' }, parts);
   }
 
   // ---- 画像 ----
+  /** Android のアプリの中のブラウザ(WebView)で開いているか。WebView は User-Agent に「; wv)」を含む。Chrome は含まない。 */
+  function inAndroidApp() {
+    var ua = navigator.userAgent || '';
+    return /Android/.test(ua) && /; wv\)/.test(ua);
+  }
   /** 大きい画像は、長い辺を IMAGE_MAX_SIDE までに縮めてから保存する。GIF は動きを残すためそのまま。 */
   function shrinkImage(file) {
     if (file.type === 'image/gif') return Promise.resolve(file);
-    return new Promise(function (resolve) {
+    // 保存できる形式でない(形式が空、HEIC など)ときは、必ず変換する。
+    var mustConvert = IMAGE_TYPES.indexOf(file.type) < 0;
+    return new Promise(function (resolve, reject) {
       var img = new Image();
       var url = URL.createObjectURL(file);
       img.onload = function () {
         URL.revokeObjectURL(url);
         var w = img.naturalWidth, hgt = img.naturalHeight;
         var scale = Math.min(1, IMAGE_MAX_SIDE / Math.max(w, hgt));
-        if (scale === 1 && file.size <= IMAGE_KEEP_BYTES) { resolve(file); return; }
+        if (!mustConvert && scale === 1 && file.size <= IMAGE_KEEP_BYTES) { resolve(file); return; }
         var canvas = document.createElement('canvas');
         canvas.width = Math.round(w * scale);
         canvas.height = Math.round(hgt * scale);
@@ -409,10 +486,19 @@
         canvas.toBlob(function (blob) {
           // WebP で書き出せないブラウザは PNG を返すので、そのときは JPEG にする。
           if (blob && blob.type === 'image/webp') { resolve(blob); return; }
-          canvas.toBlob(function (jpeg) { resolve(jpeg || file); }, 'image/jpeg', 0.85);
+          canvas.toBlob(function (jpeg) {
+            if (jpeg) resolve(jpeg);
+            else if (mustConvert) reject({ code: 'unsupported_type' });
+            else resolve(file);
+          }, 'image/jpeg', 0.85);
         }, 'image/webp', 0.85);
       };
-      img.onerror = function () { URL.revokeObjectURL(url); resolve(file); };
+      img.onerror = function () {
+        URL.revokeObjectURL(url);
+        // このブラウザで開けない形式(HEIC など)。そのまま送っても保存できないので、知らせる。
+        if (mustConvert) reject({ code: 'unsupported_type' });
+        else resolve(file);
+      };
       img.src = url;
     });
   }
@@ -474,6 +560,7 @@
       slot.hidden = !visible;
       if (visible) renderThread(slot, key, ids);
     });
+    refreshChecks();
     state.notice = null;
   }
   function renderThread(slot, key, ids) {
@@ -547,6 +634,7 @@
               date: String(d.date || ''),
               item: String(d.item || ''),
               text: String(d.text || ''),
+              close: d.close === true,
               images: Array.isArray(d.images) ? d.images.filter(function (id) { return typeof id === 'string' && /^[0-9a-f]{32}$/.test(id); }).slice(0, MAX_IMAGES) : [],
               author: typeof d.author === 'string' ? d.author : null,
               nick: String(d.nick || '').slice(0, 30),

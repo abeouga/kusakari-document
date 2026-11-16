@@ -1,0 +1,471 @@
+{
+ "schema": 1,
+ "date": "2026-11-14",
+ "window": {
+  "start": "2026-11-14T03:00:00+09:00",
+  "end": "2026-11-15T03:00:00+09:00"
+ },
+ "provisional": false,
+ "generatedAt": "2026-11-15T19:11:34+09:00",
+ "summary": [
+  "店舗側アカウントの作り直し(#103)の残りが、EC と Canvas の main に入った。子 issue はすべて閉じた。",
+  "main を起動して見つかった .env の不具合を直した。使えなくなった E2E 3件と、古い検証用スクリプト4つを消した。",
+  "組織から担当者を外す操作(#153)と、テスト用アカウントの作り直し(#156)の検討が始まった。店舗の閉鎖の案内ページなど、決めたのにまだ作っていないものが残っている。"
+ ],
+ "specs": [
+  {
+   "id": "ec-issue-79",
+   "status": "confirmed",
+   "needsCheck": true,
+   "title": "店舗の閉鎖は main に入ったが、決定の一部がまだ実装されていない",
+   "body": "オーナーか運営が閉鎖を始めると「閉鎖中」になり、未完了の注文がなくなると「閉鎖済み」になる流れが、main に入った。ただし、閉鎖から90日間「閉店しました」を出す案内ページはまだ作っていない。また、閉鎖中の店舗の商品は、決定事項7ではカートなどから外すことになっているが、実装ではカートに残している。",
+   "reason": "issue は完了として閉じたが、#103 の 11-14 のコメントは案内ページを「作っていない」としている。PR #148 も、カートに残す点のレビューを求めている。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "doroido2007",
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "issue",
+     "label": "issue #79 [Feature] 店の閉鎖",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/79"
+    },
+    {
+     "kind": "pr",
+     "label": "PR #148 feat: 店舗側アカウントの作り直しの残り（購入制限・招待キー・Stripe・…",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/148"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #103 [Feature] 店舗側アカウントの組織・複数店舗対応（#102 の実装の親 …",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/103"
+    }
+   ]
+  },
+  {
+   "id": "ec-issue-109",
+   "status": "confirmed",
+   "needsCheck": true,
+   "title": "法人用アカウントでの出店申請は main に入ったが、申請の下書きはまだ無い",
+   "body": "法人用アカウントで会社情報を登録して出店を申請し、運営が承認すると組織ができて申請者がオーナーになる仕組みが、main に入った。会社情報を下書きとして持つ仕様も決まっている。しかし、DB に状態の値があるだけで、画面と API はまだ作っていない。",
+   "reason": "issue は完了として閉じたが、#103 の 11-14 のコメントは、申請の下書きを残っている作業に挙げている。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "issue",
+     "label": "issue #109 [Feature] 法人用アカウントでの出店申請、承認による組織の作成、オーナー…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/109"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #103 [Feature] 店舗側アカウントの組織・複数店舗対応（#102 の実装の親 …",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/103"
+    },
+    {
+     "kind": "pr",
+     "label": "PR #148 feat: 店舗側アカウントの作り直しの残り（購入制限・招待キー・Stripe・…",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/148"
+    }
+   ]
+  },
+  {
+   "id": "ec-issue-112",
+   "status": "confirmed",
+   "needsCheck": true,
+   "title": "店舗の切り替えは、ヘッダーではなく各ページの選択欄のまま main に入った",
+   "body": "複数の店舗を扱うアカウントが、店舗を切り替えて商品・在庫・注文を管理できるようになった。#112 では切り替えをヘッダーに置くと決めたが、今は各ページの選択欄で切り替える。",
+   "reason": "issue は完了として閉じたが、#103 の 11-14 のコメントは、ヘッダーに置く作業を残っている作業に挙げている。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "issue",
+     "label": "issue #112 [Feature] 店舗側画面に店舗の切り替えと複数店舗の商品管理を入れる",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/112"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #103 [Feature] 店舗側アカウントの組織・複数店舗対応（#102 の実装の親 …",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/103"
+    },
+    {
+     "kind": "pr",
+     "label": "PR #148 feat: 店舗側アカウントの作り直しの残り（購入制限・招待キー・Stripe・…",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/148"
+    }
+   ]
+  },
+  {
+   "id": "ec-issue-153",
+   "status": "proposed",
+   "needsCheck": false,
+   "title": "組織から担当者を外す操作の仕様を決める(検討開始)",
+   "body": "今は店舗の担当から外せても、組織への所属は残る。そのため、退職した人や間違えて招待した人がアカウント一覧に残り、ログインもできる。外した人のアカウントを、所属なしで残すか、止めるか、購入者に戻すかなどを決める。",
+   "reason": "11-14 に作られた Plan の issue で、決めることのチェックがまだ1つも付いていない。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "issue",
+     "label": "issue #153 [Plan] 組織から担当者を外す操作の仕様を決める",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/153"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #103 [Feature] 店舗側アカウントの組織・複数店舗対応（#102 の実装の親 …",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/103"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #105 [Feature] 店舗ロールの権限と、子アカウント・店舗切り替えの画面仕様を決…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/105"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #104 [Feature] 組織・店舗・メンバーのテーブル構成を決めて docs と E…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/104"
+    }
+   ]
+  },
+  {
+   "id": "ec-issue-156",
+   "status": "proposed",
+   "needsCheck": false,
+   "title": "テスト用アカウントを、ロールが分かる名前で作り直す(検討開始)",
+   "body": "今の test.user・test.seller・test.admin を消し、buyer01・owner01・staff01 など、ロールが名前で分かる8つのアカウントに置き換える案が出た。DB を初期化した後は全員が購入者として作られるため、各 PC の開発用 DB に種別を付け直す方法もあわせて決める。Cognito(ログインを受け持つ外部サービス)への登録は kusakari-terraform で行う。",
+   "reason": "11-14 に作られた Plan の issue で、アカウントの一覧も種別の付け方も案の段階にある。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "issue",
+     "label": "issue #156 [Plan] テスト用アカウントをロールが分かる名前で作り直し、各 PC の D…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/156"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #103 [Feature] 店舗側アカウントの組織・複数店舗対応（#102 の実装の親 …",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/103"
+    }
+   ]
+  },
+  {
+   "id": "ec-issue-120",
+   "status": "dropped",
+   "needsCheck": false,
+   "title": "商品の発送(自宅配送)は行わない",
+   "body": "将来の発送の論点をまとめていた issue を、対応しないとして閉じた。受け取りは、これまでどおり店舗だけになる。",
+   "reason": "「対応しない」として閉じられた。#103 の 11-14 のコメントにも「発送は行わない、で閉じ済み」とある。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "issue",
+     "label": "issue #120 [Feature] 商品の発送（自宅配送）を検討する【仕様検討中】",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/120"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #103 [Feature] 店舗側アカウントの組織・複数店舗対応（#102 の実装の親 …",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/103"
+    }
+   ]
+  },
+  {
+   "id": "ec-issue-106",
+   "status": "in_progress",
+   "needsCheck": false,
+   "title": "DB を初期化するスクリプトは main に入ったが、ほかの PC での確認が残っている",
+   "body": "EC と Canvas の DB を初期化して作り直す DB-reset.bat は、どちらも main に入っている。ただし、セットアップが作った専用の MySQL では、まだ試していない。ほかの PC で、-DryRun(実際には消さずに対象だけを表示する指定)から試す必要がある。",
+   "reason": "issue は開いているが、実装は main に入っている。11-14 のコメントで、確認だけが残っているので開いたままにすると書かれている。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "issue",
+     "label": "issue #106 [Feature] プロジェクトが使っている MySQL を特定して EC の …",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/106"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #63 [Feature] プロジェクトが使っている MySQL を特定して Canva…",
+     "url": "https://github.com/abeouga/kusakari-canvas/issues/63"
+    }
+   ]
+  }
+ ],
+ "changes": [
+  {
+   "id": "ec-pr-148",
+   "withSpec": true,
+   "title": "店舗側アカウントの作り直しの残りを、EC の main に入れた",
+   "body": "組織・複数の店舗・店舗ごとの担当者で管理する仕様と、招待キー、カード決済と返金、販売手数料、店舗の閉鎖、組織の停止、停止の前の警告の仕様が決まったので、統合ブランチの8つの PR を main にマージした。店舗側のアカウントではカートと注文を使えなくなる。DB には組織の停止の履歴のテーブル(マイグレーション V3)が足され、API を起動すると、既存のデータを消さずに自動で適用される。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "pr",
+     "label": "PR #148 feat: 店舗側アカウントの作り直しの残り（購入制限・招待キー・Stripe・…",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/148"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #103 [Feature] 店舗側アカウントの組織・複数店舗対応（#102 の実装の親 …",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/103"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #102 [Improve] 店舗側アカウント（shop）・組織・複数店舗管理のauth仕…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/102"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #104 [Feature] 組織・店舗・メンバーのテーブル構成を決めて docs と E…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/104"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #105 [Feature] 店舗ロールの権限と、子アカウント・店舗切り替えの画面仕様を決…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/105"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #108 [Feature] アカウント種別の判定と、オーナー・店舗ロールによる認可に切り…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/108"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #110 [Feature] 商品・在庫・注文・通知を店舗単位で扱うようにする",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/110"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #111 [Feature] 店舗の招待キーで店舗側アカウントを作り、店舗の管理者がロール…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/111"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #119 [Feature] 購入者側を「商品の店舗で受け取る」形に合わせる（カートの店舗…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/119"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #122 [Improve] 在庫を商品に1対1で持たせ、inventory.store_…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/122"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #125 [Plan] 出店の料金プラン（手数料）を組織と店舗のどちらの単位で持つかを決め…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/125"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #126 [Feature] 新しい DB 構成（v3）を採用するかを決め、決定の記録とマ…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/126"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #130 [Feature] 閉鎖した店舗の注文実績を見られるようにし、販売手数料（8%）…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/130"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #131 [Plan] Stripe（テストモード）でカード決済と返金を範囲に入れるかと、…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/131"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #132 [Feature] Stripe（テストモード）のカード決済で、支払いが成功した…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/132"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #133 [Feature] 注文のキャンセルを承認したときに、Stripe（テストモード…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/133"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #16 [Feature] 商品・店舗の利用停止の前に出店者へ警告する段階を設ける",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/16"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #113 [Feature] 統合ブランチで全 E2E を通し、他の PC の DB 初期…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/113"
+    }
+   ]
+  },
+  {
+   "id": "canvas-pr-73",
+   "withSpec": true,
+   "title": "Canvas を購入者だけにし、買えなくなった商品の配置を外す変更を、main に入れた",
+   "body": "Canvas は購入者と運営だけが使う仕様と、買えなくなった商品の配置は庭を開いたときに外す仕様が決まったので、統合ブランチの変更を main にマージした。店舗側と申請中のアカウントには、案内を出して止める。失敗していた E2E 17件と画面の不具合2つも直した。",
+   "repo": "kusakari-canvas",
+   "authors": [
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "pr",
+     "label": "PR #73 feat: Canvas を購入者だけにし、買えなくなった商品の配置を整理する変…",
+     "url": "https://github.com/abeouga/kusakari-canvas/pull/73"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #64 [Feature] EC の会員・アカウント種別の作り直しに Canvas を追…",
+     "url": "https://github.com/abeouga/kusakari-canvas/issues/64"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #65 [Feature] 商品と店舗の1対1に合わせて、商品一覧・AI候補・配置を直す",
+     "url": "https://github.com/abeouga/kusakari-canvas/issues/65"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #69 [Bug] 全 E2E のうち17件が、画面や準備コードの変更に追従しておらず失…",
+     "url": "https://github.com/abeouga/kusakari-canvas/issues/69"
+    }
+   ]
+  },
+  {
+   "id": "ec-pr-149",
+   "withSpec": false,
+   "title": ".env に Stripe の設定を書くと、start.bat と setup.bat が止まる不具合を直した",
+   "body": "起動とセットアップのスクリプトが読む .env の許可リストに、Stripe の3つの設定の名前を足した。手順書は「.env に書いて起動する」としていたのに、名前を許可リストに入れ忘れていた。カードの支払いを試すときは、.env に Stripe のテスト用の鍵を入れ、stripe listen で Webhook(Stripe から届く支払いの通知)を受ける。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "pr",
+     "label": "PR #149 fix: .env の Stripe の設定で start.bat と setu…",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/149"
+    },
+    {
+     "kind": "pr",
+     "label": "PR #150 chore: main のマージと .env の修正（#148・#149）を統合…",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/150"
+    },
+    {
+     "kind": "pr",
+     "label": "PR #148 feat: 店舗側アカウントの作り直しの残り（購入制限・招待キー・Stripe・…",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/148"
+    }
+   ]
+  },
+  {
+   "id": "ec-pr-151",
+   "withSpec": false,
+   "title": "使えなくなった E2E 3件と、Canvas の古い検証用スクリプト4つを消した",
+   "body": "#103 の残りを見直して消すと決めたので、スキップしていた EC の E2E 3件と、DB 構成 v3 で動かなくなった Canvas の検証用スクリプト4つを消した。消したスクリプトのうち、ほかのスクリプトが使っていた部分だけは、新しいファイルに移した。アプリのコードと DB は変えていない。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "pr",
+     "label": "PR #151 test: 使えなくなりスキップしていた E2E 3件を消す",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/151"
+    },
+    {
+     "kind": "pr",
+     "label": "PR #74 chore: 使えなくなった古い検証用スクリプト4つを消す",
+     "url": "https://github.com/abeouga/kusakari-canvas/pull/74"
+    },
+    {
+     "kind": "pr",
+     "label": "PR #152 chore: スキップしていた E2E の削除（#151）を統合ブランチに取り込…",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/152"
+    },
+    {
+     "kind": "pr",
+     "label": "PR #75 chore: main のマージと古い検証用スクリプトの削除（#73・#74）を…",
+     "url": "https://github.com/abeouga/kusakari-canvas/pull/75"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #103 [Feature] 店舗側アカウントの組織・複数店舗対応（#102 の実装の親 …",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/103"
+    }
+   ]
+  },
+  {
+   "id": "ec-pr-147",
+   "withSpec": false,
+   "title": "閉鎖中の店舗を使う試験が、時刻によって失敗する問題を直した",
+   "body": "未完了の注文がない閉鎖中の店舗や受付停止中の組織は、1分ごとの定期処理で閉鎖済みや停止に移る。そのため、試験の途中でこの処理が動くと失敗していた。試験の準備で受付済みの注文を1件ずつ置き、状態が変わらないようにした(アプリの動きは変えていない)。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga",
+    "阿部桜雅"
+   ],
+   "links": [
+    {
+     "kind": "pr",
+     "label": "PR #147 test: 閉鎖中・受付停止中の状態を作る試験に、受付済みの注文を置いて状態が変…",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/147"
+    },
+    {
+     "kind": "commit",
+     "label": "コミット 04980c9 test: 閉鎖中・受付停止中の状態を作る試験に、受付済みの注文を置いて状態が変…",
+     "url": "https://github.com/abeouga/kusakari-ec/commit/04980c96db5e1ccd21320fa6cca3d548b5799b7a"
+    }
+   ]
+  },
+  {
+   "id": "ec-pr-155",
+   "withSpec": true,
+   "title": "PR の本文で閉じる issue は、1行に1件ずつ書く決まりにした",
+   "body": "「Closes #108、#109」のように並べると2件目以降が閉じないので、1行に1件ずつ「Closes #番号」と書く決まりにして、PR 本文のスキルを直した。Closes が効くのは main 向けの PR だけなので、統合ブランチ向けの PR では「関連 #番号」と書く。あわせて、改行は「。」の後だけにし、「、」では改行しないようにした。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "Fuu0324",
+    "阿部桜雅"
+   ],
+   "links": [
+    {
+     "kind": "pr",
+     "label": "PR #155 fix: PR本文のスキルで、閉じるIssueを1件ずつ `Closes #番号…",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/155"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #154 [Bug] kusakari-pr-skillの `、` で改行する書き方のせい…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/154"
+    },
+    {
+     "kind": "commit",
+     "label": "コミット 99684b9 fix: PR本文のスキルで、閉じるIssueを1件ずつ `Closes #番号…",
+     "url": "https://github.com/abeouga/kusakari-ec/commit/99684b9e4124c9f9364c1a98b74540a541534568"
+    },
+    {
+     "kind": "commit",
+     "label": "コミット 4225023 fix: PR本文のスキルの改行を「。」だけにし、「、」では改行しないようにする",
+     "url": "https://github.com/abeouga/kusakari-ec/commit/42250230d3affc305a6998ea559bba8627c8a970"
+    }
+   ]
+  }
+ ],
+ "manual": {
+  "raw": "",
+  "items": []
+ }
+}
