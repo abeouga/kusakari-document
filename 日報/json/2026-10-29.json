@@ -1,0 +1,122 @@
+{
+ "schema": 1,
+ "date": "2026-10-29",
+ "window": {
+  "start": "2026-10-29T03:00:00+09:00",
+  "end": "2026-10-30T03:00:00+09:00"
+ },
+ "provisional": false,
+ "generatedAt": "2026-11-15T13:08:36+09:00",
+ "summary": [
+  "kusakari-ec で、出店者の「在庫」画面をなくし、在庫の編集を商品管理の一覧に移した。",
+  "出店者の店舗受け取り画面を作り直し、注文を状態で絞り込めるカードの一覧にした。",
+  "不具合の報告が2件あった。Canvas では庭一覧に戻れない不具合、EC ではキャンセルが実績に数えられない不具合である。"
+ ],
+ "specs": [
+  {
+   "id": "canvas-issue-21",
+   "status": "proposed",
+   "needsCheck": false,
+   "title": "施工範囲を指定せずに庭一覧へ戻るとき、確認してから戻れるようにする",
+   "body": "庭シミュレーション画面で施工範囲を指定しないまま「庭一覧に戻る」を押すと、エラーが出て庭プロジェクト一覧に戻れない。報告では、庭写真が保存されないことを伝える確認を出し、利用者が確認したら写真を保存せずに一覧へ戻す動きを求めている。確認にはすでにある確認ダイアログを使う案が書かれている。",
+   "reason": "この日に作られた不具合報告であり、この日の終わりには開いたままで、決定の書き込みも無いため。",
+   "repo": "kusakari-canvas",
+   "authors": [
+    "Fuu0324"
+   ],
+   "links": [
+    {
+     "kind": "issue",
+     "label": "issue #21 [Bug] 庭シミュレーション画面から庭プロジェクト一覧画面に戻れなくなる",
+     "url": "https://github.com/abeouga/kusakari-canvas/issues/21"
+    }
+   ]
+  },
+  {
+   "id": "ec-issue-14",
+   "status": "proposed",
+   "needsCheck": false,
+   "title": "購入者がキャンセルを申請した注文を、出店者の実績のキャンセル件数に数える",
+   "body": "購入者がキャンセルを申請しても、出店者が見る実績(注文実績の画面)ではキャンセルが0件のままになっている。報告ではキャンセルを実績にも表示することを求めている。",
+   "reason": "この日に作られた不具合報告であり、この日の終わりには開いたままで、決定の書き込みも無いため。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "Yuto0015"
+   ],
+   "links": [
+    {
+     "kind": "issue",
+     "label": "issue #14 [Bug] kusakari-ec",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/14"
+    }
+   ]
+  }
+ ],
+ "changes": [
+  {
+   "id": "ec-commit-7bf9e30",
+   "withSpec": false,
+   "title": "出店者の「在庫」画面をなくし、在庫の編集を商品管理の一覧に移した",
+   "body": "サイドバーの「在庫」と /seller/inventory の画面をなくし、商品管理の一覧の在庫欄に「在庫を編集」ボタンと在庫切れの表示を加えた。2つの画面が同じAPI(画面がサーバーにデータの読み書きを頼むための仕組み)と同じ在庫の列を操作していて、中身が重なっていたためである。APIとデータベースは変えておらず、在庫の更新は今までどおり選んだ店舗の分だけで、画面を開いた後にほかで在庫が変わっていたら上書きせずに確かめ直す。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "阿部桜雅"
+   ],
+   "links": [
+    {
+     "kind": "commit",
+     "label": "コミット 7bf9e30 feat: 出店者の在庫画面を商品管理へ統合する",
+     "url": "https://github.com/abeouga/kusakari-ec/commit/7bf9e30193e7024bfbf7e7468b5762878f857d03"
+    }
+   ]
+  },
+  {
+   "id": "ec-commit-3e0fa0a",
+   "withSpec": false,
+   "title": "出店者の店舗受け取り画面を、絞り込みと進み具合つきのカードに作り直した",
+   "body": "注文を1件ずつカードで表示し、受取人の名前・電話番号・メールと、「注文受付→受取準備完了→引き渡し完了」の進み具合を載せた。「準備待ち」「受け取り待ち」「キャンセル申請」などで絞り込め、キャンセル申請中や準備待ちのように出店者の対応が要る注文を上に並べる。受取準備完了と引き渡し完了は確認の画面で確かめてから切り替え、キャンセル申請はカードの中で承認か却下を選べる。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "阿部桜雅"
+   ],
+   "links": [
+    {
+     "kind": "commit",
+     "label": "コミット 3e0fa0a feat: 出店者の店舗受け取り画面を絞り込み・受取人・進み具合つきのカードに作…",
+     "url": "https://github.com/abeouga/kusakari-ec/commit/3e0fa0a7851403a2923cd0c6a2bc076b875c4932"
+    }
+   ]
+  },
+  {
+   "id": "ec-commit-6cafd62",
+   "withSpec": false,
+   "title": "EC と Canvas の画面から、見出し・説明文を削り、メニュー名を短くした",
+   "body": "EC では商品カタログ上部の見出しと説明文を消し、出店者サイドバーの項目名を「商品管理」「在庫」「店舗受け取り」に短くした。このうち「在庫」は同じ日の在庫画面の統合でなくなった。Canvas では庭一覧の「新しい庭をつくる」パネルにあった補足文を消した。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "阿部桜雅"
+   ],
+   "links": [
+    {
+     "kind": "commit",
+     "label": "コミット 6cafd62 fix: 商品カタログ上部の見出しと説明文を削除する",
+     "url": "https://github.com/abeouga/kusakari-ec/commit/6cafd62ee34fe7dd6d3b2bc1e2a83f8c4e27adc6"
+    },
+    {
+     "kind": "commit",
+     "label": "コミット 4821161 fix: 出店者サイドバーの項目名を商品管理・在庫・店舗受け取りに短くする",
+     "url": "https://github.com/abeouga/kusakari-ec/commit/4821161ab070d791f66641317aac25a166adcee3"
+    },
+    {
+     "kind": "commit",
+     "label": "コミット 0d2476d fix: 新しい庭をつくるパネルの補足文を削除する",
+     "url": "https://github.com/abeouga/kusakari-canvas/commit/0d2476dbb8667b7f047e2bfebe1c9796ad5f3cce"
+    }
+   ]
+  }
+ ],
+ "manual": {
+  "raw": "",
+  "items": []
+ }
+}

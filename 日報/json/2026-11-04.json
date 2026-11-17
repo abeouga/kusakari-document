@@ -1,0 +1,78 @@
+{
+ "schema": 1,
+ "date": "2026-11-04",
+ "window": {
+  "start": "2026-11-04T03:00:00+09:00",
+  "end": "2026-11-05T03:00:00+09:00"
+ },
+ "provisional": false,
+ "generatedAt": "2026-11-14T22:53:20+09:00",
+ "summary": [
+  "EC の出店者の注文実績で、キャンセル申請をしても件数が0件のままになる不具合について、原因が分かった。実績が数えているのは承認済みのキャンセルだけだった。",
+  "Canvas では、輪郭を描かずに3Dタブを開くと画面に何も表示されなくなる不具合が報告された。",
+  "EC の出店者画面で、ラジオボタンが入力欄と同じ枠付きの形で表示されないよう CSS を直した(main に反映済み)。"
+ ],
+ "specs": [
+  {
+   "id": "ec-issue-14",
+   "status": "proposed",
+   "needsCheck": false,
+   "title": "出店者の注文実績で、キャンセル申請の件数が0件のままになる不具合",
+   "body": "購入者がキャンセルを申請しても、出店者の注文実績ではキャンセルが0件のままになると報告されていた。この日のコメントで、実績が数えているのは申請中の件数ではなく、出店者が承認したキャンセルの件数だと分かった。申請中の件数をどう表示するかは、この日はまだ決まっていない。",
+   "reason": "issue はこの日の終わりの時点で開いたままで、コメントは原因の説明にとどまり、直し方は書かれていないため。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "Yuto0015"
+   ],
+   "links": [
+    {
+     "kind": "issue",
+     "label": "issue #14 [Bug] kusakari-ec",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/14"
+    }
+   ]
+  },
+  {
+   "id": "canvas-issue-22",
+   "status": "proposed",
+   "needsCheck": false,
+   "title": "輪郭を描かずに3Dタブを開くと、庭の画面に何も表示されなくなる不具合",
+   "body": "庭を作って写真をアップロードし、「輪郭の描画を取消」で施工範囲の指定をやめたあとに3Dタブを開くと、画面に何も表示されなくなると報告された。エラーの記録によると、地面を描く部品(`GardenGround.jsx`)が中身のないデータ(undefined)から値を読もうとして、エラーで止まっている。期待する動作は、3Dの庭が表示されること。",
+   "reason": "この日に作られた issue で、この日の終わりの時点で開いたままのため。",
+   "repo": "kusakari-canvas",
+   "authors": [
+    "Fuu0324"
+   ],
+   "links": [
+    {
+     "kind": "issue",
+     "label": "issue #22 [Bug] 庭シミュレーション画面で何も表示されなくなる",
+     "url": "https://github.com/abeouga/kusakari-canvas/issues/22"
+    }
+   ]
+  }
+ ],
+ "changes": [
+  {
+   "id": "ec-commit-deccb49",
+   "withSpec": false,
+   "title": "出店者画面で、ラジオボタンが入力欄の形で表示されないようにした",
+   "body": "出店者画面の CSS では、チェックボックス以外の入力部品をすべて横幅いっぱいの枠付きの入力欄として表示していた。この変更でラジオボタンも対象から外し、文字を入力する欄は中央寄せ、選択欄と複数行の入力欄は右寄せにした。コミットの説明では、キャンセル申請のチェックボックスまわりの修正とされている。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "doroido2007"
+   ],
+   "links": [
+    {
+     "kind": "commit",
+     "label": "コミット deccb49 キャンセル申請のチェックボックスのcssの修正",
+     "url": "https://github.com/abeouga/kusakari-ec/commit/deccb497189d2ca3a4f4c2b6e0a060105010eacb"
+    }
+   ]
+  }
+ ],
+ "manual": {
+  "raw": "",
+  "items": []
+ }
+}

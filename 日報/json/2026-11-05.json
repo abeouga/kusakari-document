@@ -1,0 +1,739 @@
+{
+ "schema": 1,
+ "date": "2026-11-05",
+ "window": {
+  "start": "2026-11-05T03:00:00+09:00",
+  "end": "2026-11-06T03:00:00+09:00"
+ },
+ "provisional": false,
+ "generatedAt": "2026-11-14T22:43:16+09:00",
+ "summary": [
+  "Canvas で植物の3Dモデルを生成する処理を新しい規則 v5 で作り直し、茎・枝・葉を調整できるようにして、植物の種類を11種に増やした。EC の出品フォームも v5 の項目に対応した。",
+  "EC では商品番号の自動設定、出店申請のステップ形式化、ヘッダーの追従、サイドバーの開閉を main に入れ、不具合も3件直した。",
+  "商品登録画面の作り直しと住所管理の削除は PR を出した段階で、この日の終わりの時点ではまだ main に入っていない。"
+ ],
+ "specs": [
+  {
+   "id": "ec-issue-12",
+   "status": "confirmed",
+   "needsCheck": true,
+   "title": "出店者画面のダッシュボードを削除する",
+   "body": "使い道が決まっていないダッシュボードをサイドバーから消し、部品も削除する。代わりに、最初に開く画面を商品一覧にする。issue は完了として閉じられた。",
+   "reason": "issue は PR #30 の「Closes #12」で閉じたが、PR #37 には「#30 は Closes #12 と書かれていたため #23 が開いたまま」とあり、同じ日の issue #43 にはサイドバーにまだダッシュボードがあると書かれているため、実装が済んだのか確かめてほしい。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga",
+    "doroido2007"
+   ],
+   "links": [
+    {
+     "kind": "issue",
+     "label": "issue #12 管理者画面？出店者画面のダッシュボードを削除",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/12"
+    },
+    {
+     "kind": "pr",
+     "label": "PR #30 cssの修正",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/30"
+    },
+    {
+     "kind": "pr",
+     "label": "PR #37 fix: 商品登録・編集フォームの入力欄を左寄せに戻す",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/37"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #43 [Improve] 出品者画面のサイドバーにアイコンを付け、閉じた状態でもアイコ…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/43"
+    }
+   ]
+  },
+  {
+   "id": "ec-pr-40",
+   "status": "proposed",
+   "needsCheck": false,
+   "title": "アカウント設定の住所管理を画面とAPIごと削除する",
+   "body": "受け取りは購入者が受取店舗へ行く方式に決まったので、住所管理の画面と住所のAPI(GET・PUT・DELETE)を削除する PR が出た。起動時にデータを消さない方針に合わせ、住所のテーブル member_addresses は削除せず、読み書きしない状態で残す。決定は docs/decisions に記録する。",
+   "reason": "PR はこの日の終わりの時点で開いたままのため、提案中とした。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga",
+    "阿部桜雅"
+   ],
+   "links": [
+    {
+     "kind": "pr",
+     "label": "PR #40 improve: 住所管理の画面とAPIを削除する",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/40"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #11",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/11"
+    },
+    {
+     "kind": "commit",
+     "label": "コミット 34d634c improve: 店舗受け取りに不要な住所管理の画面とAPIを削除する",
+     "url": "https://github.com/abeouga/kusakari-ec/commit/34d634ccbdc316e6a662ecd364a0e6a0a62737a2"
+    }
+   ]
+  },
+  {
+   "id": "ec-issue-19",
+   "status": "proposed",
+   "needsCheck": true,
+   "title": "キャンセルを申請できるのは、出店者が受取準備完了にするまでに限る",
+   "body": "購入者がキャンセルを申請できるのは、注文が「注文受付」の状態で、かつ申請中でないときだけにする。却下されたあとも、注文受付のままなら再申請できる。受取準備完了の注文には申請ボタンを出さず、受取店舗へ問い合わせるよう案内する。",
+   "reason": "issue は開いたままで決定の記述が無いが、PR #39 には「サーバー・画面ともすでに実装されていました」とあり、仕様が決まっているのか確かめてほしい。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga",
+    "阿部桜雅"
+   ],
+   "links": [
+    {
+     "kind": "issue",
+     "label": "issue #19 [Feature] キャンセル申請できる条件を受け取り準備完了までに限定する(E…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/19"
+    },
+    {
+     "kind": "pr",
+     "label": "PR #39 test: キャンセル申請を受取準備完了までに限ることをE2Eで確認する",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/39"
+    },
+    {
+     "kind": "commit",
+     "label": "コミット 1034dbb test: キャンセル申請できるのが受取準備完了までであることを実API/MyS…",
+     "url": "https://github.com/abeouga/kusakari-ec/commit/1034dbbe4af349ddb65d9bc7261c04fa1075e5c9"
+    }
+   ]
+  },
+  {
+   "id": "ec-issue-16",
+   "status": "proposed",
+   "needsCheck": false,
+   "title": "商品・店舗を停止する前に、出店者へ警告する段階を設ける",
+   "body": "運営者が商品や店舗をいきなり停止するのではなく、先に理由付きの警告を出し、出店者に直す機会を与える案である。警告しても公開状態は変えず、出店者には通知で知らせる。重大な問題では、確認ダイアログを経て今までどおりすぐに停止できる。",
+   "reason": "issue に、仕様検討中のためまだ着手しないよう書かれ、未決事項が9つ残っている。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "issue",
+     "label": "issue #16 [Feature] 商品・店舗の利用停止の前に出店者へ警告する段階を設ける",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/16"
+    }
+   ]
+  },
+  {
+   "id": "ec-issue-18",
+   "status": "proposed",
+   "needsCheck": false,
+   "title": "在庫が複数の店舗に分かれるときの受け取り方法を見直す",
+   "body": "植物以外の小さな商品(園芸用品・球根・種など)は自宅配送できるようにし、植物は店舗受け取りのままにする案である。受取店舗を1つにまとめる「店舗間配送」も検討しているが、作るかどうかはまだ仮である。Kusakari は店舗と在庫を持たない方針を守り、植物は配送しない。",
+   "reason": "issue の題名に「仕様検討中」とあり、配送料や混在カートの扱いなど未決事項が8つ残っている。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "issue",
+     "label": "issue #18 [Feature] 在庫が複数店舗に分かれる場合の受け取り方法を見直す(非植物の…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/18"
+    }
+   ]
+  },
+  {
+   "id": "ec-issue-15",
+   "status": "proposed",
+   "needsCheck": false,
+   "title": "出店審査の基準を決める",
+   "body": "出店審査の基準として、書類による事業者の実在、申請内容と書類の一致、受け取り店舗の実在、取扱商品の適格性、重複申請や過去の履歴の5つが提案された。基準ごとに却下理由の定型文を用意する案である。AI の判定は書類と入力内容の照合の補助にとどめ、最終判断は運営者が行う。",
+   "reason": "提案として出された issue で、開いたままになっている。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "iku0092"
+   ],
+   "links": [
+    {
+     "kind": "issue",
+     "label": "issue #15 出店審査の修正について",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/15"
+    }
+   ]
+  },
+  {
+   "id": "ec-issue-43",
+   "status": "proposed",
+   "needsCheck": false,
+   "title": "出店者サイドバーにアイコンを付け、商品登録画面の見出しと戻るボタンを直す",
+   "body": "サイドバーの各メニューにアイコンを付け、閉じた状態でもアイコンを押して移動できるようにする。商品登録画面の見出しは既定値の「Kusakari」ではなく「商品登録」にする。戻るボタンは左向き矢印のアイコン付きの「戻る」にする。",
+   "reason": "実装した PR #54 はこの日の終わりの時点で開いたままのため、提案中とした。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga",
+    "阿部桜雅"
+   ],
+   "links": [
+    {
+     "kind": "issue",
+     "label": "issue #43 [Improve] 出品者画面のサイドバーにアイコンを付け、閉じた状態でもアイコ…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/43"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #44 [Improve] 商品登録画面の見出し「Kusakari」を消し、戻るボタンを…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/44"
+    },
+    {
+     "kind": "pr",
+     "label": "PR #54 improve: 出店者サイドバーをアイコン付きにし、商品登録・編集画面の見出し…",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/54"
+    },
+    {
+     "kind": "commit",
+     "label": "コミット dacabe0 improve: 出品者・運営者サイドバーにアイコンを付け、閉じた状態でもアイコ…",
+     "url": "https://github.com/abeouga/kusakari-ec/commit/dacabe08534797e42e2d6ebef5fffdbf07149130"
+    },
+    {
+     "kind": "commit",
+     "label": "コミット 5b0d291 improve: 商品登録画面の見出し「Kusakari」をなくし、戻るボタンを…",
+     "url": "https://github.com/abeouga/kusakari-ec/commit/5b0d291addd1e145e765179209163d947c777998"
+    }
+   ]
+  },
+  {
+   "id": "ec-issue-46",
+   "status": "proposed",
+   "needsCheck": false,
+   "title": "商品登録を「商品情報・画像・庭オブジェクト・確認」の4ステップにする",
+   "body": "ステップの表示をボタンに見えない進み具合のバーにする。商品番号は入力欄をなくして常に自動で付け、編集のときも変えられないようにする(API も 409 で拒否する)。カテゴリーと店舗はダイアログで選ぶ形にし、植物の高さの入力は庭オブジェクトのステップの1か所(10〜1500cm)にまとめる。",
+   "reason": "実装した PR #56 はこの日の終わりの時点で開いたままのため、提案中とした。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga",
+    "阿部桜雅"
+   ],
+   "links": [
+    {
+     "kind": "issue",
+     "label": "issue #46 [Improve] 商品追加画面で商品番号を自動化し、カテゴリー・店舗をポップア…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/46"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #45 [Improve] 商品登録ウィザードのステップ表記をボタンからバー形式にする",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/45"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #50 [Improve] 商品追加画面で植物の高さの入力をステップ2に統一し、ステップ…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/50"
+    },
+    {
+     "kind": "pr",
+     "label": "PR #56 improve: 商品登録ウィザードを4ステップのバー表示にし、商品番号の自動採…",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/56"
+    },
+    {
+     "kind": "commit",
+     "label": "コミット 881940a improve: 商品登録ウィザードをバー形式の4ステップにし、商品番号の自動採…",
+     "url": "https://github.com/abeouga/kusakari-ec/commit/881940a4554f4cf50af672449350ec5b3476e2b4"
+    }
+   ]
+  },
+  {
+   "id": "ec-issue-49",
+   "status": "proposed",
+   "needsCheck": false,
+   "title": "庭オブジェクトと確認のステップを作り直す",
+   "body": "植物は必ず庭に配置できるものとし、「設定せず次へ」をなくして「次へ」にそろえる。「AIで生成」ボタンはプレビューに重ね、特徴を変えるとプレビューが自動で更新されるようにし、入力欄はグループに分けて整理する。確認のステップは商品カードに近い見た目にし、商品画像の下に植物の3Dプレビューを出す。",
+   "reason": "実装した PR #57 と #58 はこの日の終わりの時点で開いたままのため、提案中とした。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "issue",
+     "label": "issue #49 [Improve] 商品追加画面のステップ2で植物を常に庭に配置できるようにし、…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/49"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #48 [Improve] 商品追加画面のステップ2で、AIで特徴を設定する枠をなくし、…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/48"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #51 [Improve] 商品追加画面のステップ2で特徴を変えると植物のプレビューが自…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/51"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #52 [Improve] 商品追加画面のステップ2で植物の特徴の入力欄をモダンに整理す…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/52"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #53 [Improve] 商品追加画面のステップ3（確認）を必要な情報に絞ってモダンに…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/53"
+    },
+    {
+     "kind": "pr",
+     "label": "PR #57 improve: 庭オブジェクトのステップでAI生成ボタンをプレビューに重ね、特…",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/57"
+    },
+    {
+     "kind": "pr",
+     "label": "PR #58 improve: 商品登録の確認ステップを商品カードに近い見た目にし、商品画像の…",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/58"
+    }
+   ]
+  },
+  {
+   "id": "ec-issue-47",
+   "status": "proposed",
+   "needsCheck": false,
+   "title": "フォームの色をページ背景・カード・入力欄の3段階に分ける",
+   "body": "入力欄、入力をまとめたカード、ページ背景の色がほぼ同じで、どこに入力すればよいか分かりにくかった。そこで、色を CSS カスタムプロパティ(CSS で使い回せる変数)にまとめ、3段階で見分けられるようにする。変えるのは色だけで、レイアウトと入力項目は変えない。",
+   "reason": "実装した PR #55 はこの日の終わりの時点で開いたままのため、提案中とした。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga",
+    "阿部桜雅"
+   ],
+   "links": [
+    {
+     "kind": "issue",
+     "label": "issue #47 [Improve] EC全体でフォームと背景の色を分け、入力領域を分かりやすくす…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/47"
+    },
+    {
+     "kind": "pr",
+     "label": "PR #55 improve: フォームの色をページ背景・カード・入力欄の3段階に分ける",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/55"
+    },
+    {
+     "kind": "commit",
+     "label": "コミット c954105 improve: フォームの色をページ背景・カード・入力欄の3段階に分ける",
+     "url": "https://github.com/abeouga/kusakari-ec/commit/c954105c69585d619d8597e2bad4f39735260f79"
+    }
+   ]
+  },
+  {
+   "id": "ec-pr-38",
+   "status": "proposed",
+   "needsCheck": false,
+   "title": "管理画面の商品管理に商品情報・検索・詳細ダイアログを追加する",
+   "body": "管理画面の商品管理は商品名しか出していなかったので、画像・カテゴリー・商品番号・価格・説明を表示する。商品名を押すと詳細ダイアログを開き、キーワード検索と状態での絞り込みもできるようにする。そのために、運営者向けの商品一覧APIが返す項目を増やす。",
+   "reason": "PR はこの日の終わりの時点で下書きのため、提案中とした。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "pr",
+     "label": "PR #38 improve: 管理画面の商品管理に商品情報・検索・詳細ダイアログを追加する",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/38"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #6",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/6"
+    }
+   ]
+  },
+  {
+   "id": "ec-pr-59",
+   "status": "proposed",
+   "needsCheck": false,
+   "title": "PR用のスクリーンショットを専用ブランチに置く",
+   "body": "CLI(コマンドで操作する道具)では PR に画像を添付できず、画像を main にも入れたくないため、スクリーンショットは専用のブランチ pr-screenshots に置く。PR の本文にはそのブランチの画像の URL を埋め込む。この決め方を決定記録として残す PR が出た。",
+   "reason": "PR はこの日の終わりの時点で開いたままのため、提案中とした。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga",
+    "阿部桜雅"
+   ],
+   "links": [
+    {
+     "kind": "pr",
+     "label": "PR #59 docs: PR用スクリーンショットを専用ブランチに置く決定を記録する",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/59"
+    },
+    {
+     "kind": "commit",
+     "label": "コミット 8ced32b docs: PR用スクリーンショットを専用ブランチに置く決定を記録する",
+     "url": "https://github.com/abeouga/kusakari-ec/commit/8ced32b37b7822fd5ac25e33d6968eefd83df47f"
+    }
+   ]
+  }
+ ],
+ "changes": [
+  {
+   "id": "canvas-pr-39",
+   "withSpec": true,
+   "title": "植物の3Dモデル生成を v5 に作り直し、茎・枝・葉を調整できるようにした",
+   "body": "茎・枝・葉を調整でき、植物の種類を5種から11種に増やす仕様に決まったので、Canvas に新しい生成の規則 v5 を作った。古い v1〜v4 は別のフォルダに移して、保存済みの庭の検証にだけ使う。EC の出品フォームにも種類の選択と茎・枝・葉の調整項目を加え、細い形になる問題の issue も対応済みとして閉じた。",
+   "repo": "kusakari-canvas",
+   "authors": [
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "pr",
+     "label": "PR #39 [Improve] 植物モデル生成をv5の1系統にまとめ、茎・枝・葉を調整できる…",
+     "url": "https://github.com/abeouga/kusakari-canvas/pull/39"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #35 [Improve] 植物モデル生成で茎・枝・葉を調整できるようにし、植物の種類を…",
+     "url": "https://github.com/abeouga/kusakari-canvas/issues/35"
+    },
+    {
+     "kind": "pr",
+     "label": "PR #41 [Improvement] 出品フォームで植物の種類と茎・枝・葉の形を設定できる…",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/41"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #22 ３Dモデルを製作する時に変なものが出来上がることがあるので修正お願いします",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/22"
+    }
+   ]
+  },
+  {
+   "id": "canvas-pr-30",
+   "withSpec": true,
+   "title": "Canvas の商品一覧のカード・検索欄・ドラッグ表示を見やすくした",
+   "body": "商品の配置をドラッグだけで行う仕様に決まったので、カードから「庭に配置」ボタンと文言を消し、価格を大きくして、画像をカードの高さいっぱいに表示した。案内文は i マークに移し、カテゴリーはボタンで選ぶ形にし、ドラッグ中はブラウザが標準で出す画像の代わりに商品のタイルを表示するようにした。積み重ねた PR(#31、#33)は途中のブランチを経由してマージし、どれも main に入っている。",
+   "repo": "kusakari-canvas",
+   "authors": [
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "pr",
+     "label": "PR #30 [Improve] 商品一覧のカードから配置の文言とボタンをなくし、価格と画像を…",
+     "url": "https://github.com/abeouga/kusakari-canvas/pull/30"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #25 [Improve] 商品一覧のカードから配置の文言とボタンをなくし、価格と画像を…",
+     "url": "https://github.com/abeouga/kusakari-canvas/issues/25"
+    },
+    {
+     "kind": "pr",
+     "label": "PR #31 [Improve] 商品一覧の案内文をiマークにし、検索欄とカテゴリ選択を見やす…",
+     "url": "https://github.com/abeouga/kusakari-canvas/pull/31"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #26 [Improve] 商品一覧の案内文をiマークにし、検索欄とカテゴリ選択を見やす…",
+     "url": "https://github.com/abeouga/kusakari-canvas/issues/26"
+    },
+    {
+     "kind": "pr",
+     "label": "PR #33 [Improve] 商品を庭へドラッグするとき、ゴーストの代わりに商品タイルを表…",
+     "url": "https://github.com/abeouga/kusakari-canvas/pull/33"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #24 [Improve] 商品を庭へドラッグするとき、ゴーストの代わりに商品タイルを表…",
+     "url": "https://github.com/abeouga/kusakari-canvas/issues/24"
+    }
+   ]
+  },
+  {
+   "id": "canvas-pr-28",
+   "withSpec": true,
+   "title": "Canvas の買い物リストタブを整理し、商品カードを商品一覧とそろえた",
+   "body": "買い物リストの説明文を消し、EC へ移るボタンを「リストを確認」の1つだけにする仕様に決まったので、そのとおりに変えた。商品カードも商品一覧と同じ枠付きの見た目にし、ドラッグ以外の配置手段として「庭に配置」ボタンは残した。カードの変更は、EC の商品作成APIが 403 を返すため、E2E(実際の操作をまねる自動テスト)で確認できていない。",
+   "repo": "kusakari-canvas",
+   "authors": [
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "pr",
+     "label": "PR #28 [Improve] 買い物リストの説明文を削除し、EC遷移ボタンを「リストを確認…",
+     "url": "https://github.com/abeouga/kusakari-canvas/pull/28"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #27 [Improve] 買い物リストの説明文を削除し、EC遷移ボタンを「リストを確認…",
+     "url": "https://github.com/abeouga/kusakari-canvas/issues/27"
+    },
+    {
+     "kind": "pr",
+     "label": "PR #38 [Improve] 買い物リストの商品カードを商品一覧のカードと同じデザインにす…",
+     "url": "https://github.com/abeouga/kusakari-canvas/pull/38"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #37 [Improve] 買い物リストの商品カードを商品一覧のカードと同じデザインにす…",
+     "url": "https://github.com/abeouga/kusakari-canvas/issues/37"
+    }
+   ]
+  },
+  {
+   "id": "canvas-pr-36",
+   "withSpec": true,
+   "title": "3D編集ツールバーを目のアイコンと削除ボタンだけにした",
+   "body": "使われていない入力欄と複製をなくす仕様に決まったので、初期視点ボタンを目のアイコンにし、「詳細」のダイアログを削除して「削除」ボタンを直接出すようにした。座標・回転・倍率の入力欄と複製ボタンはなくなった。E2E は数値入力の代わりに配置物を実際にドラッグする操作に書き換えた。",
+   "repo": "kusakari-canvas",
+   "authors": [
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "pr",
+     "label": "PR #36 [Improve] 3D編集ツールバーの初期視点アイコンを目にし、詳細メニューを…",
+     "url": "https://github.com/abeouga/kusakari-canvas/pull/36"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #23 [Improve] 3D編集ツールバーの初期視点アイコンを目にし、詳細メニューを…",
+     "url": "https://github.com/abeouga/kusakari-canvas/issues/23"
+    }
+   ]
+  },
+  {
+   "id": "canvas-pr-29",
+   "withSpec": false,
+   "title": "E2E が遅く失敗していた問題を、テスト商品の片付けと読み込みの絞り込みで直した",
+   "body": "E2E 専用のデータベースに約780件のテスト商品がたまり、商品一覧を取るたびに EC の API がメモリ不足のエラーになっていた。そこで Canvas の E2E は開始時に古いテスト商品をアーカイブし、EC は公開カタログで有効な商品だけを読み込むようにした。11件のテストの合計時間は182秒から138秒に縮んだ。",
+   "repo": "kusakari-canvas",
+   "authors": [
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "pr",
+     "label": "PR #29 perf: E2E開始時に前回までのテスト商品を片付け、ECのテスト用ヒープを増…",
+     "url": "https://github.com/abeouga/kusakari-canvas/pull/29"
+    },
+    {
+     "kind": "pr",
+     "label": "PR #17 perf: 公開カタログでは有効な商品だけをDBから読み込む",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/17"
+    }
+   ]
+  },
+  {
+   "id": "canvas-pr-34",
+   "withSpec": true,
+   "title": "開発用のファイルを整理し、EC の起動スクリプトを直した",
+   "body": "Canvas のルートにあった設計メモを docs/ に、機能別の Playwright 設定11個を e2e/configs/ に移す仕様に決まったので、移動して参照先も直した。EC の start.bat は Java のソースが JAR より新しいときに再ビルドしてから起動するようにした。これで、ソースを変えたのに古い API のまま起動することがなくなった。",
+   "repo": "kusakari-canvas",
+   "authors": [
+    "abeouga",
+    "阿部桜雅"
+   ],
+   "links": [
+    {
+     "kind": "pr",
+     "label": "PR #34 [Improve] ルート直下の設計メモとPlaywright設定を適切なディレ…",
+     "url": "https://github.com/abeouga/kusakari-canvas/pull/34"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #32 [Improve] ルート直下の設計メモとPlaywright設定を適切なディレ…",
+     "url": "https://github.com/abeouga/kusakari-canvas/issues/32"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #32 start.batがAPIソース変更時にJARを再ビルドしない",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/32"
+    },
+    {
+     "kind": "commit",
+     "label": "コミット e751b8d fix: start.batでAPIソースがJARより新しければ再ビルドする",
+     "url": "https://github.com/abeouga/kusakari-ec/commit/e751b8d9fb854870cb197cf2592b4eeb05efacb5"
+    }
+   ]
+  },
+  {
+   "id": "ec-pr-36",
+   "withSpec": true,
+   "title": "商品登録で商品番号を空欄にすると、自動で番号を付けるようにした",
+   "body": "商品番号を自動で設定する仕様に決まったので、新規登録で空欄のときは、サーバーが「KS-登録日-ランダム6文字」の重複しない番号を付けるようにした。更新で空欄のときは今の番号を残し、自分で入力した番号はそのまま使う。データベースの構造は変えていない。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "pr",
+     "label": "PR #36 feature: 商品登録で商品番号を自動設定する",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/36"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #25 商品登録の際の修正",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/25"
+    }
+   ]
+  },
+  {
+   "id": "ec-pr-42",
+   "withSpec": true,
+   "title": "出店申請の画面をステップごとに進む形にした",
+   "body": "出店申請をステップ形式にする仕様に決まったので、事業者情報・担当者と連絡先・出店プラン・事業確認書類・入力内容の確認の5ステップに分けた。「次へ」でそのステップの項目だけを検証し、戻っても入力した内容は消えない。API を呼ぶのは確認画面の「申請する」のときだけである。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "pr",
+     "label": "PR #42 improve: 出店申請をステップごとのウィザード形式にする",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/42"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #20 [Improvement] 出店申請画面をステップごとに進むウィザード形式にする…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/20"
+    }
+   ]
+  },
+  {
+   "id": "ec-pr-34",
+   "withSpec": true,
+   "title": "EC のヘッダーの追従、サイドバーの開閉、カタログの余白を直した",
+   "body": "ヘッダーをスクロールに追従させる仕様に決まったので、ロゴ・ナビ・カートの行を画面上部に固定した。出品者画面と管理画面の左サイドバーは開閉できるようにし、ホーム画面の商品カタログは左右に余白を入れて広い画面では中央にそろえた。あわせて、ヘッダーとカートの「植物を探す」を「商品を探す」に変えた。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga",
+    "UltM-Cin100"
+   ],
+   "links": [
+    {
+     "kind": "pr",
+     "label": "PR #34 improve: ヘッダーをスクロールに追従させる",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/34"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #31 [Improve] headerが追従するようにしたほうがいいかも？",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/31"
+    },
+    {
+     "kind": "pr",
+     "label": "PR #29 improve: 出品者画面・管理画面のサイドバーを開閉できるようにする",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/29"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #27 [Improve] 出品者画面・管理画面のサイドバーを開閉できるようにする",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/27"
+    },
+    {
+     "kind": "pr",
+     "label": "PR #24 improve: ホーム画面の商品カタログの左右に余白を入れる",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/24"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #21 [Improvement] ホーム画面の商品カタログの左右に余白を入れる",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/21"
+    },
+    {
+     "kind": "commit",
+     "label": "コミット 592f456 共通ヘッターとカートの「植物を探す」を「商品を探す」に変更",
+     "url": "https://github.com/abeouga/kusakari-ec/commit/592f4567fe51ad1458cb597bf64277efd875bcdb"
+    }
+   ]
+  },
+  {
+   "id": "ec-pr-28",
+   "withSpec": true,
+   "title": "商品一覧のページを切り替えると、一覧の先頭へ移動するようにそろえた",
+   "body": "ページを切り替えたら件数表示の行が画面の上端に来るまでスクロールする仕様に決まったので、E2E をこの動きに合わせた。動き自体は、同じ日のコミット 28072d9 で入った実装のままである。以前の「スクロール位置を保つ」動きを期待していた3件のテストが、これで成功するようになった。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga",
+    "doroido2007"
+   ],
+   "links": [
+    {
+     "kind": "pr",
+     "label": "PR #28 test: 商品一覧のページ送りで一覧の先頭へ移動する仕様にE2Eを合わせる",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/28"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #26 [Improvement] 商品一覧のページ送りで一覧の先頭へ移動する仕様にそろ…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/26"
+    },
+    {
+     "kind": "commit",
+     "label": "コミット 28072d9 カタログのページ遷移とcssの修正",
+     "url": "https://github.com/abeouga/kusakari-ec/commit/28072d9f6f1ec70b2bdcf46d7f535ddebd82d6ce"
+    },
+    {
+     "kind": "commit",
+     "label": "コミット 5981659 カタログの無駄な余白をなくなる修正",
+     "url": "https://github.com/abeouga/kusakari-ec/commit/5981659c234b37d632703a60dfc2db96302c7218"
+    }
+   ]
+  },
+  {
+   "id": "ec-pr-35",
+   "withSpec": false,
+   "title": "EC の不具合を3件直した(キャンセル件数、ログアウトのエラー文、入力欄の中央寄せ)",
+   "body": "出店者の注文実績に「キャンセル申請中」の件数と、注文ごとの申請状態を出すようにした。これまでは承認後の件数しか数えず、申請しても0件のままだった。ログアウトの通信に失敗したときは英語の既定メッセージではなく日本語のエラーを出すようにし、商品登録・編集フォームで中央寄せになっていた入力欄の文字を左寄せに戻した。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga",
+    "doroido2007"
+   ],
+   "links": [
+    {
+     "kind": "pr",
+     "label": "PR #35 fix: 注文実績にキャンセル申請中の件数を表示する",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/35"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #14 [Bug] kusakari-ec",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/14"
+    },
+    {
+     "kind": "pr",
+     "label": "PR #33 fix: ログアウトの通信失敗時に日本語のエラーを表示する",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/33"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #8 [Bug] ログアウト失敗時(通信エラーなど)のエラーメッセージが正しく設定され…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/8"
+    },
+    {
+     "kind": "pr",
+     "label": "PR #37 fix: 商品登録・編集フォームの入力欄を左寄せに戻す",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/37"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #23 [Bug]",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/23"
+    },
+    {
+     "kind": "pr",
+     "label": "PR #30 cssの修正",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/30"
+    }
+   ]
+  }
+ ],
+ "manual": {
+  "raw": "",
+  "items": []
+ }
+}

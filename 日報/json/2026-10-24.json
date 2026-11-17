@@ -1,0 +1,40 @@
+{
+ "schema": 1,
+ "date": "2026-10-24",
+ "window": {
+  "start": "2026-10-24T03:00:00+09:00",
+  "end": "2026-10-25T03:00:00+09:00"
+ },
+ "provisional": false,
+ "generatedAt": "2026-11-15T14:31:20+09:00",
+ "summary": [
+  "EC で、ログアウトが通信エラーで失敗したときに、日本語ではなく既定のエラーメッセージが出る不具合が報告された。",
+  "この日はコミットと PR が無く、Canvas にも動きが無かった。"
+ ],
+ "specs": [
+  {
+   "id": "ec-issue-8",
+   "status": "proposed",
+   "needsCheck": false,
+   "title": "ログアウトが通信エラーで失敗したら、日本語のメッセージを出す",
+   "body": "今は、アカウント情報の画面でログアウトが通信エラーで失敗すると、赤い文字で既定のエラーメッセージがそのまま表示される。issue によると、原因は frontend/src/auth.js の logout() が通信エラー(TypeError)を受け止めず、AuthPanel.jsx がそのエラーの文をそのまま表示していることである。ログアウトに失敗したと分かる日本語のメッセージを出すよう直す提案で、同じ状態は E2E テスト(画面を実際に操作して確かめる自動テスト)の「logout failure」でも再現できる。",
+   "reason": "この日に作られ、日の終わりにも開いたままで、対応のコミットや PR も無いため。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "Fuu0324"
+   ],
+   "links": [
+    {
+     "kind": "issue",
+     "label": "issue #8 [Bug] ログアウト失敗時(通信エラーなど)のエラーメッセージが正しく設定され…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/8"
+    }
+   ]
+  }
+ ],
+ "changes": [],
+ "manual": {
+  "raw": "",
+  "items": []
+ }
+}

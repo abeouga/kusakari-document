@@ -1,0 +1,247 @@
+{
+ "schema": 1,
+ "date": "2026-11-13",
+ "window": {
+  "start": "2026-11-13T03:00:00+09:00",
+  "end": "2026-11-14T03:00:00+09:00"
+ },
+ "provisional": false,
+ "generatedAt": "2026-11-14T19:23:58+09:00",
+ "summary": [
+  "EC の出店者まわりの大きな機能(招待キーとロール、カード決済と返金、販売手数料の表示、店舗の閉鎖と組織の停止、停止前の警告)が、6件の PR でまとめて統合ブランチに入った。",
+  "Canvas では、庭を開いたときに、買えなくなった商品の配置を外して知らせるようになった。",
+  "どれも feature/shop-organization へのマージで、main には未反映。店舗の閉鎖は、実装が issue #79 の決定と2点違うので要確認。"
+ ],
+ "specs": [
+  {
+   "id": "ec-issue-79",
+   "status": "confirmed",
+   "needsCheck": true,
+   "title": "店舗の閉鎖の流れ(閉鎖中を経て、未完了の注文がなくなると閉鎖済みになる)",
+   "body": "オーナーか運営が閉鎖を始めると、すぐに新しい注文を止めて「閉鎖中」にし、未完了の注文がなくなった時点で自動で「閉鎖済み」にする。閉鎖済みの店舗は再開できず、担当者は組織に残して店舗の割り当てだけを外し、90日後に店舗の連絡先を消す。PR #144 の実装は、閉鎖中の店舗の商品をカートに残す点と、閉店の案内ページを作らない点が issue の決定と違う。",
+   "reason": "issue 本文に 2026-11-12 の決定事項があるので確定としたが、#144 の実装は決定と2点違い、その違いをチームで合意したかが文面から読み取れない(#144 もこの2点のレビューを求めている)。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "doroido2007",
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "issue",
+     "label": "issue #79 [Feature] 店の閉鎖",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/79"
+    },
+    {
+     "kind": "pr",
+     "label": "PR #144 feat: 店舗の閉鎖と、運営による組織の受付停止・停止とまとめてキャンセルを入…",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/144"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #109",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/109"
+    }
+   ]
+  }
+ ],
+ "changes": [
+  {
+   "id": "ec-pr-141",
+   "withSpec": false,
+   "title": "招待キーで店舗の担当者を登録し、ロールを割り振れるようにした",
+   "body": "オーナー・組織の管理者・店長が店舗ごとに招待キー(有効期限30日の登録用の文字列)を発行でき、キーで新規登録した人はロールのない担当者としてその店舗に入る。出店者の画面に「アカウント」「招待キー」を足し、選んだ店舗を再読み込みしても保つようにした。店舗の切り替えは #112 で決めたヘッダーではなく各ページの選択欄のままにした(main には未反映)。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "pr",
+     "label": "PR #141 feat: 店舗の招待キーで担当者を登録し、アカウント一覧・ロールの割り振り・店…",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/141"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #111",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/111"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #112",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/112"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #110",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/110"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #108",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/108"
+    }
+   ]
+  },
+  {
+   "id": "ec-pr-142",
+   "withSpec": true,
+   "title": "Stripe(テストモード)のカード決済と、キャンセル承認時の返金を入れた",
+   "body": "カードの注文は「支払い待ち」で作り、Stripe(カード決済の外部サービス)から届く署名付きの通知(Webhook)で支払いの成功を受けたときだけ受け付ける仕様に決まったので、カードの入力欄と、決済・返金の処理を追加した。30分たっても支払いがない注文は取り消して在庫を戻し、キャンセルを承認するとその注文の金額だけを返金する。支払方法はカードと店頭払いの2つになり、PayPay・楽天ペイはなくした(main には未反映)。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "pr",
+     "label": "PR #142 feat: Stripe（テストモード）のカード決済と、キャンセル承認時の返金を…",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/142"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #132",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/132"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #133",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/133"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #131",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/131"
+    }
+   ]
+  },
+  {
+   "id": "ec-pr-143",
+   "withSpec": true,
+   "title": "注文実績と運営の注文画面に販売手数料を出し、閉鎖した店舗の実績も見られるようにした",
+   "body": "販売手数料(8%)は表示するだけで Stripe では差し引かない仕様に決まったので、注文実績と運営の全注文管理に、注文ごとの手数料・差引額と合計を出した。閉鎖済みの店舗の注文実績は、オーナー・組織の管理者・運営だけが見られる。あわせて文書から配送・送料などの古い記述を直した(main には未反映)。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "pr",
+     "label": "PR #143 feat: 注文実績と運営の注文の画面に販売手数料を出し、閉鎖した店舗の注文実績…",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/143"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #130",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/130"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #119",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/119"
+    }
+   ]
+  },
+  {
+   "id": "ec-pr-144",
+   "withSpec": false,
+   "title": "店舗の閉鎖と、運営による組織の受付停止・停止を入れた",
+   "body": "オーナーと運営が店舗の閉鎖を始めたり取り消したりできるようにし、運営の画面に「組織管理」を足して組織の受付停止と停止を扱えるようにした。閉鎖中の店舗や受付停止中の組織の注文は運営がまとめてキャンセルでき、カードで支払い済みの注文は Stripe で返金する。閉鎖済みから90日たった店舗の連絡先は、1日1回の定期処理で消す(main には未反映)。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "pr",
+     "label": "PR #144 feat: 店舗の閉鎖と、運営による組織の受付停止・停止とまとめてキャンセルを入…",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/144"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #79 [Feature] 店の閉鎖",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/79"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #109",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/109"
+    }
+   ]
+  },
+  {
+   "id": "ec-pr-145",
+   "withSpec": true,
+   "title": "運営が商品・店舗を停止する前に、出店者へ警告を出す段階を入れた",
+   "body": "停止の前に理由つきの警告を出す段階を設ける仕様に決まったので、運営の画面に警告・警告解除・停止・再開の操作を足し、どれも履歴に残して出店者に通知するようにした。警告は公開の状態を変えず、停止・再開しても警告は自動では解除しない。お会計と停止が同時に起きると停止中の商品の注文が通る不具合も直した(main には未反映)。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "pr",
+     "label": "PR #145 feat: 商品・店舗の停止の前に出店者へ警告する段階と、停止の履歴・通知を入れ…",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/145"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #16",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/16"
+    }
+   ]
+  },
+  {
+   "id": "ec-pr-146",
+   "withSpec": false,
+   "title": "業務以外の E2E 試験を今の仕様に合わせ、ほかの PC への移行手順をまとめた",
+   "body": "E2E 試験(画面を実際に動かして確かめる試験)のうち業務用以外の設定を、新しい DB 構成(v3)と今の仕様(購入者だけが買える、1商品1店舗、送料なし など)に合わせて通るようにした。ほかの PC で初期化・移行する手順を docs/migration-other-pc.md にまとめた。main には未反映。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "pr",
+     "label": "PR #146 test: 業務以外の E2E 設定を今の仕様に合わせて通し、ほかの PC の移…",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/146"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #113",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/113"
+    }
+   ]
+  },
+  {
+   "id": "canvas-pr-72",
+   "withSpec": true,
+   "title": "Canvas で、買えなくなった商品の配置を、庭を開いたときに外して知らせるようにした",
+   "body": "商品の削除・店舗の閉鎖や停止・組織の停止で買えなくなった配置は外し、在庫0や非公開などの一時的な状態では残す仕様に決まったので、庭を開いたときに EC へ照会して買えなくなった配置を外し、ポップアップで知らせる処理を追加した。EC への照会に失敗したときは配置を外さない。配置の一覧・買い物リスト・商品一覧には、店舗名と「在庫なし」などを出す(main には未反映)。",
+   "repo": "kusakari-canvas",
+   "authors": [
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "pr",
+     "label": "PR #72 feat: 庭を開いたときに買えなくなった商品の配置を外して知らせ、店舗名と在庫…",
+     "url": "https://github.com/abeouga/kusakari-canvas/pull/72"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #65",
+     "url": "https://github.com/abeouga/kusakari-canvas/issues/65"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #103",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/103"
+    }
+   ]
+  }
+ ],
+ "manual": {
+  "raw": "",
+  "items": []
+ }
+}

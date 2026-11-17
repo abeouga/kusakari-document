@@ -1,0 +1,182 @@
+{
+ "schema": 1,
+ "date": "2026-10-25",
+ "window": {
+  "start": "2026-10-25T03:00:00+09:00",
+  "end": "2026-10-26T03:00:00+09:00"
+ },
+ "provisional": false,
+ "generatedAt": "2026-11-15T14:26:16+09:00",
+ "summary": [
+  "EC のログイン画面で、エラーメッセージがどの状態でも枠の先頭に出るように直した。",
+  "EC では「未ログインでもカートが使える不具合」と「住所管理の削除」が提案された。",
+  "Canvas の古い issue 7件がまとめて閉じられたが、うち6件は実装の記録が見当たらない。"
+ ],
+ "specs": [
+  {
+   "id": "ec-issue-10",
+   "status": "proposed",
+   "needsCheck": false,
+   "title": "ログインしていない人はカートを使えないようにする",
+   "body": "今は、ログインしていなくても商品一覧の「+」ボタンでカートに商品を入れられる。入れた商品は、カート画面を開き直したりページを再読み込みしたりすると消えてしまう。ログインしていない人はそもそもカートに入れられないようにし、そのうえで商品が消えないかを確かめる提案である。",
+   "reason": "この日に作られ、日の終わりにも開いたままで、決定を書いたコメントも無いため。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "Fuu0324"
+   ],
+   "links": [
+    {
+     "kind": "issue",
+     "label": "issue #10 [Bug] 未ログイン状態だとカート機能は使えないようにする",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/10"
+    }
+   ]
+  },
+  {
+   "id": "ec-issue-11",
+   "status": "proposed",
+   "needsCheck": false,
+   "title": "住所管理の画面と住所入力フォームを削除する",
+   "body": "issue には、商品は購入者が受け取り店舗へ取りに行く方針に決まったと書かれている。そのため、住所を登録する画面と、それを支える API・データベースの表・E2E テスト(画面を実際に操作して確かめる自動テスト)を消す提案である。パスワード変更の処理が住所の保存と同じ関数を使っているので、壊さないよう注意点も挙げている。",
+   "reason": "受け取り方法は決定済みと書かれているが、住所管理の削除そのものは issue が開いたままで、決定のコメントも無いため。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "Fuu0324"
+   ],
+   "links": [
+    {
+     "kind": "issue",
+     "label": "issue #11 [Improve] 住所管理・住所入力フォームを削除する",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/11"
+    }
+   ]
+  },
+  {
+   "id": "canvas-issue-7",
+   "status": "confirmed",
+   "needsCheck": true,
+   "title": "Canvas の配置画面の改善要望など6件が、まとめて完了として閉じられた",
+   "body": "閉じられたのは、オブジェクトを動かすボタンやドラッグ操作の追加(#7)、何も無い所を押したら選択を外す動き(#8)、配置のチェックを外しても置けてしまう不具合(#9)などの issue である。ほかに、レンガをきれいに並べてほしいという要望(#12)、中身の無い要望(#6)、報告のやり方を尋ねる質問(#3)も含まれる。6件とも、22時33分から35分までの約2分間に、コメント無しで閉じられた。",
+   "reason": "完了として閉じられたが、閉じた理由のコメントも、この日に対応するコミットや PR も無く、実装されたのか整理のために閉じたのかが読み取れないため。",
+   "repo": "kusakari-canvas",
+   "authors": [
+    "Fuu0324"
+   ],
+   "links": [
+    {
+     "kind": "issue",
+     "label": "issue #7 [Improve] オブジェクトモデル操作のUXが悪い。",
+     "url": "https://github.com/abeouga/kusakari-canvas/issues/7"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #8 未選択状態が欲しい",
+     "url": "https://github.com/abeouga/kusakari-canvas/issues/8"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #9 配置できないはずなのにできてしまう",
+     "url": "https://github.com/abeouga/kusakari-canvas/issues/9"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #12 便利にしてほしい",
+     "url": "https://github.com/abeouga/kusakari-canvas/issues/12"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #6 [Feature]",
+     "url": "https://github.com/abeouga/kusakari-canvas/issues/6"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #3 これで報告しあうのでいいのかい？",
+     "url": "https://github.com/abeouga/kusakari-canvas/issues/3"
+    }
+   ]
+  }
+ ],
+ "changes": [
+  {
+   "id": "ec-pr-9",
+   "withSpec": true,
+   "title": "ログイン画面のエラーメッセージを、メールアドレス欄より上に出すようにした",
+   "body": "ログインのエラーメッセージを、ボタンの下からメールアドレス欄の上へ移す仕様に決まったので、エラーの表示場所をログイン用の枠の先頭へ移した。先に入った PR #7 ではエラーをフォームの中に置いたため、ログアウトの失敗とカート引き継ぎの失敗のエラーが出なくなっていた。この PR では、ログイン前・ログイン済み・カート引き継ぎの3つの画面すべてでエラーが出るようにし、下の要素との余白も戻して、それを確かめる E2E テストも追加した。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "Fuu0324",
+    "doroido2007"
+   ],
+   "links": [
+    {
+     "kind": "pr",
+     "label": "PR #9 fix: ログイン画面のエラーを3状態すべてで表示し、フォームとの余白を戻す",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/9"
+    },
+    {
+     "kind": "issue",
+     "label": "issue #20 [Improve] エラーの場所変更",
+     "url": "https://github.com/abeouga/kusakari-canvas/issues/20"
+    },
+    {
+     "kind": "pr",
+     "label": "PR #7 fix: ログインフォームのエラーメッセージをメールアドレス欄の上に表示する",
+     "url": "https://github.com/abeouga/kusakari-ec/pull/7"
+    },
+    {
+     "kind": "commit",
+     "label": "コミット 1e3748a 認証関係ダイアログのエラーメッセージ表示位置を修正",
+     "url": "https://github.com/abeouga/kusakari-ec/commit/1e3748af5c1abf67cd509a095fe4d42c7aad9fcb"
+    },
+    {
+     "kind": "commit",
+     "label": "コミット 33d7752 ログイン画面の3状態でエラー表示の位置と余白をE2Eで確認する",
+     "url": "https://github.com/abeouga/kusakari-ec/commit/33d7752aef679f5706dd67412189e86aa330f33f"
+    }
+   ]
+  },
+  {
+   "id": "ec-commit-96cdf0c",
+   "withSpec": false,
+   "title": "出店の承認を取り消して、出店者を一般会員に戻す検証用スクリプトを追加した",
+   "body": "スクリプトは、承認で作られた店舗と申請・通知、出店後に登録した商品・在庫・画像を削除し、会員の役割を出店者(SELLER)から一般会員(USER)に戻す。ほかの会員の注文やカート、Canvas の庭がそのデータを使っている場合は、何も変えずに止まる。既定では確認だけを行い、実際に消す `--apply` を付けたときは、消す行のバックアップを必ず取る。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "Fuu0324"
+   ],
+   "links": [
+    {
+     "kind": "commit",
+     "label": "コミット 96cdf0c feat: 出店承認を取り消してSELLERをUSERへ戻す検証用スクリプトを追…",
+     "url": "https://github.com/abeouga/kusakari-ec/commit/96cdf0c0e6a8f32bcc3a433cad06639cc4442c89"
+    }
+   ]
+  },
+  {
+   "id": "canvas-commit-aca2449",
+   "withSpec": false,
+   "title": "Canvas の E2E テストを、テスト用アカウントで実際にログインして動かすようにした",
+   "body": "テストの開始時に、EC の画面からテスト用の出店者アカウントでログインし、終了時にログアウトするようにした。ログインには、ログインを受け持つ AWS のサービスである Cognito を本物のまま使う。あわせて、テストからのデータ書き込みに EC の CSRF トークン(なりすまし送信を防ぐための合言葉)を付け、旧名 kusakari-mvp のままだった EC リポジトリの参照先を kusakari-ec に揃えた。",
+   "repo": "kusakari-canvas",
+   "authors": [
+    "Fuu0324"
+   ],
+   "links": [
+    {
+     "kind": "commit",
+     "label": "コミット aca2449 test: Canvas E2Eを実Cognitoのテストアカウントで認証して実…",
+     "url": "https://github.com/abeouga/kusakari-canvas/commit/aca2449986c715f07951553f6cc86dba0a95c22b"
+    },
+    {
+     "kind": "commit",
+     "label": "コミット e16b72c fix: ECリポジトリの参照先を旧名kusakari-mvpからkusakar…",
+     "url": "https://github.com/abeouga/kusakari-canvas/commit/e16b72c8a4663cf23c77a3c3a61643376555087e"
+    }
+   ]
+  }
+ ],
+ "manual": {
+  "raw": "",
+  "items": []
+ }
+}
