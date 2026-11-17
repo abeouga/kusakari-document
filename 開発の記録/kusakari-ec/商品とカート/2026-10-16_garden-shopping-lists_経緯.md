@@ -1,0 +1,123 @@
+# 庭の買い物リスト：経緯と検証
+
+元の場所：kusakari-ec/docs/garden-shopping-lists.md（コミット a9cbd69 時点）
+
+## 当初の記録（2026-10-16）
+
+## Context
+
+2026-10-16の要件変更で、Canvasの庭別リストとECの購入用カートを分離する。
+
+## Decision
+
+EC `/cart` の「カート」「庭の買い物リスト」セグメントで切り替える。庭別一覧は `/cart#garden-shopping-lists` に表示し、`/cart/gardens/{gardenId}` で購入商品を選択する。初期未選択とし、全選択・個別選択・選択解除に対応する。必要数はCanvasの配置数にECの商品カードから保存した数量を加算する。ECカートへ追加後の数量は従来どおり編集できる。
+
+ECサーバーがCanvasの集計APIを呼ぶ。接続先は既存の `KUSAKARI_CANVAS_API_URL` を使う。写真や3D構成は受け取らず、商品ID・材料コードからECの商品・価格・商品の店舗の在庫を解決する（受取店舗は商品の店舗）。旧配置の候補が複数ある場合は購入商品を選択させる。
+
+選択分をカートへ加算するAPIは `POST /api/cart/shopping-lists/{gardenId}/items`。庭・EC追加分・カートのrevision、行キーと商品IDだけを受け取り、数量はサーバーで再取得する。在庫不足・販売終了・数量上限・種類上限は商品単位で見送り、成功分を一つのトランザクションで追加する。同じ商品の数量は合算する。古いrevisionでは変更せず409を返す。
+
+一部成功時はカートへ移動して結果と見送り理由を表示し、全件見送り時はリスト画面に留まる。庭を編集してもECカートの数量は変えない。買い物リストはカートへの追加後も保持される。
+
+## Alternatives
+
+Canvasによる直接カート更新と、リスト全件の自動追加は行わない。Canvasの配置とECの商品選択を別々に保存し、ECで表示時に合算する。
+
+## Consequences
+
+Flyway V11でECの商品選択用テーブルを追加し、既存カートを保持する。Canvasが停止している場合はリストだけに取得エラー・再取得を表示し、ECの通常のカート・注文操作を維持する。庭の所有者はCanvasがECの認証済み会員から確認する。
+
+## Verification
+
+Canvasで `npm run test:shopping`。ECの既存購入・出品の回帰は `npm run test:shopping-regression`。専用MySQLと実APIを使い、庭別分離・即時反映・選択追加・部分成功・上限・競合・保存復旧を確認する。詳細なAPI契約と結果の保存先はCanvasの `docs/garden-shopping-lists.md` を参照する。
+
+2026-10-17: 共通ヘッダー・フラットな一覧・庭サムネイルを追加。詳細は [カートUXと展示商品](https://github.com/abeouga/kusakari-ec/blob/a9cbd69/docs/cart-ux-and-demo-products.md)。
+
+## 2026-10-20: 商品カードからの追加
+
+### Context
+
+商品一覧から、庭に配置する前の商品も庭別の買い物リストへ保存する。
+
+### Decision
+
+- 商品カードのカート追加ボタンの左にリスト追加ボタンを置く。ログイン後、庭プロジェクト名・サムネイル付きの選択ダイアログを表示する。庭が5件以上ある場合は名前で検索できる。
+- `PUT /api/shopping-lists/{gardenId}/items/{productId}` で1点を保存する。同じ商品・庭・アカウントへの再送は冪等で、数量を増やさない。在庫なしの商品も保存でき、購入時に在庫を確認する。販売終了の商品は保存しない。
+- 庭の存在・所有者はCanvasで確認する。ECの保存キーはサーバーで解決した会員カートID・庭ID・商品IDとする。クライアントから所有者を指定できない。1庭につき追加分は200種類まで。
+- Canvasの配置数とEC追加分を合算する。同じ商品を庭に配置した場合は、その配置数に保存した1点が加算される。Canvasの配置・右パネルにはEC追加分を反映しない。
+- EC追加分の変更版は `listRevision`。カート追加時には庭の版と併せて検証する。手動追加とカート移送は同じ会員カートのロックで直列化し、EC追加分が変わっていたら409を返す。CanvasのHTTP通信はロック取得前に終える。
+
+### Alternatives
+
+商品カードから3D配置を自動作成する方法は、位置や配置数を決められないため採用しない。
+
+### Consequences
+
+追加分はMySQLに保存され、再読み込み・再ログイン後も維持される。ECの追加分だけを削除する操作は今回の対象外。Canvasで庭を削除した場合、所有者確認が404になるためその庭のリストは表示・操作できなくなる。庭を削除してもEC側の保存行は残る。
+
+### Verification
+
+`npx playwright test --config e2e/configs/playwright.shopping-picker.config.js` で実Cognito・実API・専用MySQLを使う。左右の配置、庭名・画像、390px表示、保存後の再読み込み、庭別・所有者別の分離、並行再送の冪等性、配置とカートの不変、古いEC版の拒否、購入カート移送、通信障害時の再取得を確認する。画面とAPI JSONは `artifacts/shopping-picker/` に保存する。
+
+2026-10-20の実行結果：2件成功。型チェック・lint・フロントビルド・Javaビルド成功。PC（1440px）とスマートフォン（390px）の実画面を確認。開発APIを8086で再起動し、healthの `status=ok` を確認した。
+
+## 2026-10-22: ポップアップから庭プロジェクトを新規作成して追加
+
+### Context
+
+追加先ダイアログは既存の庭にしか追加できず、庭がない会員や新しい計画を始めたい会員はCanvasへ移動する必要があった。
+
+### Decision
+
+- ダイアログの庭一覧の最下部に「新しい庭プロジェクトを作成」カードを置く。押すと `POST /api/shopping-lists/items/{productId}` が、Canvasの `POST /api/gardens` で「買い物リストN」を作成し、その庭へ商品を1点保存して詳細を返す。
+- Nは、会員の既存の庭名のうち「買い物リスト＋数字」だけに一致するものの最大値＋1（なければ1）。名前の一意制約はなく、番号の欠番は埋めない。
+- 所有者は既存と同じく認証済みセッションをCanvasへ転送して決める。クライアント指定のownerIdは受け付けない。庭の作成と保存は別トランザクションで、保存に失敗した場合は空の庭が残る（庭一覧には空の買い物リストとして表示される）。
+
+### Alternatives
+
+名前入力欄を設ける方式は、「押すだけで追加する」要件に合わないため採用しない。
+
+### Consequences
+
+CanvasのDB・庭JSONの形式は変更しない。Canvasが応答しない場合は既存と同じ503を返し、庭は作成されない。
+
+## 2026-10-23: EC追加分を配置数と二重に数えない
+
+### Context
+
+EC追加分を配置数に1点加算していたため、ECで追加した商品をCanvasで1個置くと2点になっていた。また、Canvasの右パネルにはEC追加分が表示されなかった。
+
+### Decision
+
+- 上記「Canvasの配置数とEC追加分を合算する」を改め、EC追加分は「1点以上必要」として必要数を `max(配置数, 1)` とする。
+- `GET /api/shopping-lists/{gardenId}/saved-items` を追加し、会員カートIDのEC追加分（商品ID・商品名）と `listRevision` を返す。Canvasはこれと編集中の配置を画面上で合成する。保存行はサーバーで解決したカートIDだけで絞り込むため、他会員の追加分は返らない。Canvasへの通信は行わない。
+
+### Consequences
+
+DBスキーマは変更しない。既存の保存行は、配置済みの商品では配置数のみ、未配置の商品では1点として表示される。経緯と検証はCanvas側の `docs/garden-shopping-lists.md` に記録する。
+
+## 2026-11-09: 庭専用の買い物リスト画面を削除し、カートのポップアップに統一（issue #88）
+
+### Context
+
+庭の商品をカートへ入れる入口が、Canvasから開く `/cart/gardens/{gardenId}`（一覧は `/cart#garden-shopping-lists`）と、カート下部の「庭に設置したものから追加」ポップアップ（#64）の2つあった。
+
+### Decision
+
+- 庭専用の一覧・詳細画面（`ShoppingListOverview`・`ShoppingListDetail`）を削除し、ポップアップに統一する。
+- `/cart?garden={gardenId}` でカート画面を開くと、ポップアップを自動で開き、その庭を選ぶ。`?garden=` は先頭の庭を選ぶ。ポップアップを閉じるとクエリを外し、再読み込みで再表示しない。CanvasのCommercePanelの「リストを確認」はこのURLを開く。
+- 古いURL `/cart/gardens/{gardenId}` と `/cart#garden-shopping-lists` は、履歴を増やさずに上記のURLへ置き換える。
+- ゲストがこのURLを開いた場合は、ポップアップの代わりにログインの案内を表示する。ログイン後は同じURLへ戻る。
+- 見送りがあった移送結果の「庭から選び直す」は、同じ庭のポップアップを開く。
+
+### Alternatives
+
+- Canvasから配置商品をカートへ自動追加する方式（#80）は、購入する商品を選ぶ手順がなくなるため採用しない。
+- 詳細画面をカード化する方式（#61）は、入口が2つのまま残るため採用しない。
+
+### Consequences
+
+APIとDBスキーマは変更しない。ポップアップではカートにある商品を選べないため、詳細画面にあった「カートの数量に加算する」操作と、全選択時に見送った商品の一覧表示はなくなる（見送り理由は各行に表示される）。
+
+### Verification
+
+`npx playwright test --config e2e/configs/playwright.business.config.js business-canvas-cart-popup business-cart-add-from-garden`（実Cognito・実API・専用MySQL）。Canvasの「リストを確認」→ ポップアップで庭が選ばれている → 追加 → 再読み込み後もカートに残る、古いURLの転送、ゲストのログイン案内を確認する。画面とJSONは `artifacts/business/canvas-cart-popup/` に保存する。
