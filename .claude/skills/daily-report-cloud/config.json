@@ -1,0 +1,31 @@
+{
+  "boundary": "03:00",
+  "utcOffset": "+09:00",
+  "outputDir": "日報",
+  "repos": [
+    {
+      "name": "kusakari-canvas",
+      "github": "abeouga/kusakari-canvas",
+      "prefix": "canvas"
+    },
+    {
+      "name": "kusakari-ec",
+      "github": "abeouga/kusakari-ec",
+      "prefix": "ec"
+    }
+  ],
+  "artifacts": {
+    "2026": "https://claude.ai/artifact/YLdqXTuuEmUdZqVbPCbADB"
+  },
+  "git": {
+    "autoPull": true,
+    "autoCommit": true,
+    "autoPush": true,
+    "branch": "main"
+  },
+  "limits": {
+    "bodyChars": 3000,
+    "commentChars": 1500,
+    "filesPerCommit": 30
+  }
+}
