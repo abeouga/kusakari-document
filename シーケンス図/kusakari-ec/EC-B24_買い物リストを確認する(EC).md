@@ -1,7 +1,7 @@
 # EC-B24 買い物リストを確認する(EC)
 
 - ユースケース記述: [EC-B24_買い物リストを確認する(EC)](<../../アーカイブ/ユースケース/kusakari-ec/EC-B24_買い物リストを確認する(EC).md>)
-- 対象のコード: kusakari-ec の main（19a2be3、2026-11-20 時点）。基本フロー 1〜3 は kusakari-canvas の main（c19d497、2026-11-20 時点）
+- 対象のコード: kusakari-ec の main（19a2be3、2026-11-20 時点）。基本フロー 1〜3 は kusakari-canvas の main（046c5fa、2026-11-20 時点）
 
 基本フロー 1〜3 は Canvas の画面で、4 からは EC の「ショッピングカート」画面です。EC の画面は Canvas の買い物リストを直接読まず、EC API がサーバーから Canvas API を呼びます。EC から見ると Canvas API は外部システムなので、図では外部サービスとして書きます。詳細図は、Canvas の画面（詳細図 1）、EC のブラウザー（詳細図 2）、EC のサーバー（詳細図 3）に分けました。
 
@@ -19,7 +19,7 @@ sequenceDiagram
     Note over User,CApi: 基本フロー 1〜4 カート画面を開く
     alt Canvas から開く（基本フロー 1〜3）
         User->>Cv: サイドバーの「買い物リスト（n）」タブをクリック
-        Cv-->>User: 「(庭の名前)の買い物リスト」と「リストを確認」<br/>（UC-09。タブの切り替えでは通信しない）
+        Cv-->>User: 買い物リストの行と「リストを確認」<br/>（UC-09。行が無いときは「リストを確認」を出さない。<br/>タブの切り替えでは通信しない）
         User->>Cv: 「リストを確認」をクリック
         alt 輪郭の描画中、カメラの設定中、保存できない写真がある
             Cv-->>User: 「変更を保存せずに戻りますか？」などの確認<br/>（この先は図では省略）
@@ -150,7 +150,7 @@ sequenceDiagram
     Note over User,EcApp: 基本フロー 1〜2 買い物リストのタブを開く
     User->>Panel: 「買い物リスト（n）」タブをクリック
     Panel->>Panel: setTab('list')
-    Panel-->>User: 「(庭の名前)の買い物リスト」と「リストを確認」
+    Panel-->>User: 買い物リストの行と「リストを確認」<br/>（行が無いときは「植物が設置されていません」だけ）
     Note right of Panel: 行の内容は UC-09 で読み込み済み。<br/>タブの切り替えでは通信しない
 
     Note over User,EcApp: 基本フロー 3 「リストを確認」で EC へ移る
@@ -462,11 +462,11 @@ kusakari-ec
 
 kusakari-canvas
 
-- [frontend/src/components/CommercePanel.jsx](https://github.com/abeouga/kusakari-canvas/blob/c19d497dfef15b119f9bce8ecb5c886a36da6b7d/frontend/src/components/CommercePanel.jsx): `CommercePanel`（タブ、「リストを確認」）
-- [frontend/src/pages/EditorPage.jsx](https://github.com/abeouga/kusakari-canvas/blob/c19d497dfef15b119f9bce8ecb5c886a36da6b7d/frontend/src/pages/EditorPage.jsx): `requestNavigation`、移る前の確認ダイアログ
-- [frontend/src/hooks/useGardenAutosave.js](https://github.com/abeouga/kusakari-canvas/blob/c19d497dfef15b119f9bce8ecb5c886a36da6b7d/frontend/src/hooks/useGardenAutosave.js): `save`、`flush`
-- [frontend/src/api/gardens.js](https://github.com/abeouga/kusakari-canvas/blob/c19d497dfef15b119f9bce8ecb5c886a36da6b7d/frontend/src/api/gardens.js): `saveGarden`
-- [backend/kusakari_canvas_api/main.py](https://github.com/abeouga/kusakari-canvas/blob/c19d497dfef15b119f9bce8ecb5c886a36da6b7d/backend/kusakari_canvas_api/main.py): `shopping_lists`、`shopping_list`、`update`、`backend_identity`
-- [backend/kusakari_canvas_api/shopping.py](https://github.com/abeouga/kusakari-canvas/blob/c19d497dfef15b119f9bce8ecb5c886a36da6b7d/backend/kusakari_canvas_api/shopping.py): `summaries`、`detail`
-- [backend/kusakari_canvas_api/thumbnails.py](https://github.com/abeouga/kusakari-canvas/blob/c19d497dfef15b119f9bce8ecb5c886a36da6b7d/backend/kusakari_canvas_api/thumbnails.py): `thumbnail_router` の `get`
-- [backend/kusakari_canvas_api/auth.py](https://github.com/abeouga/kusakari-canvas/blob/c19d497dfef15b119f9bce8ecb5c886a36da6b7d/backend/kusakari_canvas_api/auth.py): `authenticate`（EC の `GET /api/auth/me` で持ち主を決める）
+- [frontend/src/components/CommercePanel.jsx](https://github.com/abeouga/kusakari-canvas/blob/046c5faaa8dcc4a788a989d5149b2be335bf8724/frontend/src/components/CommercePanel.jsx): `CommercePanel`（タブ、「リストを確認」）
+- [frontend/src/pages/EditorPage.jsx](https://github.com/abeouga/kusakari-canvas/blob/046c5faaa8dcc4a788a989d5149b2be335bf8724/frontend/src/pages/EditorPage.jsx): `requestNavigation`、移る前の確認ダイアログ
+- [frontend/src/hooks/useGardenAutosave.js](https://github.com/abeouga/kusakari-canvas/blob/046c5faaa8dcc4a788a989d5149b2be335bf8724/frontend/src/hooks/useGardenAutosave.js): `save`、`flush`
+- [frontend/src/api/gardens.js](https://github.com/abeouga/kusakari-canvas/blob/046c5faaa8dcc4a788a989d5149b2be335bf8724/frontend/src/api/gardens.js): `saveGarden`
+- [backend/kusakari_canvas_api/main.py](https://github.com/abeouga/kusakari-canvas/blob/046c5faaa8dcc4a788a989d5149b2be335bf8724/backend/kusakari_canvas_api/main.py): `shopping_lists`、`shopping_list`、`update`、`backend_identity`
+- [backend/kusakari_canvas_api/shopping.py](https://github.com/abeouga/kusakari-canvas/blob/046c5faaa8dcc4a788a989d5149b2be335bf8724/backend/kusakari_canvas_api/shopping.py): `summaries`、`detail`
+- [backend/kusakari_canvas_api/thumbnails.py](https://github.com/abeouga/kusakari-canvas/blob/046c5faaa8dcc4a788a989d5149b2be335bf8724/backend/kusakari_canvas_api/thumbnails.py): `thumbnail_router` の `get`
+- [backend/kusakari_canvas_api/auth.py](https://github.com/abeouga/kusakari-canvas/blob/046c5faaa8dcc4a788a989d5149b2be335bf8724/backend/kusakari_canvas_api/auth.py): `authenticate`（EC の `GET /api/auth/me` で持ち主を決める）
