@@ -2,7 +2,7 @@
 
 - 対象のコード: kusakari-canvas の main（2c043a4、2026-11-24 時点）
 - 対象のパッケージ: [backend/kusakari_canvas_api](https://github.com/abeouga/kusakari-canvas/blob/2c043a4/backend/kusakari_canvas_api) のうち、[02_画像生成と履歴](<02_画像生成と履歴.md>)（`ai_*.py`、`history_*.py`）と [03_植物モデル](<03_植物モデル.md>)（`plants/`、`plant_legacy/`、`plant_schemas.py`）に入らないモジュールです。
-- 全体図: [00_全体図](<00_全体図.md>)。モジュール全体の一覧と依存は [00_モジュール構成](<00_モジュール構成.md>) にあります。責務とデータ境界は [AGENTS.md](https://github.com/abeouga/kusakari-canvas/blob/2c043a4/AGENTS.md) に書かれています。
+- 全体図: [00_全体図](<00_全体図.md>)。責務とデータ境界は [AGENTS.md](https://github.com/abeouga/kusakari-canvas/blob/2c043a4/AGENTS.md) に書かれています。
 
 Canvas の API（FastAPI）の受け口、Service、DTO、Entity と、起動・マイグレーションの部品を 11 枚に分けて描きます。図 4・図 5・図 6・図 11 はデータの図（DTO と Entity）、ほかはモジュールの図です。呼び出しの順番は [シーケンス図](<../../シーケンス図/kusakari-canvas/>) に書いています。
 
