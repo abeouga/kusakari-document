@@ -69,7 +69,7 @@ sequenceDiagram
     opt ユースケースの後 利用者が Cognito の画面でログインした
         Cog-->>Browser: 302 /api/auth/callback/cognito (code と state)
         Browser->>Sec: GET /api/auth/callback/cognito
-        Sec->>Cog: 認可コードをトークンに換え、会員を確かめてセッションを作る<br/>(oauth2Login、successHandler。流れは EC-B01 の図の 135〜150 と同じ)
+        Sec->>Cog: 認可コードをトークンに換え、会員を確かめてセッションを作る<br/>(oauth2Login、successHandler。流れは EC-B01 の図の 35 と、その後の Note と同じ)
         Sec-->>Browser: 302 AUTH_RETURN_TO の戻り先、<br/>または /account/login?auth=failed
         Browser-->>User: 戻り先の画面 (ログイン状態)、または<br/>「認証が完了しませんでした。もう一度ログインしてください。」
     end

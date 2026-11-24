@@ -9,6 +9,7 @@
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 ログアウトは 2 段階です。EC API が自分の HTTP セッションを無効にして、Cognito のログアウト用の URL（`logoutUrl`）を返します。ブラウザーはその URL へ移り、Cognito が EC の「/」へ戻します。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
+アカウント情報画面を開くと `GET /api/auth/me` を最大 3 回送りますが、同じ流れなので 2 回目と 3 回目は 13 の文にまとめています。
 
 ```mermaid
 sequenceDiagram
@@ -20,85 +21,47 @@ sequenceDiagram
         participant Work as マイページの枠<br/>Workspace<br/>(Workspace.jsx)
         participant Acct as アカウント情報画面<br/>AccountPage<br/>(AccountPage.jsx)
         participant Panel as アカウント情報とログアウト<br/>AuthPanel<br/>(AuthPanel.jsx)
-        participant UseAuth as ログイン状態の読み込み<br/>useAuth<br/>(useAuth.js)
-        participant Hook as 画面のデータの取得<br/>useResource<br/>(useResource.js)
-        participant Http as 通信<br/>request<br/>(api.js)
         participant AuthJs as ログインの通信<br/>readSession・logout<br/>(auth.js)
-        participant Browser as ブラウザー<br/>ページの移動<br/>(auth.js の window.location.assign)
     end
     box rgba(27,127,92,0.12) EC API Spring Boot
-        participant Filter as セッションの確認<br/>SessionValidityFilter<br/>(SessionValidityFilter.java)
         participant AuthCtrl as ログイン状態API<br/>AuthController<br/>(AuthController.java)
         participant Sec as ログアウトの設定<br/>cognitoSecurity の logout<br/>(AuthConfiguration.java)
-        participant Urls as ログアウト用の URL<br/>AuthUrls<br/>(AuthUrls.java)
         participant AuthSvc as ログイン中の会員<br/>AuthService<br/>(AuthService.java)
-        participant Repo as 会員の読み書き<br/>AuthMemberRepository<br/>(AuthMemberRepository.java)
     end
     participant Db as MySQL
     box rgba(180,120,20,0.12) 外部サービス
         participant Cog as Amazon Cognito
     end
 
-    Note over User,Cog: 共通代替フロー<br/>*b 未ログインの場合: 6 (アカウント情報画面を開いたときのログインの確認) と 36 に適用<br/>*a 通信に失敗した場合: 6、7、9、15、24、29、36、41、47、51 に適用
+    Note over User,Cog: 共通代替フロー<br/>*b 未ログインの場合: 5 (アカウント情報画面を開いたときのログインの確認) と 18 に適用<br/>*a 通信に失敗した場合: 5、18、20、23、25 に適用
 
     User->>Header: 共通ヘッダーの「アカウント」をクリック (EC-C01)
     Header->>App: リンク先を伝える (follow → onNavigate)
-    App->>Work: URL を /account に変え (navigateFromHeader → navigate)、<br/>path が /account なので Workspace を表示
-    Work->>UseAuth: ログイン状態を読むよう頼む (useAuth)<br/>トップなど Workspace 以外の画面から来たときに送る
-    UseAuth->>AuthJs: 画面を開いたときに自動で<br/>ログイン状態を読む (useEffect → readSession)
-    AuthJs->>Filter: GET /api/auth/me
-    Filter->>AuthSvc: ログイン中の会員が使えるかを確かめる (current)<br/>ID トークンの期限が切れていれば、先に Cognito で更新する (renewIdToken)
-    AuthSvc->>Repo: issuer と subject で会員を探す (findByIssuerAndSubject)
-    Repo->>Db: SELECT members
-    Db-->>Repo: 会員の行
-    Repo-->>AuthSvc: 会員
-    AuthSvc-->>Filter: 会員 (利用できる)
-    Filter->>AuthCtrl: 要求を通す (chain.doFilter)
+    App->>Work: URL を /account に変え (navigateFromHeader → navigate)、<br/>Workspace を表示
+    Work->>AuthJs: ログイン状態を読むよう頼む (useAuth → readSession)<br/>トップなど Workspace 以外の画面から来たときに送る
+    AuthJs->>AuthCtrl: GET /api/auth/me<br/>SessionValidityFilter が会員を確かめる (ID トークンの期限が切れていれば先に更新する)
     AuthCtrl->>AuthSvc: ログイン状態をまとめるよう頼む (me → session)
     AuthSvc->>Db: 会員を読み、種類に応じて組織と店舗も読む<br/>(current、organizationIdOf、storeIdsOf)
     Db-->>AuthSvc: 会員、組織、店舗の行
     AuthSvc-->>AuthCtrl: ログイン中 (SessionView、authenticated=true)
     AuthCtrl-->>AuthJs: 200 authenticated=true、email、name、accountType など
-    AuthJs-->>UseAuth: ログイン状態
-    UseAuth-->>Work: ログイン状態
+    AuthJs-->>Work: ログイン状態
     Work->>Acct: サイドバーの「マイページ」「アカウント設定」と、<br/>アカウント情報画面を表示 (AccountPage、tab は「アカウント情報」)
-    Acct->>Hook: /auth/me を取りに行くよう頼む (useResource、パスは /auth/me)
-    Hook->>Http: 画面を開いたときに自動で通信を始める (reload → request)
-    Http->>Filter: GET /api/auth/me (流れは 7〜17 と同じ)
-    AuthCtrl-->>Http: 200 authenticated=true、email など
-    Http-->>Hook: ログイン状態 (アカウント情報の画面では使わない)
-    Acct->>Panel: アカウント情報とログアウトのボタンを表示 (AuthPanel)
-    Panel->>AuthJs: ログイン状態を読む (useAuth → readSession)
-    AuthJs->>Filter: GET /api/auth/me (流れは 7〜17 と同じ)
-    AuthCtrl-->>AuthJs: 200 authenticated=true、email、name、accountType など
-    AuthJs-->>Panel: ログイン状態
+    Acct->>Panel: アカウント情報とログアウトのボタンを表示 (AuthPanel)<br/>AccountPage の useResource と AuthPanel の useAuth も GET /api/auth/me を送る (流れは 5〜10 と同じ)
     Panel-->>User: 「アカウント情報」画面。名前 (なければメールアドレス)、<br/>アカウントの種類 (「管理者」「出店者（オーナー）」など。購入者は「利用者」)、<br/>「ログアウト」
 
     User->>Panel: 「ログアウト」をクリック
     Panel->>Panel: エラーの文を消し、ボタンを「ログアウト中…」にして<br/>押せなくする (setFailure('')、setLoggingOut(true))
     Panel->>AuthJs: ログアウトするよう頼む (logout)
-    AuthJs->>Filter: GET /api/auth/csrf<br/>(authFetch が書き込みの前に送る)
-    Filter->>AuthSvc: ログイン中の会員が使えるかを確かめる (current)<br/>流れは 7〜12 と同じ
-    AuthSvc-->>Filter: 会員 (利用できる)
-    Filter->>AuthCtrl: 要求を通す (chain.doFilter)
+    AuthJs->>AuthCtrl: 書き込みの前に CSRF トークンを取る<br/>GET /api/auth/csrf (authFetch。SessionValidityFilter の確認は 5 と同じ)
     AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
     AuthJs->>Sec: POST /api/auth/logout (CSRF トークンのヘッダー付き)
-    Sec->>Sec: CSRF トークンを確かめ、HTTP セッションを無効にし、<br/>KUSAKARI_SESSION の Cookie を消す<br/>(logoutUrl("/api/auth/logout")、deleteCookies)
-    Sec->>Urls: Cognito のログアウト用の URL を作るよう頼む<br/>(logoutSuccessHandler → logout)
-    Urls-->>Sec: Cognito の /logout?client_id=…&logout_uri=EC の「/」
-    Sec-->>AuthJs: 200 logoutUrl
-    AuthJs->>Browser: Cognito のログアウト用の URL へ<br/>ページごと移る (window.location.assign)
-    Browser->>Cog: GET /logout?client_id=…&logout_uri=…
-    Cog-->>Browser: 302 EC の「/」(logout_uri)
-    Browser->>App: EC の「/」を最初から表示する
-    App->>AuthJs: ログイン状態を読む (useAuth → readSession)
-    AuthJs->>Filter: GET /api/auth/me
-    Filter->>AuthCtrl: 認証情報が無いので、そのまま通す (chain.doFilter)
-    AuthCtrl->>AuthSvc: ログイン状態をまとめるよう頼む (me → session)
-    AuthSvc->>AuthSvc: ログイン中の会員を確かめる (current)。<br/>認証情報が無いので 401 を投げ、session が受け止める
-    AuthSvc-->>AuthCtrl: 未ログイン (SessionView、authenticated=false)
-    AuthCtrl-->>AuthJs: 200 authenticated=false
-    AuthJs-->>App: ログイン状態
+    Sec->>Sec: CSRF トークンを確かめ、HTTP セッションを無効にし、<br/>KUSAKARI_SESSION の Cookie を消す (logoutUrl、deleteCookies)
+    Sec-->>AuthJs: 200 logoutUrl (logoutSuccessHandler → AuthUrls.logout が<br/>Cognito の /logout?client_id=…&logout_uri=EC の「/」を作る)
+    AuthJs->>Cog: Cognito のログアウト用の URL へページごと移る<br/>GET /logout?client_id=…&logout_uri=… (window.location.assign)
+    Cog-->>App: 302 EC の「/」(logout_uri)。トップを最初から表示する
+    App->>AuthCtrl: GET /api/auth/me (useAuth → readSession)
+    AuthCtrl-->>App: 200 authenticated=false<br/>(認証情報が無いので、session が未ログインと返す)
     App-->>User: 「メイン」画面 (トップ)、共通ヘッダーに「ログイン」
 ```
 
@@ -145,7 +108,7 @@ sequenceDiagram
         AuthJs-->>Work: ログイン状態
         Work->>Panel: 画面の代わりにログインの入力欄を表示 (AuthPanel)
         Panel-->>User: *b-1「メールアドレス」「パスワード」「ログイン」
-        User->>Panel: *b-2 入力して「ログイン」をクリック<br/>(EC-B01 の図の 18〜74。returnTo は今の URL の /account)
+        User->>Panel: *b-2 入力して「ログイン」をクリック<br/>(EC-B01 の図の 12〜51。returnTo は今の URL の /account)
         Panel->>Browser: /account を読み込み直す (complete → window.location.replace)
         Browser-->>User: 「アカウント情報」画面 (基本フロー 2 へ戻る)
     else 読めた
@@ -153,7 +116,7 @@ sequenceDiagram
         Filter->>AuthCtrl: 要求を通す (chain.doFilter)
         AuthCtrl-->>AuthJs: 200 authenticated=true
         AuthJs-->>Work: ログイン状態
-        Work->>Panel: アカウント情報画面を表示 (上の図の 21〜32)
+        Work->>Panel: アカウント情報画面を表示 (上の図の 12〜14)
         Panel-->>User: 「アカウント情報」画面と「ログアウト」
         User->>Panel: 「ログアウト」をクリック
         Panel->>AuthJs: ログアウトするよう頼む (logout)。ボタンは「ログアウト中…」
@@ -190,7 +153,7 @@ sequenceDiagram
                 else 届いた
                     Browser->>Cog: GET /logout?client_id=…&logout_uri=…
                     Cog-->>Browser: 302 EC の「/」
-                    Browser-->>User: 「メイン」画面、共通ヘッダーに「ログイン」<br/>(上の図の 49〜58)
+                    Browser-->>User: 「メイン」画面、共通ヘッダーに「ログイン」<br/>(上の図の 24〜27)
                 end
             end
         end
