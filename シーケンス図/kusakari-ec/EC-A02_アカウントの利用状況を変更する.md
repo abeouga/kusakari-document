@@ -8,6 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
+代替フローのうち、エラーで終わるもの（6a）と記述にない分岐（会員がいない）は、分かれる所だけを描き、その後は Note に文で書いています。エラーのときの画面の後処理（`readResponse` が `ApiError` を投げる → 404・409 なので `reload` で一覧を取り直す → `run` が false → `setTarget(null)` でダイアログを閉じる → エラーの文を出す）は、どちらも同じです。
 
 ```mermaid
 sequenceDiagram
@@ -33,7 +34,7 @@ sequenceDiagram
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、5、25、一覧の取り直しの 40・49・66 に適用<br/>*a 通信に失敗した場合: 5、23、25、一覧の取り直しの 40・49・66 に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、5、24、一覧の取り直しの 48 に適用<br/>*a 通信に失敗した場合: 5、22、24、一覧の取り直しの 48 に適用
 
     User->>Work: 運営者メニューの「会員管理」をクリック
     Work->>Page: アカウント管理者画面を表示
@@ -53,8 +54,8 @@ sequenceDiagram
 
     alt 5a 確定を取り消した
         User->>Dlg: 「取消」をクリック<br/>(Esc キー、「閉じる」、ダイアログの外側のクリックも同じ)
-        Dlg->>Page: 取り消したことを伝える
-        Page-->>User: ダイアログを閉じる
+        Dlg-->>User: ダイアログを閉じる
+        Note over User,Dlg: 結果: 通信せず、利用状態は変わらない。<br/>画面: 会員の一覧に戻る。
     else 確定した
         User->>Dlg: 「利用停止を確定」または「利用再開を確定」をクリック
         Dlg->>Page: 確定したことを伝える
@@ -73,53 +74,34 @@ sequenceDiagram
             Db-->>Pend: ロックした組織の行
             Pend-->>Svc: 組織 (購入者などは組織なし)
         end
-        Svc->>Repo: 対象の会員を読む (findById)
-        Repo->>Db: SELECT members
-        Db-->>Repo: 会員の行 (なければなし)
+        Svc->>Repo: 対象の会員を読む (findById、SELECT members)
         Repo-->>Svc: 会員 (なければなし)
-        alt 会員がいない (記述なし)
-            Svc--xErrs: 404 MEMBER_NOT_FOUND の例外を投げる (ApiException)
-            Errs-->>Http: 404「会員が見つかりません。」(business)
-            Http--xHook: エラーを投げる (readResponse → ApiError)
-            Hook->>Http: 404 なので一覧を取り直す (reload)<br/>流れは 5〜9 と同じ
-            Http-->>Hook: 最新の会員の一覧
-            Hook-->>Page: 失敗を返す (run が false、エラーの文を設定)
-            Page-->>User: ダイアログを閉じ (setTarget(null))、<br/>「会員が見つかりません。」と最新の一覧
-        else 会員がいる
-            Svc->>Db: 会員の行をロックして読み直す<br/>(lockMember、SELECT ... FOR UPDATE members)
-            Db-->>Svc: ロックした会員の行
-            alt 6a 対象が運営者アカウントか退会済み (isAdmin、withdrawnAt)
-                Svc--xErrs: 409 MEMBER_FIXED の例外を投げる (ApiException)
-                Errs-->>Http: 409「管理者または退会済み会員の<br/>状態は変更できません。」(business)
-                Http--xHook: エラーを投げる (readResponse → ApiError)
-                Hook->>Http: 409 なので一覧を取り直す (reload)<br/>流れは 5〜9 と同じ
-                Http-->>Hook: 最新の会員の一覧
-                Hook-->>Page: 失敗を返す (run が false、エラーの文を設定)
-                Page-->>User: 6a-1 ダイアログを閉じ (setTarget(null))、<br/>「管理者または退会済み会員の状態は変更できません。」と最新の一覧
-            else 変更できる
-                Svc->>Svc: 会員の利用状態を書き換える (changeEnabled)
-                opt 停止で、組織をロックした
-                    Svc->>Pend: 停止する会員が譲渡の申し出の当事者かを調べ、<br/>当事者なら無効にするよう頼む (invalidateFor、invalidateForOwner)
-                    Pend->>Pend: 承認待ちの譲渡先かを見る<br/>(invalidateFor。pending_owner_member_id と比べる)
-                    Pend->>Pend: 申し出たオーナー本人かを見る<br/>(invalidateForOwner。owner_member_id と比べる)
-                    opt どちらかの当事者だった (無効にする処理は共通の invalidate)
-                        Pend->>Db: 承認待ちを空にし、履歴を保存する<br/>(clearOwnerSuccession、organization_member_events)
-                        Pend->>Notices: 理由を付けて、オーナーと譲渡先に知らせるよう頼む (invalidated)<br/>理由は譲渡先なら SUCCESSOR_DISABLED、オーナーなら OWNER_DISABLED、期限切れなら EXPIRED
-                        Notices->>Db: 「オーナーの譲渡の申し出が無効になりました」の<br/>通知を 2 件保存する (文面の理由だけが違う)
-                    end
-                    Pend-->>Svc: 終わった
-                end
-                Svc->>Db: 書き換えた行を保存してコミットする<br/>(save は呼ばない。UPDATE members ほか)
-                Db-->>Svc: 完了
-                Svc-->>Ctrl: 終わった
-                Ctrl-->>Http: 200 変更後の値 ({ enabled })
-                Http-->>Hook: 変更後の値
-                Hook->>Http: 一覧を取り直す (reload)<br/>流れは 5〜9 と同じ
-                Http-->>Hook: 最新の会員の一覧
-                Hook-->>Page: 成功を返す (run が true、成功の文を設定)
-                Page-->>User: ダイアログを閉じ (setTarget(null))、「利用を停止しました。」<br/>または「利用を再開しました。」と更新後の利用状態
-            end
+        break 会員がいない (記述なし)
+            Note over Svc,Page: 結果: 404 MEMBER_NOT_FOUND を返し、何も変えない。<br/>画面: 一覧を取り直し、ダイアログを閉じて「会員が見つかりません。」
         end
+        Svc->>Db: 会員の行をロックして読み直す<br/>(lockMember、SELECT ... FOR UPDATE members)
+        Db-->>Svc: ロックした会員の行
+        break 6a 対象が運営者アカウントか退会済み (isAdmin、withdrawnAt)
+            Svc--xErrs: 409 MEMBER_FIXED の例外を投げる (ApiException)
+            Note over Errs,Page: 結果: 409 を返し、利用状態は変えない。<br/>画面: 6a-1 一覧を取り直し、ダイアログを閉じて「管理者または退会済み会員の状態は変更できません。」
+        end
+        Svc->>Svc: 会員の利用状態を書き換える (changeEnabled)
+        opt 停止で、組織をロックした
+            Svc->>Pend: 停止する会員が譲渡の申し出の当事者かを調べ、当事者なら無効にするよう頼む<br/>(invalidateFor は譲渡先、invalidateForOwner は申し出たオーナー本人かを見る)
+            Pend->>Db: 当事者なら、承認待ちを空にし、履歴を保存する<br/>(共通の invalidate。clearOwnerSuccession、organization_member_events)
+            Pend->>Notices: 当事者なら、理由を付けてオーナーと譲渡先に知らせるよう頼む (invalidated)<br/>理由は譲渡先なら SUCCESSOR_DISABLED、オーナーなら OWNER_DISABLED、期限切れなら EXPIRED
+            Notices->>Db: 「オーナーの譲渡の申し出が無効になりました」の<br/>通知を 2 件保存する (文面の理由だけが違う)
+            Pend-->>Svc: 終わった
+        end
+        Svc->>Db: 書き換えた行を保存してコミットする<br/>(save は呼ばない。UPDATE members ほか)
+        Db-->>Svc: 完了
+        Svc-->>Ctrl: 終わった
+        Ctrl-->>Http: 200 変更後の値 ({ enabled })
+        Http-->>Hook: 変更後の値
+        Hook->>Http: 一覧を取り直す (reload)<br/>流れは 5〜9 と同じ
+        Http-->>Hook: 最新の会員の一覧
+        Hook-->>Page: 成功を返す (run が true、成功の文を設定)
+        Page-->>User: ダイアログを閉じ (setTarget(null))、「利用を停止しました。」<br/>または「利用を再開しました。」と更新後の利用状態
     end
 ```
 
@@ -200,7 +182,7 @@ sequenceDiagram
             AuthJs->>Filter: PUT /api/operator/members/{id}/enabled
             Filter->>Ctrl: 要求を通す (chain.doFilter)
             Ctrl->>Svc: 会員の利用状態を変えるよう頼む (enable)
-            Svc->>Db: 運営者かを確かめ、組織と会員をロックして読み、<br/>書き換えてコミットする (上の図の 27〜62)
+            Svc->>Db: 運営者かを確かめ、組織と会員をロックして読み、<br/>書き換えてコミットする (上の図の 26〜44)
             alt *a MySQL との通信に失敗
                 Db--xSvc: 失敗 (DataAccessException)。<br/>トランザクションの変更はすべて取り消す
                 Svc--xCtrl: 例外
