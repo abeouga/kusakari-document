@@ -33,12 +33,12 @@ sequenceDiagram
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、5、25、一覧の取り直しの 40・49・64 に適用<br/>*a 通信に失敗した場合: 5、23、25、一覧の取り直しの 40・49・64 に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、5、25、一覧の取り直しの 40・49・66 に適用<br/>*a 通信に失敗した場合: 5、23、25、一覧の取り直しの 40・49・66 に適用
 
     User->>Work: 運営者メニューの「会員管理」をクリック
-    Work->>Page: URL を /operator/members に変え、<br/>MembersPage を表示
+    Work->>Page: アカウント管理者画面を表示
     Page->>Hook: 会員の一覧を取りに行くよう頼む (useResource)
-    Hook->>Http: 画面を開いたときに自動で<br/>一覧の通信を始める (reload → request)
+    Hook->>Http: 画面の表示時に自動でアカウント一覧の取得を開始
     Http->>Ctrl: GET /api/operator/members
     Ctrl->>Svc: 会員の一覧を作るよう頼む (list)<br/>中身は EC-A01 の図の 6〜17 と同じ
     Svc-->>Ctrl: 会員の一覧
@@ -48,27 +48,27 @@ sequenceDiagram
     Page-->>User: 会員の一覧と利用状態 (「利用中」「利用停止」「退会済み」)、<br/>利用中なら「利用を停止」、そうでなければ「利用を再開」
 
     User->>Page: 対象の会員の「利用を停止」<br/>または「利用を再開」をクリック
-    Page->>Dlg: 対象の会員を覚えて、<br/>確認ダイアログを表示 (setTarget → ConfirmDialog)
+    Page->>Dlg: 確認ダイアログを表示
     Dlg-->>User: 「利用状況変更の確認」、対象：氏名（メールアドレス）、変更の説明、<br/>「利用停止を確定」か「利用再開を確定」、「取消」
 
     alt 5a 確定を取り消した
         User->>Dlg: 「取消」をクリック<br/>(Esc キー、「閉じる」、ダイアログの外側のクリックも同じ)
-        Dlg->>Page: 取り消したことを伝える (onCancel)
-        Page-->>User: ダイアログを閉じる (setTarget(null))。<br/>通信せず、利用状態は変わらない
+        Dlg->>Page: 取り消したことを伝える
+        Page-->>User: ダイアログを閉じる
     else 確定した
         User->>Dlg: 「利用停止を確定」または「利用再開を確定」をクリック
-        Dlg->>Page: 確定したことを伝える (onConfirm → change)
-        Page->>Hook: 変更を実行し、成功の文を渡す (run)<br/>停止なら「利用を停止しました。」、再開なら「利用を再開しました。」
-        Hook->>Http: 利用状態を今と逆の値に書き換える通信を送る<br/>(write → request、本文は { enabled: 逆の値 })
-        Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (authFetch)
+        Dlg->>Page: 確定したことを伝える
+        Page->>Hook: 変更を実行し、成功の文を渡す (run)<br>停止なら「利用を停止しました。」、再開なら「利用を再開しました。」を表示
+        Hook->>Http: アカウントの有効状態を切り替える
+        Http->>AuthJs: 書き込みの前に CSRF トークンを取得
         AuthJs->>AuthCtrl: GET /api/auth/csrf
         AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
         AuthJs->>Ctrl: PUT /api/operator/members/{id}/enabled<br/>(CSRF トークンのヘッダー付き)
         Ctrl->>Svc: 会員の利用状態を変えるよう頼む (enable)<br/>enable 全体が 1 つのトランザクション
         Svc->>Auth: ログイン中の人が運営者かを確かめる (requireAdmin)
-        Auth-->>Svc: 運営者である
+        Auth-->>Svc: 認証成功
         opt 停止するとき
-            Svc->>Pend: 対象の会員が属する組織を<br/>ロックするよう頼む (lockOrganizationOf)
+            Svc->>Pend: 対象の会員が属する組織を<br>ロックする処理を呼ぶ
             Pend->>Db: オーナーか担当者として属する組織を探し、<br/>あればロックして読み直す (SELECT ... FOR UPDATE organizations)
             Db-->>Pend: ロックした組織の行
             Pend-->>Svc: 組織 (購入者などは組織なし)
@@ -99,11 +99,13 @@ sequenceDiagram
             else 変更できる
                 Svc->>Svc: 会員の利用状態を書き換える (changeEnabled)
                 opt 停止で、組織をロックした
-                    Svc->>Pend: 承認待ちの譲渡の当事者なら申し出を<br/>無効にするよう頼む (invalidateFor、invalidateForOwner)
-                    opt 対象が承認待ちの譲渡先か、申し出たオーナー本人
+                    Svc->>Pend: 停止する会員が譲渡の申し出の当事者かを調べ、<br/>当事者なら無効にするよう頼む (invalidateFor、invalidateForOwner)
+                    Pend->>Pend: 承認待ちの譲渡先かを見る<br/>(invalidateFor。pending_owner_member_id と比べる)
+                    Pend->>Pend: 申し出たオーナー本人かを見る<br/>(invalidateForOwner。owner_member_id と比べる)
+                    opt どちらかの当事者だった (無効にする処理は共通の invalidate)
                         Pend->>Db: 承認待ちを空にし、履歴を保存する<br/>(clearOwnerSuccession、organization_member_events)
-                        Pend->>Notices: オーナーと譲渡先に知らせるよう頼む (invalidated)
-                        Notices->>Db: 「オーナーの譲渡の申し出が無効になりました」の<br/>通知を 2 件保存する
+                        Pend->>Notices: 理由を付けて、オーナーと譲渡先に知らせるよう頼む (invalidated)<br/>理由は譲渡先なら SUCCESSOR_DISABLED、オーナーなら OWNER_DISABLED、期限切れなら EXPIRED
+                        Notices->>Db: 「オーナーの譲渡の申し出が無効になりました」の<br/>通知を 2 件保存する (文面の理由だけが違う)
                     end
                     Pend-->>Svc: 終わった
                 end
@@ -198,7 +200,7 @@ sequenceDiagram
             AuthJs->>Filter: PUT /api/operator/members/{id}/enabled
             Filter->>Ctrl: 要求を通す (chain.doFilter)
             Ctrl->>Svc: 会員の利用状態を変えるよう頼む (enable)
-            Svc->>Db: 運営者かを確かめ、組織と会員をロックして読み、<br/>書き換えてコミットする (上の図の 27〜60)
+            Svc->>Db: 運営者かを確かめ、組織と会員をロックして読み、<br/>書き換えてコミットする (上の図の 27〜62)
             alt *a MySQL との通信に失敗
                 Db--xSvc: 失敗 (DataAccessException)。<br/>トランザクションの変更はすべて取り消す
                 Svc--xCtrl: 例外
