@@ -15,7 +15,7 @@ Kusakari EC と Kusakari Canvas の設計の図（ユースケース図・シー
 ├─ シーケンス図/                ユースケースごとの処理の流れ（概要図と詳細図）
 │  ├─ kusakari-canvas/
 │  └─ kusakari-ec/
-├─ クラス図/                    backend のクラスと、Canvas の画面のデータ型
+├─ クラス図/                    Canvas と EC のデータの構造（1 システム 1 枚）
 │  ├─ kusakari-canvas/
 │  └─ kusakari-ec/
 ├─ テーブル設計図/              マイグレーションから起こした ER 図とテーブル定義
