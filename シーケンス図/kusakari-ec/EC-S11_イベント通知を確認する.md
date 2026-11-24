@@ -8,6 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
+代替フローのうち、エラーで終わるもの（2a）と記述にない分岐（自分の通知でない・見られなくなったときの 404）は、分かれる所だけを描き、結果と画面は Note に文で書いています。期限が過ぎた譲渡の申し出の無効化（記述なし）と担当者の所属店舗の読み込みは、`opt` の中の矢印 1 本と Note にしています。基本フロー 4 の「既読にする」は、必要に応じて行う操作ですが、新しい書き込みがあるので `opt` にせず矢印で描いています。
 
 ```mermaid
 sequenceDiagram
@@ -23,9 +24,7 @@ sequenceDiagram
     box rgba(27,127,92,0.12) EC API Spring Boot
         participant AuthCtrl as ログイン状態API<br/>AuthController<br/>(AuthController.java)
         participant Ctrl as 通知API<br/>NotificationController<br/>(NotificationController.java)
-        participant Errs as エラーの応答<br/>ApiErrors<br/>(ApiErrors.java)
         participant Svc as 通知の処理<br/>NotificationService<br/>(NotificationService.java)
-        participant Auth as ログイン中の会員<br/>AuthService<br/>(AuthService.java)
         participant Pend as オーナーの譲渡の申し出<br/>PendingOwnerSuccession<br/>(PendingOwnerSuccession.java)
         participant Org as 組織の読み書き<br/>OrganizationRepository<br/>(OrganizationRepository.java)
         participant SM as 店舗の所属の読み書き<br/>StoreMemberRepository<br/>(StoreMemberRepository.java)
@@ -33,90 +32,59 @@ sequenceDiagram
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、5、42、44、一覧の取り直しの 56・66 に適用<br/>*a 通信に失敗した場合: 5、42、44、一覧の取り直しの 56・66 に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、4、22、24、一覧の取り直しの 32 に適用<br/>*a 通信に失敗した場合: 4、22、24、一覧の取り直しの 32 に適用
 
     User->>Work: 1 出店者メニューの「出店者通知」をクリック (EC-C03)
     Work->>Page: URL を /seller/notifications に変え、Notices を表示<br/>(path の末尾が /notifications)
     Page->>Hook: 通知を取りに行くよう頼む (useResource('/notifications'))
-    Hook->>Http: 画面を開いたときに自動で通信を始める (reload → request)
-    Http->>Ctrl: GET /api/notifications
-    Ctrl->>Svc: 自分あての通知を集めるよう頼む (list)。<br/>クラスの @Transactional で 1 つのトランザクション
-    Svc->>Auth: ログイン中の会員を調べる (current)
-    Auth-->>Svc: 会員
-    Svc->>Pend: 期限が過ぎたオーナーの譲渡の申し出を<br/>無効にするよう頼む (expireIfDueFor)
-    Pend->>Org: 自分がオーナーか譲渡先で、期限が過ぎた申し出のある<br/>組織を探す (findIdsWithExpiredOwnerSuccession)
-    Org->>Db: SELECT organizations
-    Db-->>Org: 組織の行
-    Org-->>Pend: 組織の ID
+    Hook->>Ctrl: 画面を開いたときに自動で通信を始める (reload → request)<br/>GET /api/notifications
+    Ctrl->>Svc: 自分あての通知を集めるよう頼む (list)。クラスの @Transactional で<br/>1 つのトランザクション。ログイン中の会員を調べる (AuthService の current)
+    Svc->>Pend: 期限が過ぎたオーナーの譲渡の申し出を無効にするよう頼む (expireIfDueFor)<br/>自分がオーナーか譲渡先で、期限が過ぎた申し出のある組織を探す<br/>(OrganizationRepository.findIdsWithExpiredOwnerSuccession、SELECT organizations)
     opt 期限が過ぎた申し出がある (記述なし)
-        Pend->>Db: 組織ごとに、組織の行をロックして確かめ直し、承認待ちを空にして、<br/>履歴と「オーナーの譲渡の申し出が無効になりました」の通知を保存する<br/>(expireIfDue → lock、invalidate。SELECT ... FOR UPDATE organizations ほか)
+        Pend->>Db: 組織ごとに申し出を無効にする (expireIfDue → lock、invalidate)
+        Note over Pend,Db: 結果: 組織の行をロックして確かめ直し (SELECT ... FOR UPDATE organizations)、承認待ちを空にして、<br/>履歴と「オーナーの譲渡の申し出が無効になりました」の通知を保存する
     end
-    Pend-->>Svc: 終わった
     Svc->>Svc: 見られる通知の条件を作る (visibility)
     opt 担当者 (SHOP_STAFF) のとき
-        Svc->>SM: 自分が所属する店舗を読む (findAllForMember)
-        SM->>Db: SELECT store_members
-        Db-->>SM: 所属の行
-        SM-->>Svc: 所属する店舗 (ロールのない店舗を含む)
+        Svc->>SM: 自分が所属する店舗を読む (findAllForMember、SELECT store_members)
+        Note over Svc,SM: 結果: 所属する店舗 (ロールのない店舗を含む) あての通知も見られる条件にする。<br/>画面: 変わらない
     end
-    Svc->>Repo: 自分あての通知を新しい順に読む (findByMemberIdOrderByCreatedAtDesc)
-    Repo->>Db: SELECT notifications
-    Db-->>Repo: 通知の行
-    Repo-->>Svc: 通知
+    Svc->>Repo: 自分あての通知を新しい順に読む<br/>(findByMemberIdOrderByCreatedAtDesc、SELECT notifications)
     Svc->>Svc: 見られる通知だけを残す (filter(visible))。<br/>担当者は、本人あての通知と、所属する店舗あての通知だけ
-    Svc->>Org: 自分あての期限内の譲渡の申し出があるかを調べる<br/>(existsByPendingOwnerMemberIdAndPendingOwnerExpiresAtAfter)
-    Org->>Db: SELECT organizations
-    Db-->>Org: 行 (なければなし)
-    Org-->>Svc: ある か ない
+    Svc->>Org: 自分あての期限内の譲渡の申し出があるかを調べる<br/>(existsByPendingOwnerMemberIdAndPendingOwnerExpiresAtAfter、SELECT organizations)
     Svc->>Svc: あれば、いちばん新しい申し出の通知を<br/>承認・断りのできる通知にする (answerableRequest)
-    Svc-->>Ctrl: 通知 (id、種類、タイトル、本文、日時、既読の日時、answerable)
-    Ctrl-->>Http: 200 通知の配列
-    Http-->>Hook: 通知
+    Ctrl-->>Hook: 200 通知の配列 (id、種類、タイトル、本文、日時、既読の日時、answerable)
     Hook-->>Page: 通知
-    alt 2a 通知がない
-        Page-->>User: 2a-1「通知はありません。」。2a-2 ユースケースを終了する
-    else 通知がある
-        Page-->>User: 2 通知ごとのタイトル、本文、日時。既読なら「既読」、未読なら「既読にする」。<br/>譲渡の申し出の通知には「重要」(承認できるなら「承認する」「断る」も。<br/>その操作は図では省略)
-        User->>Page: 3 通知の内容を確かめる (通信しない)
-        opt 4 必要に応じて既読にする
-            User->>Page: 4 未読の通知の「既読にする」をクリック
-            Page->>Hook: 既読にする通信を実行するよう頼む<br/>(run。成功の文は既定の「保存しました。」)
-            Hook->>Http: 既読にする通信を送る (write → request)
-            Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (send → authFetch)
-            AuthJs->>AuthCtrl: GET /api/auth/csrf
-            AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
-            AuthJs->>Ctrl: PUT /api/notifications/{id}/read (CSRF トークンのヘッダー付き)
-            Ctrl->>Svc: 通知を既読にするよう頼む (read)。1 つのトランザクション
-            Svc->>Auth: ログイン中の会員を調べる (current)
-            Auth-->>Svc: 会員
-            Svc->>Repo: 通知を読む (findById)
-            Repo->>Db: SELECT notifications
-            Db-->>Repo: 通知の行 (なければなし)
-            Repo-->>Svc: 通知 (なければなし)
-            Svc->>Svc: 本人あてで、今も見られる通知かを確かめる (filter、visibility)。<br/>担当者なら所属する店舗を読む (流れは 17〜20 と同じ)
-            alt 自分の通知でない、または見られなくなった (記述なし)
-                Svc--xErrs: 404 NOTICE_NOT_FOUND の例外を投げる (orElseThrow → ApiException)
-                Errs-->>Http: 404「通知が見つかりません。」(business)
-                Http--xHook: エラーを投げる (readResponse → ApiError)
-                Hook->>Http: 404 なので通知を取り直す (reload)。流れは 4〜33 と同じ
-                Http-->>Hook: 最新の通知
-                Hook-->>Page: 失敗を返す (run が false、エラーの文を設定)
-                Page-->>User: 「通知が見つかりません。」と「再取得」(ResourceStatus)、最新の通知
-            else 見られる
-                Svc->>Svc: 既読の日時を入れる (markRead。既読なら変えない)
-                Svc->>Db: 変更を保存してコミットする<br/>(save は呼ばない。UPDATE notifications)
-                Db-->>Svc: 完了
-                Svc-->>Ctrl: 終わった
-                Ctrl-->>Http: 200 { read: true }
-                Http-->>Hook: 既読にした
-                Hook->>Http: 通知を取り直す (reload)。流れは 4〜33 と同じ
-                Http-->>Hook: 最新の通知
-                Hook-->>Page: 成功を返す (run が true、「保存しました。」を設定)
-                Page-->>User: 5「保存しました。」と、その通知の「既読」
-            end
-        end
+    break 2a 通知がない
+        Note over User,Page: 結果: 通知を出さない。<br/>画面: 2a-1「通知はありません。」。2a-2 ユースケースを終了する
     end
+    Page-->>User: 2 通知ごとのタイトル、本文、日時。既読なら「既読」、未読なら「既読にする」。<br/>譲渡の申し出の通知には「重要」(承認できるなら「承認する」「断る」も。<br/>その操作は図では省略)
+    User->>Page: 3 通知の内容を確かめる (通信しない)
+
+    User->>Page: 4 (必要に応じて) 未読の通知の「既読にする」をクリック
+    Page->>Hook: 既読にする通信を実行するよう頼む<br/>(run。成功の文は既定の「保存しました。」)
+    Hook->>Http: 既読にする通信を送る (write → request)
+    Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (send → authFetch)
+    AuthJs->>AuthCtrl: GET /api/auth/csrf
+    AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
+    AuthJs->>Ctrl: PUT /api/notifications/{id}/read (CSRF トークンのヘッダー付き)
+    Ctrl->>Svc: 通知を既読にするよう頼む (read)。1 つのトランザクション<br/>ログイン中の会員を調べる (AuthService の current)
+    Svc->>Repo: 通知を読む (findById、SELECT notifications)
+    Svc->>Svc: 本人あてで、今も見られる通知かを確かめる (filter、visibility)。<br/>担当者なら所属する店舗を読む (流れは 9 と同じ)
+    break 自分の通知でない、または見られなくなった (記述なし)
+        Note over Svc,Page: 結果: 404 NOTICE_NOT_FOUND を返し、何も変えない (orElseThrow → ApiException)。<br/>画面: 通知を取り直し (reload)、「通知が見つかりません。」と「再取得」(ResourceStatus)、最新の通知
+    end
+    Svc->>Svc: 既読の日時を入れる (markRead。既読なら変えない)
+    Svc->>Db: 変更を保存してコミットする<br/>(save は呼ばない。UPDATE notifications)
+    Ctrl-->>Http: 200 { read: true }
+    Http-->>Hook: 既読にした
+    Hook->>Ctrl: 通知を取り直す (reload)<br/>GET /api/notifications。流れは 4〜14 と同じ
+    Ctrl-->>Hook: 最新の通知
+    Hook-->>Page: 成功を返す (run が true、「保存しました。」を設定)
+    Page-->>User: 5「保存しました。」と、その通知の「既読」
 ```
+
+![EC-S11 シーケンス図](<images/EC-S11_イベント通知を確認する-1.png>)
 
 ## 共通代替フローを直接書いた図
 
@@ -190,7 +158,7 @@ sequenceDiagram
             AuthJs->>Filter: PUT /api/notifications/{id}/read
             Filter->>Ctrl: 要求を通す (chain.doFilter)
             Ctrl->>Svc: 通知を既読にするよう頼む (read)
-            Svc->>Db: 通知を読み、既読の日時を入れてコミットする (上の図の 45〜63)
+            Svc->>Db: 通知を読み、既読の日時を入れてコミットする (上の図の 25〜29)
             alt *a MySQL との通信に失敗
                 Db--xSvc: 失敗 (DataAccessException)。<br/>トランザクションの変更はすべて取り消す
                 Svc--xCtrl: 例外
@@ -218,6 +186,8 @@ sequenceDiagram
         end
     end
 ```
+
+![EC-S11 共通代替フローを直接書いた図](<images/EC-S11_イベント通知を確認する-2.png>)
 
 ## ユースケース記述との差
 

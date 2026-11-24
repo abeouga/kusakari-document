@@ -8,6 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
+代替フローのうち、画面の中だけで終わるもの（2a・4a・5b）とエラーで終わるもの（7a〜7e・7f・7g・5f）は、分かれる所だけを描き、結果と画面は Note に文で書いています。エラーのときの画面の後処理（`readResponse` が `ApiError` を投げる → `run` の `catch` がエラーの文を出す → 409 なら注文の要求を捨ててカートを取り直す、それ以外は注文の要求を残す）は、どれも同じです。条件つきの処理（カード決済の設定の読み込み、返金、`PaymentIntent` の取り消し）は、頼む矢印 1 本と Note に寄せています。
 
 支払方法で流れが大きく分かれ、カードでは Stripe からの通知と時間切れの処理が画面の操作とは別に動くので、図を 3 つに分けています。
 
@@ -45,21 +46,18 @@ sequenceDiagram
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 4 (アプリを開いたときのカートの取得)、33・52 (ログイン状態の確認)、37、56、64、取り直しの 90・118 に適用<br/>*a 通信に失敗した場合: 4、33、37、52、56、62、64、取り直しの 90・118 に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 4 (アプリを開いたときのカートの取得)、26・39 (ログイン状態の確認)、28、41、48、取り直しの 72 に適用<br/>*a 通信に失敗した場合: 4、26、28、39、41、46、48、取り直しの 72 に適用
 
     User->>App: Kusakari のトップなど、共通ヘッダーのある画面を開く
     App->>Shop: カートと商品を読み込むよう頼む<br/>(useShop → initialize → run → refresh)
     Shop->>Http: カートを読む (api.cart → request)
     Http->>CartCtrl: GET /api/cart
-    CartCtrl->>Session: 購入者のカートを調べるよう頼む (resolve)<br/>requireBuyer と MemberCartService の resolve。EC-B13 の図の 13〜20 と同じ
+    CartCtrl->>Session: 購入者のカートを調べるよう頼む (resolve)<br/>requireBuyer と MemberCartService の resolve。中身は EC-B13 の図と同じ
     Session-->>CartCtrl: カートの ID
     CartCtrl->>CartSvc: カートを開くよう頼む (read)<br/>read 全体が 1 つのトランザクション
-    CartSvc->>Db: カートをロックして読み (findLocked、SELECT ... FOR UPDATE carts)、<br/>明細を読む (findAllForCart)
-    Db-->>CartSvc: カートと明細の行
-    CartSvc->>Db: 商品、在庫、店舗と組織の状態を読む<br/>(CatalogService の listingsByIds)
-    Db-->>CartSvc: 商品ごとの値段、在庫、買えるか
-    CartSvc->>CartSvc: 店舗の閉鎖・停止、組織の停止、商品の削除で買えなくなった明細を外す<br/>(REMOVED_REASONS。外したら incrementRevision)
-    CartSvc->>CartSvc: 行ごとの金額と購入できるか、合計、<br/>注文に進めるか (canCheckout) を計算する (view)
+    CartSvc->>Db: カートをロックして読み (findLocked、SELECT ... FOR UPDATE carts)、明細を読み<br/>(findAllForCart)、商品、在庫、店舗と組織の状態を読む (CatalogService の listingsByIds)
+    Db-->>CartSvc: カートと明細の行、商品ごとの値段、在庫、買えるか
+    CartSvc->>CartSvc: 店舗の閉鎖・停止、組織の停止、商品の削除で買えなくなった明細を外し<br/>(REMOVED_REASONS。外したら incrementRevision)、行ごとの金額と購入できるか、<br/>合計、注文に進めるか (canCheckout) を計算する (view)
     CartSvc-->>CartCtrl: カート (revision、行ごとの受取店舗、金額、available、<br/>unavailableReason、合計、canCheckout、受取連絡先、removedItems)
     CartCtrl-->>Http: 200 カート
     Http-->>Shop: カート (setCart)
@@ -71,125 +69,88 @@ sequenceDiagram
     App->>Cart: URL を /cart に変え (navigate)、CartPage の中に Cart を表示<br/>(カートは読み直さない)
     Cart->>Pay: カードを選べるかを調べるよう頼む (useCardAvailable)
     opt 画面にテスト用の公開鍵 (pk_test_) がある (stripePublishableKey)
-        Pay->>Http: カード決済の設定を読む (request)
-        Http->>PayCtrl: GET /api/payments/config
-        PayCtrl-->>Http: 200 cardAvailable<br/>(サーバーに Stripe の鍵がそろっているか。StripeGateway の enabled)
-        Http-->>Pay: カード決済の設定
+        Pay->>PayCtrl: カード決済の設定を読む (request)<br/>GET /api/payments/config
+        Note over Pay,PayCtrl: 結果: 200 cardAvailable (サーバーに Stripe の鍵がそろっているか。StripeGateway の enabled)。<br/>画面: 鍵がない、取得に失敗したときは false で、カードの選択肢を出さない。
     end
-    Pay-->>Cart: カードを選べるか (鍵がない、取得に失敗したときは false)
+    Pay-->>Cart: カードを選べるか
     Cart-->>User: 「ショッピングカート (N)」、商品ごとの受取店舗、数量、金額、<br/>「ご請求内容」、「注文内容を確認する」
-    opt 2a 購入できない商品か、在庫不足の商品がある
+    break 2a 購入できない商品か、在庫不足の商品がある
         Cart-->>User: 2a-1 その商品に「現在は購入できません」(unavailableReason) か<br/>「在庫不足（現在 N 点）」(available が false)。canCheckout が false なので<br/>「注文内容を確認する」を押せない (2a-2 EC-B09・EC-B10 で直して、2 へ戻る)
     end
 
     User->>Cart: 「注文内容を確認する」をクリック
     Cart->>Shop: 確認画面の前にカートを取り直すよう頼む<br/>(beginCheckout → run → checkoutCart)
-    Shop->>AuthJs: ログイン状態を読む (readSession)
-    AuthJs->>AuthCtrl: GET /api/auth/me
-    AuthCtrl-->>AuthJs: 200 ログイン状態 (session)
-    AuthJs-->>Shop: ログイン中 (ログインしていなければ login でログイン画面へ)
-    Shop->>Http: カートを読む (api.cart → request)
-    Http->>CartCtrl: GET /api/cart
-    CartCtrl-->>Http: 200 最新のカート (流れは 5〜14 と同じ)
-    Http-->>Shop: 最新のカート (setCart)
+    Shop->>AuthCtrl: ログイン状態を読む (auth.js の readSession)<br/>GET /api/auth/me
+    AuthCtrl-->>Shop: 200 ログイン中 (session。ログインしていなければ login でログイン画面へ)
+    Shop->>CartCtrl: カートを読む (api.cart → request)<br/>GET /api/cart。中身は 5〜11 と同じ
+    CartCtrl-->>Shop: 200 最新のカート (setCart)
     Shop-->>Cart: 取り直せた (beginCheckout が true)
     Cart->>Confirm: 確認画面に切り替え (setConfirming(true))、CheckoutConfirm を表示<br/>支払方法の初めの値は「店舗でお支払い」(PAY_AT_STORE)
     Confirm-->>User: 「受け取り店舗とご注文商品（N点）」、受取店舗ごとの店舗名、<br/>所在地、営業時間 (shop.stores から) と商品、「受け取る方」、「お支払い方法」<br/>(カードを選べなければ「店舗でお支払い」だけ)
     Cart-->>User: 見出し「お支払い・受け取りの確認」、「ご請求内容」、<br/>「お支払い方法 店舗でお支払い」、「注文を確定する」、「カートに戻る」
-    opt 4a 最新のカートで在庫不足になっていた
+    break 4a 最新のカートで在庫不足になっていた
         Cart-->>User: 4a-1 その商品に「在庫不足（現在 N 点）」。<br/>canCheckout が false なので「注文を確定する」を押せない
-        User->>Cart: 4a-2「カートに戻る」をクリック
-        Cart-->>User: カートの画面に戻す (setConfirming(false))。<br/>通信しない (4a-3 代替フロー 2a へ)
+        Note over User,Cart: 画面: 4a-2「カートに戻る」を押すと、通信せずにカートの画面に戻す (setConfirming(false))。<br/>4a-3 代替フロー 2a へ。
     end
 
     User->>Confirm: 「お支払い方法」で「店舗でお支払い」を選ぶ
     Confirm->>Cart: 選んだ支払方法を伝える (onPayment → setPayment)。通信しない
     User->>Cart: 「注文を確定する」をクリック
     Cart->>Shop: 注文するよう頼む (checkout('PAY_AT_STORE'))<br/>run が二重の実行を止めて busy にし、ボタンは「保存中…」
-    Shop->>AuthJs: ログイン状態を読む (checkoutCart → readSession)
-    AuthJs->>AuthCtrl: GET /api/auth/me
-    AuthCtrl-->>AuthJs: 200 ログイン状態
-    AuthJs-->>Shop: ログイン中
-    Shop->>Http: カートを読む (api.cart → request)
-    Http->>CartCtrl: GET /api/cart
-    CartCtrl-->>Http: 200 最新のカート (流れは 5〜14 と同じ)
-    Http-->>Shop: 最新のカート (setCart)
+    Shop->>AuthCtrl: ログイン状態を読む (checkoutCart → readSession)<br/>GET /api/auth/me
+    AuthCtrl-->>Shop: 200 ログイン中
+    Shop->>CartCtrl: カートを読む (api.cart → request)<br/>GET /api/cart。中身は 5〜11 と同じ
+    CartCtrl-->>Shop: 200 最新のカート (setCart)
     Shop->>Shop: 注文の要求を作る (checkoutRequest)<br/>requestId (crypto.randomUUID)、最新のカートの revision と合計 (expectedTotalYen)、支払方法。<br/>同じ支払方法の前の要求が残っていれば、作り直さずにそのまま送る
     Shop->>Http: 注文の要求を送る (api.checkout → request)
     Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (authFetch)
     AuthJs->>AuthCtrl: GET /api/auth/csrf
     AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
     AuthJs->>OrderCtrl: POST /api/orders<br/>(requestId、revision、expectedTotalYen、paymentMethod は PAY_AT_STORE)
-    OrderCtrl->>OrderCtrl: 入力を検査する (@Valid CheckoutRequest)
-    OrderCtrl->>Session: 購入者のカートを調べるよう頼む (resolve。5〜6 と同じ)
-    Session-->>OrderCtrl: カートの ID
-    OrderCtrl->>Checkout: 注文を保存するよう頼む (placeOrder)<br/>placeOrder 全体が 1 つのトランザクション (READ_COMMITTED)
-    Checkout->>Db: カートをロックして読む (findLocked、SELECT ... FOR UPDATE carts)
-    Db-->>Checkout: カートの行
-    Checkout->>Db: 同じ requestId の注文を探す (findByCartIdAndRequestIdOrderByStoreIdAsc)
-    Db-->>Checkout: 注文の行 (なければなし)
+    OrderCtrl->>Checkout: 入力を検査し (@Valid CheckoutRequest)、購入者のカートを調べて<br/>(CartSessionResolver の resolve。5〜6 と同じ)、注文を保存するよう頼む (placeOrder)<br/>placeOrder 全体が 1 つのトランザクション (READ_COMMITTED)
+    Checkout->>Db: カートをロックして読み (findLocked、SELECT ... FOR UPDATE carts)、<br/>同じ requestId の注文を探す (findByCartIdAndRequestIdOrderByStoreIdAsc)
+    Db-->>Checkout: カートの行、注文の行 (なければなし)
     Checkout->>Checkout: 同じ requestId の注文があれば、それを返して終える (二重注文の防止。<br/>revision、合計、支払方法が違えば 409 REQUEST_REUSED)
-    Checkout->>Checkout: 7a カートの revision が要求と同じかを確かめる (違えば 409 CART_CHANGED)
-    Checkout->>Db: 明細と、商品ごとの店舗を読む (findAllForCart、findStoreReferences)。<br/>明細がなければ 409 EMPTY_CART
-    Db-->>Checkout: 明細、店舗の ID
-    Checkout->>Db: 店舗を ID の順にロックし (StoreRepository の lock)、組織を共有ロックで読む<br/>(requireOpen → lockShared)。7d 受け付けない店舗が 1 つでもあれば 409 STORE_DISABLED
-    Db-->>Checkout: 店舗と組織の行
-    Checkout->>Db: 運営による商品の停止を共有ロックで読む (requireNotSuspended → lockSharedSuspension)。<br/>7e 停止中の商品があれば 409 OUT_OF_STOCK
-    Db-->>Checkout: 商品の停止の有無
-    Checkout->>Db: 在庫を商品 ID の順にロックして読む (InventoryRepository の lockAll)
-    Db-->>Checkout: 在庫の行
+    Checkout->>Db: 明細と商品ごとの店舗を読み (findAllForCart、findStoreReferences)、<br/>店舗を ID の順にロックして組織を共有ロックで読み (StoreRepository の lock、requireOpen → lockShared)、<br/>運営による商品の停止を共有ロックで読み (requireNotSuspended → lockSharedSuspension)、<br/>在庫を商品 ID の順にロックして読む (InventoryRepository の lockAll)
+    Db-->>Checkout: 明細、店舗、組織、商品の停止の有無、在庫の行
     Checkout->>CartSvc: ロックした在庫でカートを計算し直すよう頼む (view)
     CartSvc-->>Checkout: canCheckout と合計
-    Checkout->>Checkout: 7c canCheckout が false なら 409 OUT_OF_STOCK、<br/>7b 合計が要求と違えば 409 PRICE_CHANGED
-    alt 7a〜7e 確定できない (上の確認のどれかで 409)
-        Checkout--xErrs: 409 の例外を投げる (ApiException)。<br/>トランザクションを取り消し、注文も在庫の減算も残らない
-        Errs-->>Http: 409 と文 (business)。7a「別の操作でカートが更新されました。…」、<br/>7b「価格が変更されました。…」、7c「在庫が変更されました。数量を変更してください。」、<br/>7d「(店舗名)は受付を停止しています。」、7e「購入できない商品があります。…」
-        Http--xShop: エラーを投げる (readResponse → ApiError(409))
-        Shop->>Shop: エラーの文を出し (run の catch → setError)、<br/>409 なので注文の要求を捨てる (checkoutRequest を null)
-        Shop->>Http: カートと商品と注文を取り直す (refresh)<br/>流れは 3〜18 と同じ
-        Http-->>Shop: 最新のカート、商品、注文
-        Shop-->>Cart: 失敗を返す (shop.error と最新の shop.cart)
-        Cart-->>User: エラーの文と、最新のカートの確認画面。canCheckout が false なら<br/>「注文を確定する」を押せない (7a・7b は基本フロー 5 へ、<br/>7c・7d・7e は「カートに戻る」から代替フロー 2a か EC-B10 へ)
-    else 7g 保存に失敗した (MySQL との通信の失敗。*a と同じ)
-        Db--xCheckout: 失敗 (DataAccessException)。<br/>トランザクションを取り消し、注文も在庫の減算も残らない
-        Checkout--xErrs: 例外
-        Errs-->>Http: 503 DATABASE_UNAVAILABLE (database)
-        Http--xShop: エラーを投げる (readResponse → ApiError(503))
-        Shop->>Shop: エラーの文を出す (run の catch → setError)。409 でないので<br/>注文の要求を残し、カートは取り直さない
-        Shop-->>Cart: 失敗を返す (shop.error)
-        Cart-->>User: 7g-1「保存処理を完了できませんでした。時間をおいて再試行してください。」。<br/>7g-2 カートはそのままで、「注文を確定する」をもう一度押せる (同じ requestId で送る)
-    else 確定できる
-        Checkout->>Db: 受取連絡先を読む (DeliveryService の pickupDetails)
-        Db-->>Checkout: お名前、電話番号、連絡先
-        loop 受取店舗ごと (店舗 ID の順、placeStoreOrder)
-            Checkout->>Db: 注文を保存する (OrderRepository の save)。注文受付 (ACCEPTED)、<br/>手数料の率と額、受取店舗の所在地と営業時間、受取連絡先 (assignPickup、changeRecipient)
-            Checkout->>Ntf: 購入者に知らせるよう頼む (send)<br/>「ご注文を受け付けました」、本文は「注文番号 / 店舗名」
-            Ntf->>Db: 通知を保存する (notifications)
-            Checkout->>Ntf: 出店者に知らせるよう頼む (toStore)<br/>「新しい注文が届きました」、本文は注文番号
-            Ntf->>Db: 組織のオーナーと、店舗にロールのある担当者のうち<br/>利用中の会員ごとに通知を保存する (notifications)
-            loop その店舗の明細ごと
-                Checkout->>Checkout: 在庫を確かめて減らす (setQuantity)。足りなければ<br/>409 OUT_OF_STOCK「在庫が変更されました。もう一度確認してください。」
-                Checkout->>Db: 注文の明細を保存する (OrderItemRepository の save)
-            end
-        end
-        Checkout->>Db: カートの明細を消し (deleteAll)、カートの revision を進めて<br/>(incrementRevision)、コミットする
-        Db-->>Checkout: 完了
-        Checkout-->>OrderCtrl: 受取店舗ごとの注文 (payment はなし)
-        OrderCtrl->>PaySvc: 支払いを始めるよう頼む (start)
-        PaySvc-->>OrderCtrl: payment がないので、そのまま返す
-        OrderCtrl-->>Http: 200 注文の配列 (payment は null)
-        Http-->>Shop: 保存した注文
-        Shop->>Shop: 注文の要求を捨て (checkoutRequest を null)、<br/>保存した注文を覚える (setLastOrders)
-        Shop->>Http: カートと商品と注文を取り直す (refresh)<br/>流れは 3〜18 と同じ
-        Http-->>Shop: 空のカート、商品、注文
-        Shop-->>Cart: 保存した注文 (shop.lastOrders)
-        Cart-->>User: 「注文を保存しました」。注文が複数なら「受取店舗ごとにN件の注文に分けて保存しました。」<br/>注文ごとの注文日時、注文番号、受取店舗、所在地、受取連絡先、お支払い方法、<br/>「受け取り時に店頭でお支払いください。」、商品、合計。「お買い物を続ける」
+    break 7a〜7e 確定できない (7a revision が違う、7b 合計が違う、7c canCheckout が false、<br/>7d 受け付けない店舗がある、7e 停止中の商品がある)
+        Checkout--xErrs: 409 の例外を投げる (ApiException)。CART_CHANGED、PRICE_CHANGED、<br/>OUT_OF_STOCK、STORE_DISABLED (明細がなければ EMPTY_CART)
+        Note over Errs,Cart: 結果: トランザクションを取り消し、注文も在庫の減算も残さず、409 と文を返す。注文の要求を捨て、カートと商品と注文を取り直す (refresh)。<br/>画面: エラーの文と最新のカートの確認画面 (7a・7b は基本フロー 5 へ、7c・7d・7e は「カートに戻る」から代替フロー 2a か EC-B10 へ)。
     end
+    break 7g 保存に失敗した (MySQL との通信の失敗。*a と同じ)
+        Db--xCheckout: 失敗 (DataAccessException)
+        Note over Checkout,Cart: 結果: トランザクションを取り消し、503 DATABASE_UNAVAILABLE を返す。注文の要求を残し、カートは取り直さない。<br/>画面: 7g-1「保存処理を完了できませんでした。時間をおいて再試行してください。」。7g-2 もう一度押すと同じ requestId で送る。
+    end
+    Checkout->>Db: 受取連絡先を読む (DeliveryService の pickupDetails)
+    Db-->>Checkout: お名前、電話番号、連絡先
+    loop 受取店舗ごと (店舗 ID の順、placeStoreOrder)
+        Checkout->>Db: 注文を保存する (OrderRepository の save)。注文受付 (ACCEPTED)、<br/>手数料の率と額、受取店舗の所在地と営業時間、受取連絡先 (assignPickup、changeRecipient)
+        Checkout->>Ntf: 購入者に知らせるよう頼む (send)。「ご注文を受け付けました」、<br/>本文は「注文番号 / 店舗名」。通知を保存する (notifications)
+        Checkout->>Ntf: 出店者に知らせるよう頼む (toStore)。「新しい注文が届きました」、本文は注文番号<br/>組織のオーナーと、店舗にロールのある担当者のうち利用中の会員ごとに保存する (notifications)
+        loop その店舗の明細ごと
+            Checkout->>Db: 在庫を確かめて減らし (setQuantity。足りなければ 409 OUT_OF_STOCK<br/>「在庫が変更されました。もう一度確認してください。」)、注文の明細を保存する (OrderItemRepository の save)
+        end
+    end
+    Checkout->>Db: カートの明細を消し (deleteAll)、カートの revision を進めて<br/>(incrementRevision)、コミットする
+    Db-->>Checkout: 完了
+    Checkout-->>OrderCtrl: 受取店舗ごとの注文 (payment はなし)
+    OrderCtrl->>PaySvc: 支払いを始めるよう頼む (start)
+    PaySvc-->>OrderCtrl: payment がないので、そのまま返す
+    OrderCtrl-->>Http: 200 注文の配列 (payment は null)
+    Http-->>Shop: 保存した注文
+    Shop->>Http: 注文の要求を捨て (checkoutRequest を null)、保存した注文を覚え (setLastOrders)、<br/>カートと商品と注文を取り直す (refresh)。流れは 3〜15 と同じ
+    Http-->>Shop: 空のカート、商品、注文
+    Shop-->>Cart: 保存した注文 (shop.lastOrders)
+    Cart-->>User: 「注文を保存しました」。注文が複数なら「受取店舗ごとにN件の注文に分けて保存しました。」<br/>注文ごとの注文日時、注文番号、受取店舗、所在地、受取連絡先、お支払い方法、<br/>「受け取り時に店頭でお支払いください。」、商品、合計。「お買い物を続ける」
 ```
+
+![EC-B12 図 1 店舗でお支払い](<images/EC-B12_商品を購入する-1.png>)
 
 ### 図 2 クレジットカード
 
-図 1 の確認画面（47 の前）からの続きです。
+図 1 の確認画面（35 の前）からの続きです。
 
 ```mermaid
 sequenceDiagram
@@ -217,112 +178,83 @@ sequenceDiagram
         participant Stripe as Stripe
     end
 
-    Note over User,Stripe: 共通代替フロー<br/>*b 未ログインの場合: 6 (ログイン状態の確認とカートの取得)、7、取り直しの 16・48・77、状態の確認の 69 に適用<br/>*a 通信に失敗した場合: 6 (ログイン状態の確認、カートの取得、CSRF トークンの取得)、7、取り直しの 16・48・77、状態の確認の 69 (失敗は画面に出さない) に適用
+    Note over User,Stripe: 共通代替フロー<br/>*b 未ログインの場合: 6 (ログイン状態の確認とカートの取得)、7、取り直しの 31・52、状態の確認の 47 に適用<br/>*a 通信に失敗した場合: 6 (ログイン状態の確認、カートの取得、CSRF トークンの取得)、7、取り直しの 31・52、状態の確認の 47 (失敗は画面に出さない) に適用
 
     User->>Confirm: 5a-1「お支払い方法」で「クレジットカード」を選ぶ<br/>(カードを選べるときだけ出る)
     Confirm->>Cart: 選んだ支払方法を伝える (onPayment → setPayment('CARD'))
     Cart-->>User: 5a-2 ボタンを「注文してカードで支払う」にする (checkoutLabel)。通信しない
     User->>Cart: 5a-3「注文してカードで支払う」をクリック
     Cart->>Shop: 注文するよう頼む (checkout('CARD'))
-    Shop->>Http: ログイン状態とカートを取り直し、注文の要求を作って送る<br/>(checkoutCart → api.checkout)。流れは図 1 の 51〜63 と同じ
+    Shop->>Http: ログイン状態とカートを取り直し、注文の要求を作って送る<br/>(checkoutCart → api.checkout)。流れは図 1 の 39〜48 と同じ
     Http->>OrderCtrl: POST /api/orders (paymentMethod は CARD)
     OrderCtrl->>Checkout: 入力を検査し、購入者のカートを調べて、<br/>注文を保存するよう頼む (@Valid、resolve → placeOrder)
-    Checkout->>Db: カートをロックして読み、同じ requestId の注文を探す<br/>(findLocked、findByCartIdAndRequestIdOrderByStoreIdAsc。図 1 の 69〜73)
+    Checkout->>Db: カートをロックして読み、同じ requestId の注文を探す<br/>(findLocked、findByCartIdAndRequestIdOrderByStoreIdAsc。図 1 の 50〜52)
     Db-->>Checkout: カートの行、保存済みの注文 (なければなし)
     Checkout->>Gateway: カード決済を使えるかを確かめる (enabled)
     Gateway-->>Checkout: テスト用の秘密鍵 (sk_test_ か rk_test_) と<br/>Webhook の署名の鍵 (whsec_) がそろっているか
-    alt 7f カード決済が使えない
+    break 7f カード決済が使えない
         Checkout--xErrs: 409 CARD_PAYMENT_UNAVAILABLE の例外を投げる (ApiException)
-        Errs-->>Http: 409「カード決済は現在使えません。店頭払いを選んでください。」(business)
-        Http--xShop: エラーを投げる (readResponse → ApiError(409))
-        Shop->>Http: エラーの文を出し、注文の要求を捨てて、<br/>カートと商品と注文を取り直す (setError、refresh。図 1 の 3〜18)
-        Http-->>Shop: 最新のカート、商品、注文
-        Shop-->>Cart: 失敗を返す (shop.error)
-        Cart-->>User: 7f-1「カード決済は現在使えません。店頭払いを選んでください。」と確認画面<br/>(7f-2 基本フロー 5 へ戻る)
-    else カード決済が使える
-        Checkout->>Db: 7a〜7e を確かめ、店舗、組織、商品、在庫をロックする<br/>(図 1 の 74〜85。確定できないときと 7g は図 1 の 86〜100 と同じ)
-        Db-->>Checkout: ロックした行
-        Checkout->>Db: 5a-4 決済を保存する (PaymentRepository の saveAndFlush)<br/>状態は PENDING、金額は全部の注文の合計
-        Db-->>Checkout: 決済の行
-        loop 受取店舗ごと (店舗 ID の順、placeStoreOrder)
-            Checkout->>Db: 注文を支払い待ち (awaitPayment、PENDING_PAYMENT) で保存し、<br/>在庫を減らして明細を保存する。通知はまだ送らない
-        end
-        Checkout->>Db: カートの明細を消し、revision を進めて、コミットする
-        Db-->>Checkout: 完了
-        Checkout-->>OrderCtrl: 支払い待ちの注文と決済 (clientSecret はまだない)
-        OrderCtrl->>PaySvc: 支払いを始めるよう頼む (start)<br/>トランザクションの外。Stripe を呼ぶ間は DB のロックを持たない
-        PaySvc->>Db: 決済を読む (findById)
-        Db-->>PaySvc: 決済 (PENDING)
-        PaySvc->>Gateway: PaymentIntent を作るよう頼む (createIntent)<br/>PaymentIntent の ID が保存済みなら作らずに読む (retrieveIntent)
-        Gateway->>Stripe: PaymentIntent を作る (paymentIntents の create)<br/>金額は合計、円、metadata.payment_id、Idempotency-Key は requestId
-        alt 5f Stripe との通信に失敗した
-            Stripe--xGateway: 失敗 (StripeException)
-            Gateway--xErrs: 502 PAYMENT_PROVIDER_ERROR の例外を投げる (unavailable)
-            Errs-->>Http: 502「カード決済の処理に失敗しました。<br/>時間をおいてもう一度お試しください。」(business)
-            Http--xShop: エラーを投げる (readResponse → ApiError(502))
-            Shop->>Shop: エラーの文を出す (setError)。409 でないので<br/>注文の要求を残し、カートは取り直さない
-            Shop-->>Cart: 失敗を返す (shop.error)
-            Cart-->>User: 5f-1「カード決済の処理に失敗しました。時間をおいてもう一度お試しください。」<br/>注文は支払い待ちのまま (5f-2 もう一度押すと同じ requestId を送り、<br/>保存済みの注文と決済で 28 からやり直す。押さなければ 30 分後に 5e)
-        else PaymentIntent を作れた
-            Stripe-->>Gateway: PaymentIntent の ID と client_secret
-            Gateway-->>PaySvc: PaymentIntent
-            PaySvc->>Db: 別のトランザクションで決済をロックし、PaymentIntent の ID を記録する<br/>(separate、lock、attachIntent)
-            Db-->>PaySvc: 完了
-            PaySvc-->>OrderCtrl: 支払い待ちの注文と決済 (clientSecret、amountYen)
-            OrderCtrl-->>Http: 200 注文の配列と payment
-            Http-->>Shop: 支払い待ちの注文と決済
-            Shop->>Shop: 注文の要求を捨て、支払い待ちを覚える<br/>(checkoutRequest を null、setPendingPayment)
-            Shop->>Http: カートと商品と注文を取り直す (refresh。図 1 の 3〜18)
-            Http-->>Shop: 空のカート、商品、注文
-            Shop-->>Cart: 支払い待ち (shop.pendingPayment)
-            Cart->>Card: 「カードでのお支払い」を表示 (CardPaymentStep)
-            Card->>StripeJs: Stripe.js を読み込み (loadStripe。1 回だけ)、<br/>client_secret で入力欄を作る (Elements、PaymentElement、locale は ja)
-            StripeJs->>Stripe: Stripe.js と入力欄を読み込む
-            Stripe-->>StripeJs: 入力欄
-            StripeJs-->>User: カード情報の入力欄
-            Card-->>User: 5a-5「カードでのお支払い」、お支払い金額<br/>(受取店舗ごとの注文 N 件の合計)、「(金額)を支払う」
-            User->>StripeJs: カード情報を入力する
-            User->>Card: 5a-6「(金額)を支払う」をクリック
-            Card->>Card: 支払い中にする (pay → setPhase('paying'))。ボタンは「支払い中…」
-            Card->>StripeJs: 支払うよう頼む (confirmPayment、redirect は if_required)
-            StripeJs->>Stripe: 5a-7 カード情報を送って支払う (このサイトのサーバーを通らない)
-            Stripe-->>StripeJs: 結果
-            StripeJs-->>Card: 結果 (result)
-            alt 5b 入力に不備がある (result.error.type が validation_error)
-                Card-->>User: 5b-1 Stripe のエラーの文。入力欄に戻る<br/>(setPhase('input')。5b-2 5a-6 へ戻る)
-            else そのほかのエラー (記述なし)
-                Card-->>User: Stripe のエラーの文。入力欄に戻り、もう一度押せる (setPhase('input'))
-            else 5c カードが断られた (result.error.type が card_error)
-                Card-->>User: Stripe のエラーの文と「支払いを確認しています」<br/>(setPhase('confirming'))
-            else 支払いを受け付けた (result.error がない)
-                Card-->>User: 「支払いを確認しています」(setPhase('confirming'))
-            end
-            opt 確認中になった (5c と、支払いを受け付けたとき)
-                loop 1.5 秒ごと (pollIntervalMs)、90 秒まで (pollLimitMs)
-                    Card->>Http: 注文ごとに状態を読む (poll → request、Promise.all)
-                    Http->>WfCtrl: GET /api/orders/{id}
-                    WfCtrl->>WfSvc: 購入者の注文を読むよう頼む (buyerOrder)<br/>読み取りだけのトランザクション
-                    WfSvc->>Db: 購入者かを確かめ (requireBuyer)、注文を読む (findById)。<br/>ほかの会員の注文なら 404 ORDER_NOT_FOUND
-                    Db-->>WfSvc: 注文、明細、決済、返金、店舗の行
-                    WfSvc-->>WfCtrl: 注文 (view)
-                    WfCtrl-->>Http: 200 注文 (status、paymentStatus)
-                    Http-->>Card: 注文の状態 (通信に失敗したら、次の回でやり直す)
-                end
-                alt 5a-9 すべての注文が注文受付 (図 3 の 5a-8 の後)
-                    Card->>Shop: 受け付けた注文を渡す (onAccepted → acceptCardOrders)
-                    Shop->>Http: 支払い待ちを消し (setPendingPayment(null))、保存した注文を覚えて<br/>(setLastOrders)、カートと商品と注文を取り直す (refresh。図 1 の 3〜18)
-                    Http-->>Shop: 空のカート、商品、注文
-                    Shop-->>Cart: 保存した注文 (shop.lastOrders)
-                    Cart-->>User: 「注文を保存しました」(基本フロー 9 と同じ表示)。カードの注文には<br/>「カードでのお支払いを確認しました（テストモードのため実際の請求はありません）。」
-                else 5c-2 取り消した注文がある (図 3 の 5c-1 の後)
-                    Card-->>User: (Stripe のエラーの文と)「お支払いができなかったため、注文を取り消しました。<br/>商品の在庫は元に戻しています。」と「商品を探す」(setPhase('cancelled')。5c-3 終了)
-                else 5d 90 秒を過ぎても決まらない
-                    Card-->>User: 5d-1「お支払いの確認に時間がかかっています。注文の状態は<br/>購入履歴で確認できます。」と「購入履歴を開く」(setPhase('slow')。5d-2 終了)
-                end
-            end
-        end
+        Note over Errs,Cart: 結果: 409 を返し、注文しない。注文の要求を捨て、カートと商品と注文を取り直す (refresh)。<br/>画面: 7f-1「カード決済は現在使えません。店頭払いを選んでください。」と確認画面 (7f-2 基本フロー 5 へ戻る)。
+    end
+    Checkout->>Db: 7a〜7e を確かめ、店舗、組織、商品、在庫をロックする<br/>(図 1 の 53〜56。確定できないときと 7g は図 1 と同じ)
+    Db-->>Checkout: ロックした行
+    Checkout->>Db: 5a-4 決済を保存する (PaymentRepository の saveAndFlush)<br/>状態は PENDING、金額は全部の注文の合計
+    loop 受取店舗ごと (店舗 ID の順、placeStoreOrder)
+        Checkout->>Db: 注文を支払い待ち (awaitPayment、PENDING_PAYMENT) で保存し、<br/>在庫を減らして明細を保存する。通知はまだ送らない
+    end
+    Checkout->>Db: カートの明細を消し、revision を進めて、コミットする
+    Db-->>Checkout: 完了
+    Checkout-->>OrderCtrl: 支払い待ちの注文と決済 (clientSecret はまだない)
+    OrderCtrl->>PaySvc: 支払いを始めるよう頼む (start)<br/>トランザクションの外。Stripe を呼ぶ間は DB のロックを持たない
+    PaySvc->>Gateway: 決済を読み (findById。PENDING)、PaymentIntent を作るよう頼む (createIntent)<br/>PaymentIntent の ID が保存済みなら作らずに読む (retrieveIntent)
+    Gateway->>Stripe: PaymentIntent を作る (paymentIntents の create)<br/>金額は合計、円、metadata.payment_id、Idempotency-Key は requestId
+    break 5f Stripe との通信に失敗した
+        Stripe--xGateway: 失敗 (StripeException)
+        Note over Gateway,Cart: 結果: 502 PAYMENT_PROVIDER_ERROR (unavailable) を返す。注文は支払い待ちのままで、注文の要求を残し、カートは取り直さない。<br/>画面: 5f-1「カード決済の処理に失敗しました。時間をおいてもう一度お試しください。」(5f-2 もう一度押すと同じ requestId を送り、保存済みの注文と決済で 21 からやり直す。押さなければ 30 分後に 5e)。
+    end
+    Stripe-->>Gateway: PaymentIntent の ID と client_secret
+    Gateway-->>PaySvc: PaymentIntent
+    PaySvc->>Db: 別のトランザクションで決済をロックし、PaymentIntent の ID を記録する<br/>(separate、lock、attachIntent)
+    PaySvc-->>OrderCtrl: 支払い待ちの注文と決済 (clientSecret、amountYen)
+    OrderCtrl-->>Http: 200 注文の配列と payment
+    Http-->>Shop: 支払い待ちの注文と決済
+    Shop->>Http: 注文の要求を捨て、支払い待ちを覚え (checkoutRequest を null、setPendingPayment)、<br/>カートと商品と注文を取り直す (refresh。図 1 の 3〜15)
+    Http-->>Shop: 空のカート、商品、注文
+    Shop-->>Cart: 支払い待ち (shop.pendingPayment)
+    Cart->>Card: 「カードでのお支払い」を表示 (CardPaymentStep)
+    Card->>StripeJs: Stripe.js を読み込み (loadStripe。1 回だけ)、<br/>client_secret で入力欄を作る (Elements、PaymentElement、locale は ja)
+    StripeJs->>Stripe: Stripe.js と入力欄を読み込む
+    Stripe-->>StripeJs: 入力欄
+    Card-->>User: 5a-5「カードでのお支払い」、カード情報の入力欄、お支払い金額<br/>(受取店舗ごとの注文 N 件の合計)、「(金額)を支払う」
+    User->>StripeJs: カード情報を入力する
+    User->>Card: 5a-6「(金額)を支払う」をクリック
+    Card->>StripeJs: 支払い中にして (pay → setPhase('paying'))、支払うよう頼む<br/>(confirmPayment、redirect は if_required)。ボタンは「支払い中…」
+    StripeJs->>Stripe: 5a-7 カード情報を送って支払う (このサイトのサーバーを通らない)
+    Stripe-->>StripeJs: 結果
+    StripeJs-->>Card: 結果 (result)
+    break 5b 入力に不備がある (result.error.type が validation_error)、またはそのほかのエラー (記述なし)
+        Card-->>User: 5b-1 Stripe のエラーの文。入力欄に戻る<br/>(setPhase('input')。5b-2 5a-6 へ戻る)
+    end
+    Card-->>User: 「支払いを確認しています」(setPhase('confirming'))<br/>5c カードが断られた (card_error) ときは、Stripe のエラーの文も出す
+    loop 1.5 秒ごと (pollIntervalMs)、90 秒まで (pollLimitMs)
+        Card->>WfCtrl: 注文ごとに状態を読む (poll → request、Promise.all)<br/>GET /api/orders/{id}
+        WfCtrl->>WfSvc: 購入者の注文を読むよう頼む (buyerOrder)。読み取りだけのトランザクション<br/>購入者かを確かめ (requireBuyer)、注文、明細、決済、返金、店舗を読む<br/>(findById。ほかの会員の注文なら 404 ORDER_NOT_FOUND)
+        WfSvc-->>WfCtrl: 注文 (view)
+        WfCtrl-->>Card: 200 注文 (status、paymentStatus)。通信に失敗したら、次の回でやり直す
+    end
+    alt 5a-9 すべての注文が注文受付 (図 3 の 5a-8 の後)
+        Card->>Shop: 受け付けた注文を渡す (onAccepted → acceptCardOrders)
+        Shop->>Http: 支払い待ちを消し (setPendingPayment(null))、保存した注文を覚えて<br/>(setLastOrders)、カートと商品と注文を取り直す (refresh。図 1 の 3〜15)
+        Http-->>Shop: 空のカート、商品、注文
+        Cart-->>User: 「注文を保存しました」(基本フロー 9 と同じ表示)。カードの注文には<br/>「カードでのお支払いを確認しました（テストモードのため実際の請求はありません）。」
+    else 5c-2 取り消した注文がある (図 3 の 5c-1 の後)
+        Card-->>User: (Stripe のエラーの文と)「お支払いができなかったため、注文を取り消しました。<br/>商品の在庫は元に戻しています。」と「商品を探す」(setPhase('cancelled')。5c-3 終了)
+    else 5d 90 秒を過ぎても決まらない
+        Card-->>User: 5d-1「お支払いの確認に時間がかかっています。注文の状態は<br/>購入履歴で確認できます。」と「購入履歴を開く」(setPhase('slow')。5d-2 終了)
     end
 ```
+
+![EC-B12 図 2 クレジットカード](<images/EC-B12_商品を購入する-2.png>)
 
 ### 図 3 Stripe からの通知と時間切れ
 
@@ -346,44 +278,35 @@ sequenceDiagram
     participant Db as MySQL
 
     Stripe->>PayCtrl: POST /api/payments/stripe/webhook (Stripe-Signature のヘッダー付き)<br/>会員の認証と CSRF の対象外 (AuthConfiguration)
-    PayCtrl->>PayCtrl: 本文を 512 KB まで読む (readNBytes)
-    PayCtrl->>Gateway: 署名を確かめるよう頼む (signatureValid)
-    Gateway-->>PayCtrl: 署名が正しいか。正しくない、JSON でない、<br/>想定外の通知なら 400 INVALID_WEBHOOK で何もしない
+    PayCtrl->>Gateway: 本文を 512 KB まで読み (readNBytes)、署名を確かめるよう頼む (signatureValid)
+    Gateway-->>PayCtrl: 署名が正しいか
+    break 署名が正しくない、JSON でない、想定外の通知 (記述なし)
+        PayCtrl-->>Stripe: 400 INVALID_WEBHOOK。何もしない
+    end
     PayCtrl->>Webhook: 通知を処理するよう頼む (handle)<br/>handle 全体が 1 つのトランザクション。失敗したら記録ごと取り消し、Stripe の再送で処理し直す
     Webhook->>Db: 通知の ID を記録する (INSERT IGNORE INTO stripe_events)
     Db-->>Webhook: 記録した行の数 (0 なら処理済みの通知なので、何もせず false を返す)
     alt 5a-8 支払いが成功した (payment_intent.succeeded)
         Webhook->>PaySvc: 支払いの成功を反映するよう頼む (succeeded)
-        PaySvc->>Db: 決済をロックして読む (lockByIntent。<br/>まだ PaymentIntent の ID がなければ metadata.payment_id で lock)
-        Db-->>PaySvc: 決済の行
-        PaySvc->>PaySvc: PaymentIntent の ID を記録し、決済を成功にする (attachIntent、succeed)
-        PaySvc->>Db: 決済の注文を注文 ID の順にロックして読む (lockByPayment)
-        Db-->>PaySvc: 注文の行
-        alt 決済が支払い待ちだった
-            loop 注文ごと
-                PaySvc->>PaySvc: 注文受付にする (acceptPayment。PENDING_PAYMENT → ACCEPTED)
-                PaySvc->>Ntf: 購入者に「ご注文を受け付けました」を知らせるよう頼む (send)
-                Ntf->>Db: 通知を保存する (notifications)
-                PaySvc->>Ntf: 出店者に「新しい注文が届きました」を知らせるよう頼む (toStore)
-                Ntf->>Db: 店舗の会員ごとに通知を保存する (notifications)
-            end
-        else 時間切れや失敗で取り消した後に成功が届いた (記述なし)
-            PaySvc->>Db: 注文を取り消したまま、全額を返金する (RefundService の refundCancelledOrder)。<br/>購入者に「お支払いを返金します」を知らせる
+        PaySvc->>Db: 決済をロックして読み (lockByIntent。まだ PaymentIntent の ID がなければ<br/>metadata.payment_id で lock)、ID を記録して成功にし (attachIntent、succeed)、<br/>決済の注文を注文 ID の順にロックして読む (lockByPayment)
+        Db-->>PaySvc: 決済と注文の行
+        loop 注文ごと (決済が支払い待ちだったとき)
+            PaySvc->>PaySvc: 注文受付にする (acceptPayment。PENDING_PAYMENT → ACCEPTED)
+            PaySvc->>Ntf: 購入者に「ご注文を受け付けました」(send)、出店者に「新しい注文が届きました」<br/>(toStore) を知らせるよう頼む。店舗の会員ごとにも通知を保存する (notifications)
         end
-        PaySvc-->>Webhook: 終わった
+        opt 時間切れや失敗で取り消した後に成功が届いた (記述なし)
+            PaySvc->>PaySvc: 全額を返金するよう頼む (RefundService の refundCancelledOrder)
+            Note over PaySvc,Db: 結果: 注文を取り消したまま全額を返金し、購入者に「お支払いを返金します」を知らせる。
+        end
     else 5c-1 支払いが失敗した (payment_intent.payment_failed)
         Webhook->>PaySvc: 支払いの失敗を反映するよう頼む (failed)
         PaySvc->>Db: 決済をロックして読む (lockFor。上と同じ)
-        Db-->>PaySvc: 決済の行
-        PaySvc->>PaySvc: 支払い待ちの注文を取り消して在庫を戻す (cancelUnpaid、状態は FAILED)。<br/>中身は下の 5e の 38〜46 と同じ。通知の本文は「お支払いができなかったため、注文を取り消しました。」
-        PaySvc-->>Webhook: 終わった
+        PaySvc->>PaySvc: 支払い待ちの注文を取り消して在庫を戻す (cancelUnpaid、状態は FAILED)。<br/>中身は下の 5e の 24〜28 と同じ。通知の本文は「お支払いができなかったため、注文を取り消しました。」
     end
     Webhook->>Db: コミットする
-    Db-->>Webhook: 完了
     opt 5c-1 で PaymentIntent の ID があるとき (コミットの後、AfterCommit)
         PaySvc->>Gateway: PaymentIntent を取り消すよう頼む (cancelIntent)
-        Gateway->>Stripe: PaymentIntent を取り消す (paymentIntents の cancel)
-        Stripe-->>Gateway: 結果 (失敗はログに残すだけ)
+        Note over Stripe,Gateway: 結果: Stripe の PaymentIntent を取り消す (paymentIntents の cancel)。失敗はログに残すだけ。
     end
     Webhook-->>PayCtrl: 処理した (true)
     PayCtrl-->>Stripe: 200 received、processed
@@ -393,34 +316,24 @@ sequenceDiagram
         Db-->>Job: 決済の ID のリスト
         loop 決済ごと (失敗してもログに残して次へ進む)
             Job->>PaySvc: 時間切れにするよう頼む (expire)<br/>expire 全体が 1 つのトランザクション
-            PaySvc->>Db: 決済をロックして読む (lock)
-            Db-->>PaySvc: 決済の行
-            PaySvc->>PaySvc: まだ支払い待ちなら、決済を期限切れにする (cancelUnpaid → close(EXPIRED))。<br/>支払い待ちでなければ何もしない
-            PaySvc->>Db: 決済の注文をロックして読む (lockByPayment)
-            Db-->>PaySvc: 注文の行
+            PaySvc->>Db: 決済をロックして読み (lock)、まだ支払い待ちなら期限切れにし<br/>(cancelUnpaid → close(EXPIRED)。支払い待ちでなければ何もしない)、<br/>決済の注文をロックして読む (lockByPayment)
             PaySvc->>Stock: 在庫を戻すよう頼む (restock)
             Stock->>Db: 明細を読み、在庫を商品 ID の順にロックして、数量を足す<br/>(findAllForOrder、lockAll、setQuantity)
-            Stock-->>PaySvc: 終わった
             PaySvc->>PaySvc: 注文を取り消す (cancelUnpaid。CANCELLED)
-            PaySvc->>Ntf: 5e-1 購入者に「ご注文を取り消しました」を知らせるよう頼む (send)<br/>本文は「お支払いの期限が過ぎたため、注文を取り消しました。」
-            Ntf->>Db: 通知を保存する (notifications)
-            PaySvc->>Db: コミットする
-            Db-->>PaySvc: 完了
-            opt PaymentIntent の ID があるとき (コミットの後、AfterCommit)
-                PaySvc->>Gateway: PaymentIntent を取り消すよう頼む (cancelIntent)
-                Gateway->>Stripe: PaymentIntent を取り消す (paymentIntents の cancel)
-                Stripe-->>Gateway: 結果 (失敗はログに残すだけ)
-            end
+            PaySvc->>Ntf: 5e-1 購入者に「ご注文を取り消しました」を知らせるよう頼む (send)<br/>本文は「お支払いの期限が過ぎたため、注文を取り消しました。」。通知を保存する (notifications)
+            PaySvc->>Db: コミットし、PaymentIntent の ID があればコミットの後に取り消す<br/>(AfterCommit → cancelIntent。失敗はログに残すだけ)
             PaySvc-->>Job: 終わった
         end
     end
 ```
 
+![EC-B12 図 3 Stripe からの通知と時間切れ](<images/EC-B12_商品を購入する-3.png>)
+
 ## 共通代替フローを直接書いた図
 
 図 1 の「注文を確定する」の通信（ログイン状態の確認、カートの取り直し、CSRF トークンの取得、`POST /api/orders`）に、この画面で起こる共通代替フロー（\*a、\*b）を書き込んだ図です。
 
-- 「注文内容を確認する」（図 1 の 30〜40）も同じ `checkoutCart()` を通るので、ログイン状態の確認とカートの取り直しの \*a・\*b はこの図の 3〜20 と同じです。失敗するとカートの画面のまま、エラーの文が出ます。
+- 「注文内容を確認する」（図 1 の 24〜33）も同じ `checkoutCart()` を通るので、ログイン状態の確認とカートの取り直しの \*a・\*b はこの図の 3〜20 と同じです。失敗するとカートの画面のまま、エラーの文が出ます。
 - 図 2 の「注文してカードで支払う」も、この図と同じ通信を通ります。違いは図 2 の 5f（502）が加わることです。
 - アプリを開いたときのカートの取得（図 1 の 4）は、401 なら「ログインしていない」として商品だけを読み（`signedOut`）、カートの URL ではログイン画面へ移ります（`App.jsx` の `redirectToLogin()`、\*b-1）。そのほかの失敗では、カートの画面にエラーの文と「商品を探す」が出て、「再取得」はありません。
 
@@ -472,7 +385,7 @@ sequenceDiagram
             Cart-->>User: *a-1 エラーの文 (401 なら *b-1 のお知らせ)。確認画面はそのまま
         else カートを読めた
             Http->>Filter: GET /api/cart
-            Filter-->>Http: 200 最新のカート (図 1 の 5〜15)
+            Filter-->>Http: 200 最新のカート (図 1 の 5〜12)
             Http-->>Shop: 最新のカート (setCart)
             Shop->>Shop: 注文の要求を作るか、前の要求を使う (checkoutRequest)
             Shop->>Http: 注文の要求を送る (api.checkout → request)
@@ -512,7 +425,7 @@ sequenceDiagram
                     AuthJs->>Filter: POST /api/orders
                     Filter->>OrderCtrl: 要求を通す (chain.doFilter)
                     OrderCtrl->>Checkout: 注文を保存するよう頼む (resolve → placeOrder)
-                    Checkout->>Db: カート、店舗、組織、商品、在庫をロックして確かめ、<br/>注文と通知を保存してコミットする (図 1 の 65〜111)
+                    Checkout->>Db: カート、店舗、組織、商品、在庫をロックして確かめ、<br/>注文と通知を保存してコミットする (図 1 の 49〜66)
                     alt *a・7g MySQL との通信に失敗
                         Db--xCheckout: 失敗 (DataAccessException)。<br/>注文も在庫の減算も取り消す
                         Checkout--xOrderCtrl: 例外
@@ -537,6 +450,8 @@ sequenceDiagram
         Cart->>Shop: 注文するよう頼む (checkout)。残っている注文の要求 (同じ requestId) を送るので、<br/>前の要求で保存されていても、同じ注文を返すだけで二重に保存しない
     end
 ```
+
+![EC-B12 共通代替フローを直接書いた図](<images/EC-B12_商品を購入する-4.png>)
 
 ## ユースケース記述との差
 

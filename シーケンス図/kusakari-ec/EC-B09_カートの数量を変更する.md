@@ -8,6 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
+代替フローのうち、エラーで終わるもの（2a の 2 つ、3a）は分かれる所だけを描き、結果と画面は Note に文で書いています。エラーのときの画面の後処理（`readResponse` が `ApiError` を投げる → `run` の catch でエラーの文を覚える → `refreshOnFailure` なので最新のカートを取り直す（`GET /api/cart` などの流れは EC-B08 の図と同じ）→ エラーの文と最新のカートを出す）は、どれも同じです。取り直しの `GET /api/cart` にも共通代替フロー \*a・\*b が起こります。
 
 「＋」と「−」は、どちらも `useShop` の `setQuantity()` に、1 つ増やした数量か 1 つ減らした数量を渡します。サーバーは [EC-B07](<EC-B07_商品をカートに追加する.md>) と同じ `PUT /api/cart/items/{productId}`（`CartService.updateItem()`）で、送られた数量で明細を上書きします。サーバーは数量と在庫より先に `revision` を比べるので、図では 3a の枝が 2a の枝より先に出ます。
 
@@ -33,7 +34,7 @@ sequenceDiagram
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 7、最新のカートの取り直しの 47 に適用<br/>*a 通信に失敗した場合: 5、7、最新のカートの取り直しの 47 に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 7 に適用<br/>*a 通信に失敗した場合: 5、7 に適用
 
     User->>Cart: 対象商品の「＋」(「(商品名)を1個増やす」) か<br/>「−」(「(商品名)を1個減らす」) をクリック<br/>(「＋」は数量が 99 か在庫数以上、「−」は 1 以下、通信中は押せない)
     Cart->>Shop: 1 つ増やした数量か 1 つ減らした数量に書き換えるよう頼む<br/>(setQuantity(line.product.id, line.quantity ± 1))
@@ -43,58 +44,41 @@ sequenceDiagram
     AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
     AuthJs->>Ctrl: PUT /api/cart/items/{productId}<br/>(CSRF トークンのヘッダー付き)
     Ctrl->>Ctrl: 本文を検査する (@Valid、ItemRequest の quantity は 0〜99)。<br/>ボタンの制限で 1〜99 に収まるので通る
-    Ctrl->>Resolver: 会員のカートを特定するよう頼む (resolve)<br/>中身は EC-B08 の図の 7〜24 と同じ
+    Ctrl->>Resolver: 会員のカートを特定するよう頼む (resolve)<br/>中身は EC-B08 の図と同じ流れ
     Resolver-->>Ctrl: カートの ID
     Ctrl->>Svc: 明細の数量を書き換えるよう頼む (updateItem)<br/>updateItem 全体が 1 つのトランザクション
-    Svc->>CartRepo: カートの行をロックして読む (findLocked)
-    CartRepo->>Db: SELECT ... FOR UPDATE carts
-    Db-->>CartRepo: カートの行
+    Svc->>CartRepo: カートの行をロックして読む (findLocked、SELECT ... FOR UPDATE carts)
     CartRepo-->>Svc: カート
     Svc->>Svc: 送られた revision と今の revision を比べる (checkRevision)
-    alt 3a 別の操作でカートが更新されていた (revision が違う)
+    break 3a 別の操作でカートが更新されていた (revision が違う)
         Svc--xErrs: 409 CART_CHANGED の例外を投げる (ApiException)
-        Errs-->>Http: 409「別の操作でカートが更新されました。<br/>最新の内容を確認してください。」(business)
-    else revision が同じ
-        Svc->>ItemRepo: その商品の明細を読む (findById)
-        ItemRepo->>Db: SELECT cart_items
-        Db-->>ItemRepo: 明細の行
-        ItemRepo-->>Svc: 今の明細
-        Svc->>Catalog: 商品と、今買えるかを調べるよう頼む (listing)
-        Catalog->>Db: 商品・在庫・店舗・組織を読む<br/>(findByIdIn、findAllById、SELECT products、inventory、stores、organizations)
-        Db-->>Catalog: 行
-        Catalog-->>Svc: 商品と買えない理由 (Listing)
-        alt 2a 購入できない明細 (purchasable が偽。EC-B08 の 2c の明細)
-            Svc--xErrs: 409 PRODUCT_ARCHIVED の例外を投げる (ApiException)
-            Errs-->>Http: 409「この商品は販売を終了しています。<br/>カートから削除してください。」(business)
-        else 2a 送る数量が受取店舗の在庫数を超える
-            Svc--xErrs: 409 OUT_OF_STOCK の例外を投げる (ApiException)
-            Errs-->>Http: 409「受取店舗の在庫が不足しています。」(business)
-        else 変更できる
-            Svc->>ItemRepo: カートの全明細を読む (findAllForCart)。<br/>既にある商品なので 50 種類の上限には当たらない
-            ItemRepo->>Db: SELECT cart_items
-            Db-->>ItemRepo: 明細の行
-            ItemRepo-->>Svc: 明細のリスト
-            Svc->>ItemRepo: 明細の数量を送られた数量で上書きして保存する (save)
-            ItemRepo->>Db: UPDATE cart_items
-            Svc->>Svc: カートの revision を 1 増やす (incrementRevision)
-            Svc->>Svc: 明細ごとの金額、合計、点数、注文に進めるかを計算する<br/>(view。中身は EC-B08 の図の 43 と同じ)
-            Svc-->>Ctrl: カートの内容 (CartView)。updateItem の終わりにコミット
-            Ctrl-->>Http: 200 カートの内容
-            Http-->>Shop: カートの内容
-            Shop->>Shop: カートを置き換え、成功の文を覚える<br/>(setCart、setNotice('カートを更新しました。'))
-            Shop-->>Cart: 新しいカートと成功の文 (shop.cart、shop.notice)
-            Cart-->>User: 3 新しい数量と金額 (lineTotalYen)、「ご請求内容」の<br/>商品小計・うち消費税・合計、「カートを更新しました。」
-        end
+        Note over Errs,Cart: 結果: 409「別の操作でカートが更新されました。最新の内容を確認してください。」を返し (business)、数量は変えない。<br/>画面: 3a-1 その文と、取り直した最新のカート。3a-2 基本フロー 1 へ戻る。
     end
-    opt 2a・3a のとき (どちらも同じ処理。例外でロールバックし、数量は変わらない)
-        Http--xShop: エラーを投げる (readResponse → ApiError)
-        Shop->>Shop: エラーの文を覚える (run の catch → setError)
-        Shop->>Http: 最新のカートを取り直す (refreshOnFailure なので refresh → api.cart)<br/>GET /api/cart の流れは EC-B08 の図の 5〜47 と同じ
-        Http-->>Shop: 最新のカート (setCart)
-        Shop-->>Cart: エラーの文と最新のカート (shop.error、shop.cart)
-        Cart-->>User: 2a-1・3a-1 エラーの文と最新のカート。<br/>2a-2・3a-2 基本フロー 1 へ戻る
+    Svc->>ItemRepo: その商品の明細を読む (findById、SELECT cart_items)
+    ItemRepo-->>Svc: 今の明細
+    Svc->>Catalog: 商品と、今買えるかを調べるよう頼む (listing)<br/>商品・在庫・店舗・組織を読む (findByIdIn、findAllById、<br/>SELECT products、inventory、stores、organizations)
+    Catalog-->>Svc: 商品と買えない理由 (Listing)
+    break 2a 購入できない明細 (purchasable が偽。カートで「現在は購入できません」の明細)
+        Svc--xErrs: 409 PRODUCT_ARCHIVED の例外を投げる (ApiException)
+        Note over Errs,Cart: 結果: 409「この商品は販売を終了しています。カートから削除してください。」を返し (business)、数量は変えない。<br/>画面: 2a-1 その文と、取り直した最新のカート。2a-2 基本フロー 1 へ戻る。
     end
+    break 2a 送る数量が受取店舗の在庫数を超える
+        Svc--xErrs: 409 OUT_OF_STOCK の例外を投げる (ApiException)
+        Note over Errs,Cart: 結果: 409「受取店舗の在庫が不足しています。」を返し (business)、数量は変えない。<br/>画面: 2a-1 その文と、取り直した最新のカート。2a-2 基本フロー 1 へ戻る。
+    end
+    Svc->>ItemRepo: カートの全明細を読む (findAllForCart、SELECT cart_items)。<br/>既にある商品なので 50 種類の上限には当たらない
+    ItemRepo-->>Svc: 明細のリスト
+    Svc->>ItemRepo: 明細の数量を送られた数量で上書きして保存する (save、UPDATE cart_items)
+    Svc->>Svc: カートの revision を 1 増やし (incrementRevision)、明細ごとの金額、合計、<br/>点数、注文に進めるかを計算する (view。中身は EC-B08 の図と同じ流れ)
+    Svc-->>Ctrl: カートの内容 (CartView)。updateItem の終わりにコミット
+    Ctrl-->>Http: 200 カートの内容
+    Http-->>Shop: カートの内容
+    Shop->>Shop: カートを置き換え、成功の文を覚える<br/>(setCart、setNotice('カートを更新しました。'))
+    Shop-->>Cart: 新しいカートと成功の文 (shop.cart、shop.notice)
+    Cart-->>User: 3 新しい数量と金額 (lineTotalYen)、「ご請求内容」の<br/>商品小計・うち消費税・合計、「カートを更新しました。」
 ```
+
+![EC-B09 シーケンス図](<images/EC-B09_カートの数量を変更する-1.png>)
 
 ## 共通代替フローを直接書いた図
 
@@ -168,7 +152,7 @@ sequenceDiagram
             AuthJs->>Filter: PUT /api/cart/items/{productId}
             Filter->>Ctrl: 要求を通す (chain.doFilter)
             Ctrl->>Svc: 明細の数量を書き換えるよう頼む (updateItem)
-            Svc->>Db: カートをロックして読み、商品と在庫を確かめ、<br/>明細を保存してコミットする (上の図の 12〜38)
+            Svc->>Db: カートをロックして読み、商品と在庫を確かめ、<br/>明細を保存してコミットする (上の図の 12〜26)
             alt *a MySQL との通信に失敗
                 Db--xSvc: 失敗 (DataAccessException)。<br/>トランザクションの変更はすべて取り消す
                 Svc--xCtrl: 例外
@@ -191,6 +175,8 @@ sequenceDiagram
         User->>Cart: もう一度「＋」か「−」をクリック (この図の 1 へ戻る)
     end
 ```
+
+![EC-B09 共通代替フローを直接書いた図](<images/EC-B09_カートの数量を変更する-2.png>)
 
 ## ユースケース記述との差
 

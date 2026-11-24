@@ -7,8 +7,9 @@
 ## シーケンス図
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
-Repository は、商品（`ProductRepository`）と在庫（`InventoryRepository`）だけを参加者にし、ほかは MySQL への矢印の文に Repository とメソッドの名前を書いています。
+Repository は、商品（`ProductRepository`）と在庫（`InventoryRepository`）だけを参加者にし、ほかは矢印の文に Repository とメソッドの名前を書いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
+代替フローのうち、エラーで終わるもの（7a・8a・8b・8c）と記述にない分岐（商品がない 404）は、分かれる所だけを描き、結果と画面は Note に文で書いています。植物の構成の取り直し（Canvas API への問い合わせと 502・503）と「戻る」は、`opt` の中の矢印 1 本と Note にしています。サーバーが失敗を返したときの画面の後処理（`readResponse` が `ApiError` を投げる → `write` の `catch` で画面の上部にエラーの文を出す → 一覧を取り直し、同じ商品があれば「変更前の在庫数」を最新にする → 編集フォームは開いたままで入力は残る）は、どれも同じです。
 
 ```mermaid
 sequenceDiagram
@@ -33,7 +34,6 @@ sequenceDiagram
         participant EdCtrl as 商品の登録・編集API<br/>ProductEditorController<br/>(ProductEditorController.java)
         participant CartCtrl as カートAPI<br/>CartController<br/>(CartController.java)
         participant CatalogCtrl as 購入者向けの商品API<br/>CatalogController<br/>(CatalogController.java)
-        participant Errs as エラーの応答<br/>ApiErrors<br/>(ApiErrors.java)
         participant SPSvc as 出店者の商品の処理<br/>SellerProductService<br/>(SellerProductService.java)
         participant ModSvc as 商品への運営の警告<br/>ProductModerationService<br/>(ProductModerationService.java)
         participant EdSvc as 商品の登録・編集の処理<br/>ProductEditorService<br/>(ProductEditorService.java)
@@ -49,58 +49,21 @@ sequenceDiagram
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、5、30、54、76、一覧の取り直しの 130・138、購入者向けの商品の 143・147 に適用<br/>*a 通信に失敗した場合: 5、30、54、74、76、一覧の取り直しの 130・138、購入者向けの商品の 143・147 に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、4、9、18、32、一覧の取り直しの 45、購入者向けの商品の 48・50 に適用<br/>*a 通信に失敗した場合: 4、9、18、30、32、一覧の取り直しの 45、購入者向けの商品の 48・50 に適用
 
     User->>Work: 出店者メニューの「商品管理」をクリック
     Work->>Mgr: URL を /seller/products に変え、<br/>ProductManager を表示 (embedded)
     par 商品の一覧
         Mgr->>Cat: 選んでいる店舗の商品を取りに行くよう頼む (useSellerCatalog)
-        Cat->>Http: 画面を開いたときに自動で一覧の通信を始める<br/>(useEffect → api.sellerProducts → request)
-        Http->>SPC: GET /api/seller/products?storeId={id}
-        SPC->>SPSvc: 出店者の商品一覧を作るよう頼む (list)<br/>読むだけのトランザクション
-        SPSvc->>Auth: ログイン中の人がその店舗の商品を見られるかを確かめる<br/>(requireStoreViewer。ロールのない担当者も見られる)
-        Auth->>Db: 会員、店舗、オーナーの組織か店舗の担当かを読む<br/>(current、canManageView)
-        Db-->>Auth: 会員、店舗、組織、担当の行
-        Auth-->>SPSvc: 見られる
-        SPSvc->>ProdRepo: 商品を追加した人の名前を読む (findCreatorNamesAtStore)
-        ProdRepo->>Db: SELECT products JOIN members
-        Db-->>ProdRepo: 商品 ID と表示名の行
-        ProdRepo-->>SPSvc: 商品ごとの追加した人
-        SPSvc->>CatalogSvc: 店舗の削除されていない商品を集めるよう頼む (storeProducts)
-        CatalogSvc->>Db: 店舗があるかを確かめる<br/>(requireStore → StoreRepository.existsById、SELECT stores)
-        Db-->>CatalogSvc: ある
-        CatalogSvc->>ProdRepo: 削除されていない商品を読む (findNotDeletedAtStore)
-        ProdRepo->>Db: SELECT products、product_images<br/>(在庫が DELETED の商品を除く)
-        Db-->>ProdRepo: 商品の行
-        ProdRepo-->>CatalogSvc: 商品
-        CatalogSvc->>Db: 在庫、店舗、組織を読む (listings → InventoryRepository・<br/>StoreRepository・OrganizationRepository の findAllById)
-        Db-->>CatalogSvc: 在庫、店舗、組織の行
-        CatalogSvc-->>SPSvc: 商品の一覧 (非公開の商品も含む)
-        SPSvc-->>SPC: 3D の構成を外し、追加した人の名前を付けた一覧 (toSellerView)
-        SPC-->>Http: 200 商品の配列 (stock、publicationStatus、createdByName ほか)
-        Http-->>Cat: 商品の一覧 (setProducts)
+        Cat->>SPC: 画面を開いたときに自動で一覧の通信を始める<br/>(useEffect → api.sellerProducts → request)<br/>GET /api/seller/products?storeId={id}
+        SPC->>SPSvc: 出店者の商品一覧を作るよう頼む (list)。読むだけのトランザクション<br/>その店舗の商品を見られるかを確かめ (requireStoreViewer。ロールのない担当者も見られる)、<br/>商品を追加した人の名前を読む (ProductRepository.findCreatorNamesAtStore、SELECT products JOIN members)
+        SPSvc->>CatalogSvc: 店舗の削除されていない商品を集めるよう頼む (storeProducts)<br/>店舗を確かめ (requireStore)、商品・画像を読み (findNotDeletedAtStore。在庫が DELETED の商品を除き、非公開の商品は含む)、<br/>在庫・店舗・組織を読む (listings、SELECT products、product_images、inventory、stores、organizations)
+        SPC-->>Cat: 200 3D の構成を外し、追加した人の名前を付けた商品の配列<br/>(toSellerView。stock、publicationStatus、createdByName ほか。setProducts)
     and 運営からの警告・停止
         Mgr->>Hook: 店舗の商品への警告・停止を取りに行くよう頼む (useResource)
-        Hook->>Http: 画面を開いたときに自動で通信を始める (reload → request)
-        Http->>SPC: GET /api/seller/products/moderation?storeId={id}
-        SPC->>ModSvc: 店舗の商品への警告・停止を集めるよう頼む<br/>(moderation → noticesAt)。読むだけのトランザクション
-        ModSvc->>Auth: その店舗の商品を見られるかを確かめる (requireStoreViewer)
-        Auth-->>ModSvc: 見られる (中は 8〜9 と同じ)
-        ModSvc->>Db: 警告と警告の解除の履歴を読む<br/>(ProductModerationEventRepository.findAtStore、SELECT product_moderation_events)
-        Db-->>ModSvc: 履歴の行
-        ModSvc->>ProdRepo: 公開停止中の商品を読む (findSuspendedIdsAtStore)
-        ProdRepo->>Db: SELECT products
-        Db-->>ProdRepo: 商品 ID の行
-        ProdRepo-->>ModSvc: 公開停止中の商品 ID
-        opt 警告中か公開停止中の商品がある (ModerationHistory.activeWarnings で今の警告を求める)
-            ModSvc->>ProdRepo: 商品名と削除の有無を読む (findImageReferences)
-            ProdRepo->>Db: SELECT products、inventory
-            Db-->>ProdRepo: 行
-            ProdRepo-->>ModSvc: 商品名と削除の有無
-        end
-        ModSvc-->>SPC: 削除されていない商品の警告・停止の一覧
-        SPC-->>Http: 200 警告・停止の配列
-        Http-->>Hook: 警告・停止の一覧
+        Hook->>SPC: 画面を開いたときに自動で通信を始める (reload → request)<br/>GET /api/seller/products/moderation?storeId={id}
+        SPC->>ModSvc: 店舗の商品への警告・停止を集めるよう頼む (moderation → noticesAt)。読むだけのトランザクション<br/>見られるかを確かめ (requireStoreViewer)、警告と解除の履歴 (findAtStore、product_moderation_events)、<br/>公開停止中の商品 (findSuspendedIdsAtStore)、警告中か停止中の商品名と削除の有無 (findImageReferences) を読む
+        SPC-->>Hook: 200 削除されていない商品の警告・停止の配列
     end
     Mgr-->>User: 「運営からの警告・停止」欄 (商品名、「運営により公開停止中」、<br/>「警告中」「運営からの警告：理由」)、商品一覧 (公開状態、在庫、<br/>「追加した人：…」、「警告中」「運営により公開停止中」のバッジ、行ごとの「編集」)
 
@@ -109,148 +72,81 @@ sequenceDiagram
     Mgr->>Form: フォームを開いたときの在庫数を覚え、<br/>編集フォームを表示 (setExpectedStock(product.stock)、setEditing → ProductForm)
     Form->>Picker: 商品の値を入れた入力欄とカテゴリーの選択を表示<br/>(createDraft(product)、ProductInfoFields → CategoryPicker)
     Picker->>Hook: カテゴリーの一覧を取りに行くよう頼む (useResource)
-    Hook->>Http: 自動で通信を始める (reload → request)
-    Http->>CatCtrl: GET /api/categories
-    CatCtrl->>CatgSvc: カテゴリー名の一覧を作るよう頼む (list)
-    CatgSvc->>Db: 削除されていないカテゴリーを読む<br/>(CategoryRepository.findByDeletedAtIsNull、SELECT categories)
-    Db-->>CatgSvc: カテゴリーの行
-    CatgSvc-->>CatCtrl: 名前順のカテゴリー名
-    CatCtrl-->>Http: 200 カテゴリー名の配列
-    Http-->>Hook: カテゴリー名の一覧
-    Hook-->>Picker: カテゴリー名の一覧
+    Hook->>CatCtrl: 自動で通信を始める (reload → request)<br/>GET /api/categories
+    CatCtrl->>CatgSvc: カテゴリー名の一覧を作るよう頼む (list)<br/>削除されていないカテゴリーを読む (CategoryRepository.findByDeletedAtIsNull、SELECT categories)
+    CatCtrl-->>Picker: 200 名前順のカテゴリー名の配列
     Mgr-->>User: 商品一覧を隠し、「戻る」、「変更前の在庫数：N」、<br/>「商品情報」「画像」「庭オブジェクト」のタブ、商品番号と<br/>「商品番号は変更できません。」、入力欄、「変更を保存」
 
     User->>Form: 編集フォームの入力欄で商品情報を変更する<br/>(「商品名」「商品説明」「税込価格（円）」「選択店舗の在庫」、<br/>「カテゴリーを選ぶ」など。タブで「画像」「庭オブジェクト」も開ける)
     Form->>Form: 入力を下書きに入れる (ProductInfoFields の change → set)<br/>画像の追加、3D プレビュー、「AIで生成」は EC-S03 の図と同じ通信をする
     opt 編集を中止する (関連情報)
         User->>Mgr: 「戻る」をクリック
-        Mgr-->>User: 編集フォームを閉じて商品一覧に戻る (resetEditor)。<br/>保存せず、通信しない
+        Note over User,Mgr: 結果: 保存せず、通信しない (resetEditor)。<br/>画面: 編集フォームを閉じて商品一覧に戻る。
     end
 
     User->>Form: 「変更を保存」をクリック
     Form->>Form: すべてのタブの入力を確かめる (save → validate(null)。<br/>firstInvalid、商品名・説明、画像、plant.currentProfile)
-    alt 7a 画面の検査で止まる
-        Form-->>User: 7a-1 フォームの下にエラーの文を出し、直す入力欄のタブを開く (fail → reveal)<br/>「在庫は0以上にしてください。」「商品名・説明を入力してください。」<br/>「商品画像を1枚以上追加してください。」など。通信しない (7a-2 基本フロー 5 へ戻る)
-    else 画面の検査を通る
-        Form->>Mgr: 入力をまとめて保存を頼む (onSave → productInput → save)
-        Mgr->>Cat: フォームを開いたときの在庫数を付けて保存を頼む<br/>(catalog.save、expectedStock)
-        Cat->>Http: 商品を書き換える通信を送る<br/>(write → api.updateProduct → request)
-        Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (authFetch)
-        AuthJs->>AuthCtrl: GET /api/auth/csrf
-        AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
-        AuthJs->>EdCtrl: PUT /api/products/{id}<br/>(storeId、sku、stock、expectedStock、heightCm、plantModelProfile ほか)
-        EdCtrl->>EdCtrl: 入力を検査する (@Valid の ProductRequest)
-        alt 7a 入力が不正 (画面の検査が先に止めるので、画面からはふつう届かない)
-            EdCtrl--xErrs: 入力の違反の例外を投げる (MethodArgumentNotValidException)
-            Errs-->>Http: 400「入力内容・文字数・数値の範囲を確認してください。」<br/>(invalid、INVALID_INPUT)
-        else 検査を通る
-            EdCtrl->>EdSvc: 商品を書き換えるよう頼む (update)<br/>update 全体が 1 つのトランザクション。例外が出るとすべて取り消す
-            EdSvc->>CatgSvc: カテゴリーが登録済みかを確かめる (require)
-            CatgSvc->>Db: カテゴリーを共有ロックで読む<br/>(CategoryRepository.share、SELECT ... FOR SHARE categories)
-            Db-->>CatgSvc: カテゴリーの行 (なければなし)
-            alt 7a カテゴリーが無いか削除済み
-                CatgSvc--xErrs: 400 INVALID_CATEGORY の例外を投げる (ApiException)
-                Errs-->>Http: 400「登録済みのカテゴリを選択してください。」(business)
-            else 登録済み
-                CatgSvc-->>EdSvc: 登録済み
-                EdSvc->>ProdRepo: 商品の行をロックして読む (findLocked)
-                ProdRepo->>Db: SELECT ... FOR UPDATE products
-                Db-->>ProdRepo: 商品の行 (なければなし)
-                ProdRepo-->>EdSvc: 商品 (なければなし)
-                alt 商品が無い (記述なし)
-                    EdSvc--xErrs: 404 PRODUCT_NOT_FOUND の例外を投げる (ApiException)
-                    Errs-->>Http: 404「商品が見つかりません。」(business)
-                else 商品がある
-                    EdSvc->>Auth: 商品の店舗を扱えるか (STAFF 以上か) を確かめる<br/>(requireProductStore → requireStoreRole)
-                    Auth->>Db: 会員、店舗、オーナーの組織か、店舗の担当とロールを読む
-                    Db-->>Auth: 会員、店舗、組織、担当の行
-                    alt 8c ロールなし、運営が停止した店舗、ほかの組織の店舗
-                        Auth--xErrs: 403 を 404 PRODUCT_NOT_FOUND に変えて投げる (requireProductStore)
-                        Errs-->>Http: 404「商品が見つかりません。」(business)
-                    else オーナー、MANAGER、STAFF
-                        Auth-->>EdSvc: 扱える
-                        EdSvc->>EdSvc: 店舗と商品番号が変わっていないかを確かめる<br/>(画面は商品の店舗と商品番号をそのまま送るので、通る)
-                        EdSvc->>InvRepo: 在庫の行をロックして読む (lock)
-                        InvRepo->>Db: SELECT ... FOR UPDATE inventory
-                        Db-->>InvRepo: 在庫の行 (なければなし)
-                        InvRepo-->>EdSvc: 在庫 (なければなし)
-                        alt 8a 削除した商品 (在庫の行がないか、publicationStatus が DELETED)
-                            EdSvc--xErrs: 409 PRODUCT_ARCHIVED の例外を投げる (ApiException)
-                            Errs-->>Http: 409「削除済みの商品は編集できません。」(business)
-                        else 8b 在庫数が expectedStock と違う
-                            EdSvc--xErrs: 409 STOCK_CHANGED の例外を投げる<br/>(SellerProductService.stockChanged)
-                            Errs-->>Http: 409「在庫数が変更されています（現在の在庫数：N）。<br/>最新の在庫数を確認して、もう一度保存してください。」(business)
-                        else 確かめを通る
-                            EdSvc->>EdSvc: 入力を商品に書き込む (mapper.updateEntity)。<br/>植物の構成を作り直すかを決める (resolveModel)
-                            opt 植物の特徴が前と違う、構成がない、構成の version が 4 未満
-                                EdSvc->>CModel: 植物の 3D の構成を作るよう頼む (resolve)
-                                CModel->>CApi: POST /api/model-assemblies/resolve<br/>(受けた要求の KUSAKARI_SESSION Cookie と X-CSRF-TOKEN を付ける)
-                                CApi-->>CModel: 200 構成 (parts)
-                                CModel-->>EdSvc: 構成 (modelComposition に入れる)
-                            end
-                            alt Canvas に問い合わせられない、構成が空 (記述なし)
-                                CModel--xErrs: 503 MODEL_SERVICE_UNAVAILABLE か<br/>502 INVALID_MODEL_RESPONSE の例外を投げる
-                                Errs-->>Http: 503「植物モデルを確定できません。Canvasの起動を<br/>確認して再試行してください。」か 502 (business)
-                            else 基本フロー 8 保存できる
-                                EdSvc->>Db: 商品と商品画像を書き換える<br/>(saveProduct → entityManager.flush、UPDATE products、product_images)
-                                Db-->>EdSvc: 完了
-                                EdSvc->>InvRepo: 在庫数を書き換える (setQuantity → save)
-                                InvRepo->>Db: UPDATE inventory
-                                Db-->>InvRepo: 完了
-                                opt 構成がある
-                                    EdSvc->>Db: 素材コードと商品の対応を保存する<br/>(linkMaterial → MaterialProductRepository.save、material_products)
-                                    Db-->>EdSvc: 完了
-                                end
-                                EdSvc->>CatalogSvc: 更新後の商品を読むよう頼む (product)
-                                CatalogSvc->>Db: 商品、在庫、店舗、組織を読む (listingsByIds)
-                                Db-->>CatalogSvc: 行
-                                CatalogSvc-->>EdSvc: 更新後の商品
-                                EdSvc-->>EdCtrl: 更新後の商品。コミットする
-                                EdCtrl-->>Http: 200 更新後の商品
-                            end
-                        end
-                    end
-                end
-            end
-        end
-        alt 失敗の応答 (7a、8a、8b、8c、記述にない 404・502・503)
-            Http--xCat: エラーを投げる (readResponse → ApiError)
-            Cat->>Http: エラーの文を設定し、一覧を取り直す<br/>(write の catch → setError → refresh → api.sellerProducts)
-            Http->>SPC: GET /api/seller/products?storeId={id}<br/>流れは 6〜26 と同じ
-            SPC-->>Http: 200 最新の商品の配列
-            Http-->>Cat: 最新の一覧 (setProducts)
-            Cat-->>Mgr: 失敗と、同じ商品の最新の値を返す (saved が false、latest。<br/>削除した商品は一覧にないので null)
-            Mgr->>Form: latest があれば「変更前の在庫数」を最新にし<br/>(setExpectedStock(latest.stock))、false を返す。onDone は呼ばない
-            Mgr-->>User: 7a-1・8a-1・8b-1・8c-1 画面の上部にエラーの文 (catalog.error)。<br/>編集フォームは開いたままで、入力は残る。<br/>8b は「変更前の在庫数：N」が最新の値になる (8b-2 基本フロー 5 へ戻る)
-        else 200
-            Http-->>Cat: 更新後の商品
-            par 出店者の一覧
-                Cat->>Http: 出店者の一覧を取り直す (refresh → api.sellerProducts)
-                Http->>SPC: GET /api/seller/products?storeId={id}<br/>流れは 6〜26 と同じ
-                SPC-->>Http: 200 最新の商品の配列
-                Http-->>Cat: 最新の一覧 (setProducts)
-            and 購入者向けの商品
-                Cat->>Shop: 購入者向けの商品も取り直すよう頼む (shop.refreshProducts → refresh)
-                Shop->>Http: カートを読む (api.cart)
-                Http->>CartCtrl: GET /api/cart
-                CartCtrl-->>Http: 403「店舗・出店申請用のアカウントでは購入できません。…」<br/>(CartSessionResolver.resolve → requireBuyer、BUYER_REQUIRED)
-                Http--xShop: エラーを投げる (ApiError 403)
-                Shop->>Http: 購入を断られたので、購入者向けの商品だけを読む (api.products)
-                Http->>CatalogCtrl: GET /api/products
-                CatalogCtrl-->>Http: 200 購入者に見える商品の配列
-                Http-->>Shop: 商品の一覧 (setProducts)
-            end
-            Cat-->>Mgr: 成功を返す (shop.setNotice('商品を保存しました。')、saved が true)
-            Mgr->>Form: true を返す
-            Form->>Mgr: 編集フォームを閉じるよう頼む (onDone → resetEditor)
-            Mgr-->>User: 「商品を保存しました。」と、更新後の商品一覧
-        end
+    break 7a 画面の検査で止まる
+        Note over User,Form: 結果: 通信しない。<br/>画面: 7a-1 フォームの下にエラーの文を出し、直す入力欄のタブを開く (fail → reveal。「在庫は0以上にしてください。」など)。7a-2 基本フロー 5 へ戻る
     end
+    Form->>Cat: 入力をまとめ、フォームを開いたときの在庫数を付けて保存を頼む<br/>(onSave → productInput → ProductManager の save → catalog.save、expectedStock)
+    Cat->>Http: 商品を書き換える通信を送る<br/>(write → api.updateProduct → request)
+    Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (authFetch)
+    AuthJs->>AuthCtrl: GET /api/auth/csrf
+    AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
+    AuthJs->>EdCtrl: PUT /api/products/{id}<br/>(storeId、sku、stock、expectedStock、heightCm、plantModelProfile ほか)
+    EdCtrl->>EdCtrl: 入力を検査する (@Valid の ProductRequest)
+    break 7a 入力が不正 (画面の検査が先に止めるので、画面からはふつう届かない)
+        Note over EdCtrl,Mgr: 結果: 400 INVALID_INPUT「入力内容・文字数・数値の範囲を確認してください。」を返す。<br/>画面: 7a-1 画面の上部にエラーの文。編集フォームは開いたまま
+    end
+    EdCtrl->>EdSvc: 商品を書き換えるよう頼む (update)<br/>update 全体が 1 つのトランザクション。例外が出るとすべて取り消す
+    EdSvc->>CatgSvc: カテゴリーが登録済みかを確かめる (require)<br/>カテゴリーを共有ロックで読む (CategoryRepository.share、SELECT ... FOR SHARE categories)
+    break 7a カテゴリーが無いか削除済み
+        Note over CatgSvc,Mgr: 結果: 400 INVALID_CATEGORY「登録済みのカテゴリを選択してください。」を返し、何も変えない。<br/>画面: 7a-1 画面の上部にエラーの文。編集フォームは開いたまま
+    end
+    EdSvc->>ProdRepo: 商品の行をロックして読む (findLocked、SELECT ... FOR UPDATE products)
+    break 商品が無い (記述なし)
+        Note over ProdRepo,Mgr: 結果: 404 PRODUCT_NOT_FOUND を返し、何も変えない。<br/>画面: 画面の上部に「商品が見つかりません。」
+    end
+    EdSvc->>Auth: 商品の店舗を扱えるか (STAFF 以上か) を確かめる<br/>(requireProductStore → requireStoreRole。会員、店舗、組織、担当とロールを読む)
+    break 8c ロールなし、運営が停止した店舗、ほかの組織の店舗
+        Note over Auth,Mgr: 結果: 403 を 404 PRODUCT_NOT_FOUND に変えて返し、何も変えない。<br/>画面: 8c-1 画面の上部に「商品が見つかりません。」
+    end
+    EdSvc->>InvRepo: 店舗と商品番号が変わっていないかを確かめ (画面はそのまま送るので通る)、<br/>在庫の行をロックして読む (lock、SELECT ... FOR UPDATE inventory)
+    break 8a 削除した商品 (在庫の行がないか、publicationStatus が DELETED)
+        Note over InvRepo,Mgr: 結果: 409 PRODUCT_ARCHIVED を返し、何も変えない。<br/>画面: 8a-1 画面の上部に「削除済みの商品は編集できません。」。編集フォームは開いたまま
+    end
+    break 8b 在庫数が expectedStock と違う
+        Note over InvRepo,Mgr: 結果: 409 STOCK_CHANGED を返し、何も変えない (SellerProductService.stockChanged)。<br/>画面: 8b-1「在庫数が変更されています（現在の在庫数：N）。…」と、最新の「変更前の在庫数：N」。8b-2 基本フロー 5 へ戻る
+    end
+    EdSvc->>EdSvc: 入力を商品に書き込む (mapper.updateEntity)。<br/>植物の構成を作り直すかを決める (resolveModel)
+    opt 植物の特徴が前と違う、構成がない、構成の version が 4 未満
+        CModel->>CApi: 植物の 3D の構成を作るよう頼む (EdSvc の resolve から)<br/>POST /api/model-assemblies/resolve<br/>(受けた要求の KUSAKARI_SESSION Cookie と X-CSRF-TOKEN を付ける)
+        Note over EdSvc,CApi: 結果: 構成 (parts) を modelComposition に入れる。Canvas に問い合わせられないか構成が空 (記述なし) なら、<br/>503 MODEL_SERVICE_UNAVAILABLE か 502 INVALID_MODEL_RESPONSE を返して保存しない (画面の上部に「植物モデルを確定できません。…」など)
+    end
+    EdSvc->>Db: 商品・商品画像・在庫数を書き換える (saveProduct → entityManager.flush、<br/>InventoryRepository の setQuantity → save。UPDATE products、product_images、inventory)。<br/>構成があれば素材コードと商品の対応を保存する (linkMaterial → MaterialProductRepository.save、material_products)
+    EdSvc->>CatalogSvc: 更新後の商品を読むよう頼む (product → listingsByIds)
+    EdCtrl-->>Http: update が終わるとコミットし、200 更新後の商品
+    Http-->>Cat: 更新後の商品
+    par 出店者の一覧
+        Cat->>SPC: 出店者の一覧を取り直す (refresh → api.sellerProducts)<br/>GET /api/seller/products?storeId={id}。流れは 4〜7 と同じ
+        SPC-->>Cat: 200 最新の商品の配列 (setProducts)
+    and 購入者向けの商品
+        Cat->>Shop: 購入者向けの商品も取り直すよう頼む (shop.refreshProducts → refresh)
+        Shop->>CartCtrl: カートを読む (api.cart)<br/>GET /api/cart
+        CartCtrl-->>Shop: 403「店舗・出店申請用のアカウントでは購入できません。…」<br/>(CartSessionResolver.resolve → requireBuyer、BUYER_REQUIRED)
+        Shop->>CatalogCtrl: 購入を断られたので、購入者向けの商品だけを読む (api.products)<br/>GET /api/products
+        CatalogCtrl-->>Shop: 200 購入者に見える商品の配列 (setProducts)
+    end
+    Cat-->>Form: 成功を返す (shop.setNotice('商品を保存しました。')、saved が true)。<br/>ProductManager の save が true を返し、編集フォームを閉じる (onDone → resetEditor)
+    Mgr-->>User: 「商品を保存しました。」と、更新後の商品一覧
 ```
+
+![EC-S04 シーケンス図](<images/EC-S04_商品情報を編集する-1.png>)
 
 ## 共通代替フローを直接書いた図
 
-上の図の、画面を開いて一覧を取る通信と、保存の通信（CSRF トークンの取得と `PUT /api/products/{id}`）に、この画面で起こる共通代替フロー（\*a、\*b）を書き込んだ図です。`useSellerCatalog.js` は `useResource.js` を使わないので、エラーの文は画面の上部に出て、「再取得」のボタンはありません。警告・停止（`GET /api/seller/products/moderation`）とカテゴリー（`GET /api/categories`）の取得の失敗は、「ユースケース記述との差」に書きます。保存の後の取り直し（上の図の 130・138・143・147）の失敗は、最後の `opt` にまとめています。
+上の図の、画面を開いて一覧を取る通信と、保存の通信（CSRF トークンの取得と `PUT /api/products/{id}`）に、この画面で起こる共通代替フロー（\*a、\*b）を書き込んだ図です。`useSellerCatalog.js` は `useResource.js` を使わないので、エラーの文は画面の上部に出て、「再取得」のボタンはありません。警告・停止（`GET /api/seller/products/moderation`）とカテゴリー（`GET /api/categories`）の取得の失敗は、「ユースケース記述との差」に書きます。保存の失敗の後の一覧の取り直しと、保存の後の取り直し（上の図の 45・48・50）の失敗は、最後の `opt` にまとめています。
 
 ```mermaid
 sequenceDiagram
@@ -332,7 +228,7 @@ sequenceDiagram
     else *a MySQL との通信に失敗
         Http->>Filter: GET /api/seller/products?storeId={id}
         Filter->>SPC: 要求を通す (chain.doFilter)
-        SPC->>Db: 会員の立場、商品、在庫、店舗、組織を読む (上の図の 6〜25)
+        SPC->>Db: 会員の立場、商品、在庫、店舗、組織を読む (上の図の 5〜6)
         Db--xSPC: 失敗 (DataAccessException)
         SPC-->>Http: 503 DATABASE_UNAVAILABLE (ApiErrors.java の database)
         Http--xCat: エラーを投げる (ApiError 503)
@@ -341,10 +237,10 @@ sequenceDiagram
     else 読めた
         Http->>Filter: GET /api/seller/products?storeId={id}
         Filter->>SPC: 要求を通す (chain.doFilter)
-        SPC-->>Http: 200 商品の配列 (上の図の 6〜26)
+        SPC-->>Http: 200 商品の配列 (上の図の 5〜7)
         Http-->>Cat: 商品の一覧
         Mgr-->>User: 商品一覧と行ごとの「編集」
-        User->>Mgr: 「編集」をクリックし、入力欄を変更して「変更を保存」をクリック<br/>(上の図の 48〜71)
+        User->>Mgr: 「編集」をクリックし、入力欄を変更して「変更を保存」をクリック<br/>(上の図の 13〜27)
         Mgr->>Cat: 保存を頼む (catalog.save)
         Cat->>Http: 書き換える通信を送る (write → api.updateProduct → request)
         Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (authFetch)
@@ -390,7 +286,7 @@ sequenceDiagram
                 AuthJs->>Filter: PUT /api/products/{id}
                 Filter->>EdCtrl: 要求を通す (chain.doFilter)
                 EdCtrl->>EdSvc: 商品を書き換えるよう頼む (update)
-                EdSvc->>Db: カテゴリー・商品・在庫をロックして確かめ、<br/>書き換えてコミットする (上の図の 81〜126)
+                EdSvc->>Db: カテゴリー・商品・在庫をロックして確かめ、<br/>書き換えてコミットする (上の図の 35〜42)
                 alt *a MySQL との通信に失敗
                     Db--xEdSvc: 失敗 (DataAccessException)。<br/>トランザクションの変更はすべて取り消す
                     EdSvc--xEdCtrl: 例外
@@ -402,11 +298,11 @@ sequenceDiagram
                     Db-->>EdSvc: 完了
                     EdSvc-->>EdCtrl: 更新後の商品
                     EdCtrl-->>Http: 200 更新後の商品
-                    Http-->>Cat: 更新後の商品 (この後は上の図の 137〜153)
+                    Http-->>Cat: 更新後の商品 (この後は上の図の 45〜53)
                 end
             end
         end
-        opt 保存の失敗の後、または成功の後の取り直し (上の図の 129・137・141)
+        opt 保存の失敗の後、または成功の後の取り直し (失敗の後の取り直しと、上の図の 45・47)
             Cat->>Http: 一覧を取り直す (refresh → api.sellerProducts)
             Http-xFilter: GET /api/seller/products?storeId={id}
             Http--xCat: エラーを投げる
@@ -417,6 +313,8 @@ sequenceDiagram
         end
     end
 ```
+
+![EC-S04 共通代替フローを直接書いた図](<images/EC-S04_商品情報を編集する-2.png>)
 
 ## ユースケース記述との差
 

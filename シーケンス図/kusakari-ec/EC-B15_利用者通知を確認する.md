@@ -8,6 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
+代替フローのうち、画面の中だけで終わるもの（2a）と記述にない分岐（通知が見つからない）は、分かれる所だけを描き、通知が見つからないときの結果と画面は Note に文で書いています。エラーのときの画面の後処理（`readResponse` が `ApiError` を投げる → 404 なので `reload` で一覧を取り直す → `run` が false → エラーの文と「再取得」を出す）は、Note の「画面:」の 1 行にまとめています。
 
 ```mermaid
 sequenceDiagram
@@ -25,86 +26,64 @@ sequenceDiagram
         participant Ctrl as 通知API<br/>NotificationController<br/>(NotificationController.java)
         participant Errs as エラーの応答<br/>ApiErrors<br/>(ApiErrors.java)
         participant Svc as 通知の処理<br/>NotificationService<br/>(NotificationService.java)
-        participant Auth as ログイン中の会員<br/>AuthService<br/>(AuthService.java)
         participant Pend as オーナーの譲渡の申し出<br/>PendingOwnerSuccession<br/>(PendingOwnerSuccession.java)
         participant Org as 組織の読み書き<br/>OrganizationRepository<br/>(OrganizationRepository.java)
         participant Repo as 通知の読み書き<br/>NotificationRepository<br/>(NotificationRepository.java)
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、5、36、一覧の取り直しの 48・58 に適用<br/>*a 通信に失敗した場合: 5、34、36、一覧の取り直しの 48・58 に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、5、26、一覧の取り直しの 38 (通知が見つからないときの取り直しも同じ) に適用<br/>*a 通信に失敗した場合: 5、24、26、一覧の取り直しの 38 (通知が見つからないときの取り直しも同じ) に適用
 
     User->>Work: マイページのメニューの「通知一覧」をクリック (EC-C01)
     Work->>Page: URL を /notifications に変え、<br/>Notices を表示
     Page->>Hook: 通知の一覧を取りに行くよう頼む (useResource)
     Hook->>Http: 画面を開いたときに自動で<br/>一覧の通信を始める (reload → request)
     Http->>Ctrl: GET /api/notifications
-    Ctrl->>Svc: 自分あての通知の一覧を作るよう頼む (list)<br/>list 全体が 1 つのトランザクション
-    Svc->>Auth: ログイン中の会員を調べる (current)
-    Auth-->>Svc: ログイン中の会員
-    Svc->>Pend: 期限切れのオーナーの譲渡の申し出を<br/>無効にするよう頼む (expireIfDueFor)
-    Pend->>Org: 自分がオーナーか譲渡先で、申し出の期限が<br/>過ぎた組織を探す (findIdsWithExpiredOwnerSuccession)
-    Org->>Db: SELECT organizations
-    Db-->>Org: 組織の行 (購入者は 0 件)
-    Org-->>Pend: 組織の ID のリスト (購入者は空なので何もしない)
-    Pend-->>Svc: 終わった
+    Ctrl->>Svc: 自分あての通知の一覧を作るよう頼む (list)。list 全体が 1 つのトランザクション<br/>ログイン中の会員を調べる (AuthService の current)
+    Svc->>Pend: 期限切れのオーナーの譲渡の申し出を無効にするよう頼む (expireIfDueFor)<br/>自分がオーナーか譲渡先で、申し出の期限が過ぎた組織を探す<br/>(OrganizationRepository の findIdsWithExpiredOwnerSuccession、SELECT organizations)
+    Pend-->>Svc: 終わった (購入者は該当する組織が 0 件なので何もしない)
     Svc->>Svc: 見られる通知の条件を決める (visibility)<br/>担当者 (SHOP_STAFF) 以外は自分あての通知がすべて見える
-    Svc->>Repo: 自分あての通知を新しい順に読む<br/>(findByMemberIdOrderByCreatedAtDesc)
-    Repo->>Db: SELECT notifications
-    Db-->>Repo: 通知の行
+    Svc->>Repo: 自分あての通知を新しい順に読む<br/>(findByMemberIdOrderByCreatedAtDesc、SELECT notifications)
     Repo-->>Svc: 通知のリスト
-    Svc->>Org: 自分あての期限内の譲渡の申し出があるかを調べる<br/>(answerableRequest → existsByPendingOwnerMemberIdAndPendingOwnerExpiresAtAfter)
-    Org->>Db: SELECT organizations
-    Db-->>Org: 行なし (購入者あての申し出はない)
-    Org-->>Svc: ない
+    Svc->>Org: 自分あての期限内の譲渡の申し出があるかを調べる (answerableRequest →<br/>existsByPendingOwnerMemberIdAndPendingOwnerExpiresAtAfter、SELECT organizations)
+    Org-->>Svc: ない (購入者あての申し出はない)
     Svc-->>Ctrl: 通知の一覧 (id、category、title、body、createdAt、<br/>readAt、answerable はすべて false)
     Ctrl-->>Http: 200 通知の配列
     Http-->>Hook: 通知の一覧
     Hook-->>Page: 通知の一覧
-    alt 2a 通知がない
-        Page-->>User: 「通知はありません。」(2a-2 ユースケースを終了する)
-    else 通知がある
-        Page-->>User: 通知ごとのタイトル、本文、日時 (toLocaleString('ja-JP'))、<br/>既読なら「既読」、未読なら「既読にする」
-
-        opt 基本フロー 4〜5 未読の通知を既読にする
-            User->>Page: 未読の通知の「既読にする」をクリック
-            Page->>Hook: 既読にする通信を実行するよう頼む (run)<br/>成功の文を渡さないので、既定の「保存しました。」になる
-            Hook->>Http: 既読にする通信を送る<br/>(write → request、本文なし)
-            Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (authFetch)
-            AuthJs->>AuthCtrl: GET /api/auth/csrf
-            AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
-            AuthJs->>Ctrl: PUT /api/notifications/{id}/read<br/>(CSRF トークンのヘッダー付き)
-            Ctrl->>Svc: 通知を既読にするよう頼む (read)<br/>read 全体が 1 つのトランザクション
-            Svc->>Auth: ログイン中の会員を調べる (current)
-            Auth-->>Svc: ログイン中の会員
-            Svc->>Repo: 通知を読む (findById)
-            Repo->>Db: SELECT notifications
-            Db-->>Repo: 通知の行 (なければなし)
-            Repo-->>Svc: 通知 (なければなし)
-            Svc->>Svc: 自分あてで、見られる通知だけを残す<br/>(filter、visibility)
-            alt 通知が見つからない (記述なし)
-                Svc--xErrs: 404 NOTICE_NOT_FOUND の例外を投げる (ApiException)
-                Errs-->>Http: 404「通知が見つかりません。」(business)
-                Http--xHook: エラーを投げる (readResponse → ApiError)
-                Hook->>Http: 404 なので一覧を取り直す (reload)<br/>流れは 5〜25 と同じ
-                Http-->>Hook: 最新の通知の一覧
-                Hook-->>Page: 失敗を返す (run が false、エラーの文を設定)
-                Page-->>User: 「通知が見つかりません。」と「再取得」、最新の通知の一覧
-            else 通知が見つかった
-                Svc->>Svc: 既読の日時を入れる (markRead)<br/>readAt が空のときだけ今の日時
-                Svc->>Db: 書き換えた行を保存してコミットする<br/>(save は呼ばない。UPDATE notifications)
-                Db-->>Svc: 完了
-                Svc-->>Ctrl: 終わった
-                Ctrl-->>Http: 200 { read: true }
-                Http-->>Hook: 既読にした結果
-                Hook->>Http: 一覧を取り直す (reload)<br/>流れは 5〜25 と同じ
-                Http-->>Hook: 最新の通知の一覧
-                Hook-->>Page: 成功を返す (run が true、「保存しました。」を設定)
-                Page-->>User: 「保存しました。」と、その通知に「既読」
-            end
-        end
+    break 2a 通知がない
+        Page-->>User: 2a-1「通知はありません。」(2a-2 ユースケースを終了する)
     end
+    Page-->>User: 通知ごとのタイトル、本文、日時 (toLocaleString('ja-JP'))、<br/>既読なら「既読」、未読なら「既読にする」
+
+    User->>Page: 必要に応じて、未読の通知の「既読にする」をクリック
+    Page->>Hook: 既読にする通信を実行するよう頼む (run)<br/>成功の文を渡さないので、既定の「保存しました。」になる
+    Hook->>Http: 既読にする通信を送る<br/>(write → request、本文なし)
+    Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (authFetch)
+    AuthJs->>AuthCtrl: GET /api/auth/csrf
+    AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
+    AuthJs->>Ctrl: PUT /api/notifications/{id}/read<br/>(CSRF トークンのヘッダー付き)
+    Ctrl->>Svc: 通知を既読にするよう頼む (read)。read 全体が 1 つのトランザクション<br/>ログイン中の会員を調べる (AuthService の current)
+    Svc->>Repo: 通知を読む (findById、SELECT notifications)
+    Repo-->>Svc: 通知 (なければなし)
+    Svc->>Svc: 自分あてで、見られる通知だけを残す<br/>(filter、visibility)
+    break 通知が見つからない (記述なし)
+        Svc--xErrs: 404 NOTICE_NOT_FOUND の例外を投げる (ApiException)
+        Note over Errs,Page: 結果: 404 を返し、既読にしない。<br/>画面: 一覧を取り直して「通知が見つかりません。」と「再取得」、最新の通知の一覧。
+    end
+    Svc->>Svc: 既読の日時を入れる (markRead)<br/>readAt が空のときだけ今の日時
+    Svc->>Db: 書き換えた行を保存してコミットする<br/>(save は呼ばない。UPDATE notifications)
+    Db-->>Svc: 完了
+    Svc-->>Ctrl: 終わった
+    Ctrl-->>Http: 200 { read: true }
+    Http-->>Hook: 既読にした結果
+    Hook->>Http: 一覧を取り直す (reload)<br/>GET /api/notifications。流れは 5〜17 と同じ
+    Http-->>Hook: 最新の通知の一覧
+    Hook-->>Page: 成功を返す (run が true、「保存しました。」を設定)
+    Page-->>User: 「保存しました。」と、その通知に「既読」
 ```
+
+![EC-B15 シーケンス図](<images/EC-B15_利用者通知を確認する-1.png>)
 
 ## 共通代替フローを直接書いた図
 
@@ -203,7 +182,7 @@ sequenceDiagram
         Http->>Filter: GET /api/notifications
         Filter->>Ctrl: 要求を通す (chain.doFilter)
         Ctrl->>Svc: 自分あての通知の一覧を作るよう頼む (list)
-        Svc->>Db: 期限切れの譲渡の申し出を調べ、通知を読む<br/>(上の図の 7〜23)
+        Svc->>Db: 期限切れの譲渡の申し出を調べ、通知を読む<br/>(上の図の 7〜13)
         alt *a MySQL との通信に失敗
             Db--xSvc: 失敗 (DataAccessException)
             Svc--xCtrl: 例外
@@ -225,6 +204,8 @@ sequenceDiagram
         Status->>Hook: 一覧を取り直す (reload)。流れはこの図の 28 から同じ
     end
 ```
+
+![EC-B15 共通代替フローを直接書いた図 画面を開いて通知の一覧を取る](<images/EC-B15_利用者通知を確認する-2.png>)
 
 ### 「既読にする」
 
@@ -296,7 +277,7 @@ sequenceDiagram
             AuthJs->>Filter: PUT /api/notifications/{id}/read
             Filter->>Ctrl: 要求を通す (chain.doFilter)
             Ctrl->>Svc: 通知を既読にするよう頼む (read)
-            Svc->>Db: 通知を読み、既読の日時を入れてコミットする<br/>(上の図の 38〜54)
+            Svc->>Db: 通知を読み、既読の日時を入れてコミットする<br/>(上の図の 28〜34)
             alt *a MySQL との通信に失敗
                 Db--xSvc: 失敗 (DataAccessException)。変更は取り消す
                 Svc--xCtrl: 例外
@@ -324,6 +305,8 @@ sequenceDiagram
         end
     end
 ```
+
+![EC-B15 共通代替フローを直接書いた図「既読にする」](<images/EC-B15_利用者通知を確認する-3.png>)
 
 ## ユースケース記述との差
 

@@ -8,6 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
+代替フローのうち、エラーで終わるもの（7a・8a・8b）と記述にない分岐（店舗・商品がない 404、削除済みの商品の 409）は、分かれる所だけを描き、結果と画面は Note に文で書いています。サーバーが失敗を返したときの画面の後処理（`readResponse` が `ApiError` を投げる → `write` の `catch` でエラーの文を覚える → 一覧を取り直し、同じ商品の最新の在庫数を「変更前の在庫数」にする → 入力欄は開いたままで、入力した値は残る）は、どれも同じです。
 
 ```mermaid
 sequenceDiagram
@@ -26,7 +27,6 @@ sequenceDiagram
     box rgba(27,127,92,0.12) EC API Spring Boot
         participant AuthCtrl as ログイン状態API<br/>AuthController<br/>(AuthController.java)
         participant Ctrl as 出店者の商品API<br/>SellerProductController<br/>(SellerProductController.java)
-        participant Errs as エラーの応答<br/>ApiErrors<br/>(ApiErrors.java)
         participant Svc as 出店者の商品の処理<br/>SellerProductService<br/>(SellerProductService.java)
         participant Mod as 運営の警告・停止<br/>ProductModerationService<br/>(ProductModerationService.java)
         participant Auth as ログイン中の会員<br/>AuthService<br/>(AuthService.java)
@@ -36,40 +36,22 @@ sequenceDiagram
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、5、23、45、一覧の取り直しの 81・87 に適用<br/>*a 通信に失敗した場合: 5、23、43、45、一覧の取り直しの 81・87・89 に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、4、10、26、一覧の取り直しの 37 に適用<br/>*a 通信に失敗した場合: 4、10、24、26、一覧の取り直しの 37、購入者向けの商品の 39 に適用
 
     User->>Work: 出店者メニューの「商品管理」をクリック
     Work->>Mgr: URL を /seller/products に変え、<br/>ProductManager を表示 (選択中の店舗にロールがあるとき)
     par 商品の一覧
         Mgr->>Cat: 選択中の店舗の商品を取りに行くよう頼む (useSellerCatalog)
-        Cat->>Http: 店舗が決まったら自動で<br/>一覧の通信を始める (useEffect → api.sellerProducts)
-        Http->>Ctrl: GET /api/seller/products?storeId={店舗ID}
-        Ctrl->>Svc: 店舗の商品の一覧を作るよう頼む (list)<br/>読むだけのトランザクション
-        Svc->>Auth: ログイン中の人がこの店舗の商品を<br/>見られるかを確かめる (requireStoreViewer)
-        Auth-->>Svc: 見られる (オーナー、所属の担当者、運営)
-        Svc->>Prod: 商品を追加した人の名前を読む (findCreatorNamesAtStore)
-        Prod->>Db: SELECT products JOIN members
-        Db-->>Prod: 商品 ID と表示名
-        Prod-->>Svc: 追加した人の名前
-        Svc->>CatSvc: 店舗の削除されていない商品を読むよう頼む (storeProducts)
-        CatSvc->>Db: 店舗があるかを確かめ、商品、在庫、店舗、組織を読む<br/>(requireStore、findNotDeletedAtStore、listings)
-        Db-->>CatSvc: stores、products、inventory、organizations の行
-        CatSvc-->>Svc: 商品の一覧 (在庫数 stock、公開状態)
-        Svc-->>Ctrl: 出店者向けの商品の一覧 (toSellerView)
-        Ctrl-->>Http: 200 商品の配列
-        Http-->>Cat: 商品の一覧
-        Cat-->>Mgr: 商品の一覧 (setProducts)
+        Cat->>Ctrl: 店舗が決まったら自動で一覧の通信を始める (useEffect → api.sellerProducts)<br/>GET /api/seller/products?storeId={店舗ID}
+        Ctrl->>Svc: 店舗の商品の一覧を作るよう頼む (list)。読むだけのトランザクション<br/>この店舗の商品を見られるかを確かめる (requireStoreViewer。オーナー、所属の担当者、運営)
+        Svc->>Prod: 商品を追加した人の名前を読む (findCreatorNamesAtStore、SELECT products JOIN members)
+        Svc->>CatSvc: 店舗の削除されていない商品を読むよう頼む (storeProducts)<br/>店舗があるかを確かめ、商品、在庫、店舗、組織を読む (requireStore、findNotDeletedAtStore、listings)
+        Ctrl-->>Cat: 200 出店者向けの商品の配列 (toSellerView。在庫数 stock、公開状態。setProducts)
     and 運営からの警告・停止
         Mgr->>Hook: 運営からの警告・停止を取りに行くよう頼む (useResource)
-        Hook->>Http: 画面を開いたときに自動で<br/>通信を始める (reload → request)
-        Http->>Ctrl: GET /api/seller/products/moderation?storeId={店舗ID}
-        Ctrl->>Mod: 警告中・公開停止中の商品を読むよう頼む (noticesAt)
-        Mod->>Db: 見られる店舗かを確かめ、警告の履歴と<br/>公開停止中の商品を読む (requireStoreViewer ほか)
-        Db-->>Mod: 行
-        Mod-->>Ctrl: 警告・停止の一覧
-        Ctrl-->>Http: 200 警告・停止の配列
-        Http-->>Hook: 警告・停止の一覧
-        Hook-->>Mgr: 警告・停止の一覧
+        Hook->>Ctrl: 画面を開いたときに自動で通信を始める (reload → request)<br/>GET /api/seller/products/moderation?storeId={店舗ID}
+        Ctrl->>Mod: 警告中・公開停止中の商品を読むよう頼む (noticesAt)<br/>見られる店舗かを確かめ、警告の履歴と公開停止中の商品を読む (requireStoreViewer ほか)
+        Ctrl-->>Hook: 200 警告・停止の配列
     end
     Mgr->>List: 商品の一覧と警告・停止を渡して表示 (SellerProductList)
     List-->>User: 商品ごとの在庫数、0 なら「在庫切れ」、<br/>行ごとの「在庫を編集」
@@ -80,85 +62,55 @@ sequenceDiagram
     Editor-->>User: 「(商品名)：変更前の在庫数 N」、「在庫数」の入力欄、<br/>「在庫を保存」、「取消」
     User->>Editor: 「在庫数」の入力欄に新しい在庫数を入力し、<br/>「在庫を保存」をクリック
     Editor->>Editor: 入力値が 0〜10000 の整数かを確かめる (save)
-
-    alt 7a 空、整数でない、0〜10000 の範囲外
-        Editor-->>User: 7a-1「在庫は0〜10000の整数で入力してください。」<br/>通信せず、在庫数は変えない (7a-2 基本フロー 5 へ戻る)
-    else 入力が正しい
-        Editor->>Cat: 在庫数の保存を頼む (onSave → saveStock)<br/>店舗 ID、変更前の在庫数、新しい在庫数
-        Cat->>Http: 前のお知らせとエラーを消し、在庫数を書き換える<br/>通信を送る (write → request、本文は { storeId, expectedStock, stock })
-        Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (send → authFetch)
-        AuthJs->>AuthCtrl: GET /api/auth/csrf
-        AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
-        AuthJs->>Ctrl: PUT /api/seller/products/{id}/stock<br/>(CSRF トークンのヘッダー付き)
-        Ctrl->>Svc: 在庫数を書き換えるよう頼む (updateStock)<br/>updateStock 全体が 1 つのトランザクション
-        Svc->>Auth: ログイン中の人がこの店舗で STAFF 以上の<br/>ロールを持つかを確かめる (requireSeller → requireStoreRole)
-        alt 8b ロールがない (運営が停止した店舗、ない店舗も同じ)
-            Auth--xErrs: 403 FORBIDDEN の例外を投げる (denied)
-            Errs-->>Http: 403「この操作の権限がありません。」(business)
-        else ロールがある
-            Auth-->>Svc: 扱える
-            Svc->>CatSvc: 店舗があるかを確かめるよう頼む (requireStore)
-            CatSvc->>Db: SELECT stores (existsById)
-            Db-->>CatSvc: 店舗の有無
-            CatSvc-->>Svc: ある (なければ 404 STORE_NOT_FOUND)
-            Svc->>Prod: 商品がこの店舗のものかを確かめる<br/>(requireAtStore → findStoreReferences)
-            Prod->>Db: SELECT products の id、store_id
-            Db-->>Prod: 商品の店舗
-            Prod-->>Svc: 商品の店舗 (ほかの店舗なら 404 PRODUCT_NOT_FOUND)
-            Svc->>Inv: 在庫の行をロックして読む (lock)
-            Inv->>Db: SELECT ... FOR UPDATE inventory
-            Db-->>Inv: ロックした在庫の行
-            Inv-->>Svc: 在庫 (数量、公開状態)
-            alt 商品が削除済み (記述なし)
-                Svc--xErrs: 409 PRODUCT_ARCHIVED の例外を投げる (ApiException)
-                Errs-->>Http: 409「削除済みの商品の在庫は変更できません。」(business)
-            else 8a 今の在庫数が変更前の在庫数と違う (注文の引き当て、キャンセルの戻しなど)
-                Svc--xErrs: 409 STOCK_CHANGED の例外を投げる (stockChanged)
-                Errs-->>Http: 409「在庫数が変更されています（現在の在庫数：N）。<br/>最新の在庫数を確認して、もう一度保存してください。」(business)
-            else 同じ
-                Svc->>Svc: 在庫の数量を新しい在庫数に書き換える (setQuantity)
-                Svc->>Prod: 商品を追加した人の名前を読む (findCreatorName)
-                Prod->>Db: SELECT products JOIN members
-                Db-->>Prod: 表示名
-                Prod-->>Svc: 追加した人の名前
-                Svc->>CatSvc: 書き換えた後の商品を読むよう頼む (product)
-                CatSvc->>Db: 商品、在庫、店舗、組織を読む (findByIdIn、listings)
-                Db-->>CatSvc: 行
-                CatSvc-->>Svc: 商品
-                Svc->>Db: 書き換えた行を保存してコミットする<br/>(save は呼ばない。UPDATE inventory)
-                Db-->>Svc: 完了
-                Svc-->>Ctrl: 出店者向けの商品 (toSellerView)
-                Ctrl-->>Http: 200 更新後の商品
-            end
-        end
-        alt 失敗の応答 (8a、8b、記述にない 404・409)
-            Http--xCat: エラーを投げる (readResponse → ApiError)
-            Cat->>Http: エラーの文を覚え (setError)、<br/>一覧を取り直す (refresh → api.sellerProducts)。流れは 5〜18 と同じ
-            Http-->>Cat: 最新の商品の一覧
-            Cat-->>Editor: 失敗と、同じ商品の最新の値を返す (saved が false、latest)
-            Editor->>Editor: 変更前の在庫数を最新の値にする (setExpected)。<br/>入力した値は残す
-            Mgr-->>User: エラーの文と最新の在庫数の一覧。入力欄は開いたまま<br/>(8a-1・8a-2 基本フロー 5 へ戻る。8b-1 は「この操作の権限がありません。」)
-        else 200
-            Http-->>Cat: 更新後の商品
-            par 出店者の一覧
-                Cat->>Http: 一覧を取り直す (refresh → api.sellerProducts)<br/>流れは 5〜18 と同じ
-                Http-->>Cat: 最新の商品の一覧
-            and 購入者向けの商品
-                Cat->>Http: カートと購入者向けの商品を取り直す (shop.refreshProducts)<br/>GET /api/cart は出店者には 403 BUYER_REQUIRED、続けて GET /api/products
-                Http-->>Cat: 購入者向けの商品
-            end
-            Cat->>Cat: 「在庫数を保存しました。」を出す (shop.setNotice)
-            Cat-->>Editor: 成功を返す (saved が true)
-            Editor->>Mgr: 入力欄を閉じるよう伝える (onDone → setStocking(null))
-            Mgr-->>User: 入力欄を閉じ、「在庫数を保存しました。」と<br/>更新後の在庫数の一覧
-        end
+    break 7a 空、整数でない、0〜10000 の範囲外
+        Note over User,Editor: 結果: 通信せず、在庫数は変えない。<br/>画面: 7a-1「在庫は0〜10000の整数で入力してください。」(7a-2 基本フロー 5 へ戻る)
     end
+    Editor->>Cat: 在庫数の保存を頼む (onSave → saveStock)<br/>店舗 ID、変更前の在庫数、新しい在庫数
+    Cat->>Http: 前のお知らせとエラーを消し、在庫数を書き換える通信を送る<br/>(write → request、本文は { storeId, expectedStock, stock })
+    Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (send → authFetch)
+    AuthJs->>AuthCtrl: GET /api/auth/csrf
+    AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
+    AuthJs->>Ctrl: PUT /api/seller/products/{id}/stock<br/>(CSRF トークンのヘッダー付き)
+    Ctrl->>Svc: 在庫数を書き換えるよう頼む (updateStock)<br/>updateStock 全体が 1 つのトランザクション
+    Svc->>Auth: ログイン中の人がこの店舗で STAFF 以上の<br/>ロールを持つかを確かめる (requireSeller → requireStoreRole)
+    break 8b ロールがない (運営が停止した店舗、ない店舗も同じ)
+        Note over Auth,Mgr: 結果: 403 FORBIDDEN を返し、在庫数は変えない (denied)。<br/>画面: 8b-1「この操作の権限がありません。」
+    end
+    Svc->>Prod: 店舗があるかを確かめ (CatalogService.requireStore、SELECT stores)、<br/>商品がこの店舗のものかを確かめる (requireAtStore → findStoreReferences、SELECT products)
+    break 店舗がない、商品がほかの店舗のもの (記述なし)
+        Note over Prod,Mgr: 結果: 404 STORE_NOT_FOUND か 404 PRODUCT_NOT_FOUND を返し、在庫数は変えない。<br/>画面: エラーの文
+    end
+    Svc->>Inv: 在庫の行をロックして読む (lock、SELECT ... FOR UPDATE inventory)
+    break 商品が削除済み (記述なし)
+        Note over Inv,Mgr: 結果: 409 PRODUCT_ARCHIVED を返し、在庫数は変えない。<br/>画面: 「削除済みの商品の在庫は変更できません。」
+    end
+    break 8a 今の在庫数が変更前の在庫数と違う (注文の引き当て、キャンセルの戻しなど)
+        Note over Inv,Mgr: 結果: 409 STOCK_CHANGED を返し、在庫数は変えない (stockChanged)。<br/>画面: 8a-1「在庫数が変更されています（現在の在庫数：N）。…」と、最新の変更前の在庫数。8a-2 基本フロー 5 へ戻る
+    end
+    Svc->>Svc: 在庫の数量を新しい在庫数に書き換える (setQuantity)
+    Svc->>Prod: 商品を追加した人の名前を読む (findCreatorName、SELECT products JOIN members)
+    Svc->>CatSvc: 書き換えた後の商品を読むよう頼む (product → findByIdIn、listings)
+    Svc->>Db: 書き換えた行を保存してコミットする<br/>(save は呼ばない。UPDATE inventory)
+    Ctrl-->>Http: 200 更新後の商品 (toSellerView)
+    Http-->>Cat: 更新後の商品
+    par 出店者の一覧
+        Cat->>Ctrl: 一覧を取り直す (refresh → api.sellerProducts)<br/>GET /api/seller/products?storeId={店舗ID}。流れは 4〜7 と同じ
+        Ctrl-->>Cat: 200 最新の商品の一覧
+    and 購入者向けの商品
+        Cat->>Http: カートと購入者向けの商品を取り直す (shop.refreshProducts)<br/>GET /api/cart は出店者には 403 BUYER_REQUIRED、続けて GET /api/products
+        Http-->>Cat: 購入者向けの商品
+    end
+    Cat-->>Editor: 「在庫数を保存しました。」を出し (shop.setNotice)、成功を返す (saved が true)
+    Editor->>Mgr: 入力欄を閉じるよう伝える (onDone → setStocking(null))
+    Mgr-->>User: 入力欄を閉じ、「在庫数を保存しました。」と<br/>更新後の在庫数の一覧
 ```
+
+![EC-S05 シーケンス図](<images/EC-S05_店舗在庫数を更新する-1.png>)
 
 ## 共通代替フローを直接書いた図
 
 上の図の、画面を開いたときの通信と在庫数の保存の通信に、この画面で起こる共通代替フロー（\*a、\*b）を書き込んだ図です。
-この画面の商品の一覧は `useResource.js` ではなく `useSellerCatalog.js` が受けるので、失敗の出方が 00 の例（「再取得」が出る）と違います。運営からの警告・停止の通信（上の図の 23）は、失敗しても画面に何も出ません（`ProductManager` がエラーを表示しない）。
+この画面の商品の一覧は `useResource.js` ではなく `useSellerCatalog.js` が受けるので、失敗の出方が 00 の例（「再取得」が出る）と違います。運営からの警告・停止の通信（上の図の 10）は、失敗しても画面に何も出ません（`ProductManager` がエラーを表示しない）。
 
 ```mermaid
 sequenceDiagram
@@ -246,7 +198,7 @@ sequenceDiagram
     else 一覧を取れた
         Http->>Filter: GET /api/seller/products?storeId={店舗ID}
         Filter->>Ctrl: 要求を通す (chain.doFilter)
-        Ctrl-->>Http: 200 商品の配列 (上の図の 6〜18)
+        Ctrl-->>Http: 200 商品の配列 (上の図の 5〜8)
         Http-->>Cat: 商品の一覧
         Cat-->>Mgr: 商品の一覧
         Mgr-->>User: 商品ごとの在庫数と「在庫を編集」
@@ -287,7 +239,7 @@ sequenceDiagram
         AuthJs->>Filter: PUT /api/seller/products/{id}/stock
         Filter->>Ctrl: 要求を通す (chain.doFilter)
         Ctrl->>Svc: 在庫数を書き換えるよう頼む (updateStock)
-        Svc->>Db: ロールを確かめ、在庫の行をロックして読み、<br/>書き換えてコミットする (上の図の 47〜79)
+        Svc->>Db: ロールを確かめ、在庫の行をロックして読み、<br/>書き換えてコミットする (上の図の 28〜34)
         alt *a MySQL との通信に失敗
             Db--xSvc: 失敗 (DataAccessException)。<br/>トランザクションの変更はすべて取り消す
             Svc--xCtrl: 例外
@@ -309,6 +261,8 @@ sequenceDiagram
         User->>Editor: 残った入力のまま、もう一度「在庫を保存」をクリック<br/>(基本フロー 6 へ戻る)
     end
 ```
+
+![EC-S05 共通代替フローを直接書いた図](<images/EC-S05_店舗在庫数を更新する-2.png>)
 
 ## ユースケース記述との差
 

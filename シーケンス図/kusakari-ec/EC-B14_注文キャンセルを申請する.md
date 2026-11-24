@@ -9,6 +9,7 @@
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
 注文履歴の画面を開いて注文を取るまでは [EC-B13](<EC-B13_注文履歴を確認する.md>) の図のとおりです。
+代替フローのうち、画面の中だけで終わるもの（1a・3a・4a-2）とエラーで終わるもの（8a）は、分かれる所だけを描き、1a と 8a の結果と画面は Note に文で書いています。8a のエラーの後処理（`readResponse` が `ApiError` を投げる → 409 なので `reload` で一覧を取り直す → `run` が false → エラーの文と「再取得」を出す）は、Note の「画面:」の 1 行にまとめています。
 
 ```mermaid
 sequenceDiagram
@@ -26,87 +27,64 @@ sequenceDiagram
         participant Ctrl as 注文の手続きAPI<br/>OrderWorkflowController<br/>(OrderWorkflowController.java)
         participant Errs as エラーの応答<br/>ApiErrors<br/>(ApiErrors.java)
         participant Svc as 注文の手続きの処理<br/>OrderWorkflowService<br/>(OrderWorkflowService.java)
-        participant Auth as ログイン中の会員<br/>AuthService<br/>(AuthService.java)
         participant Repo as 注文の読み書き<br/>OrderRepository<br/>(OrderRepository.java)
         participant Ntf as 通知の処理<br/>NotificationService<br/>(NotificationService.java)
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 24、一覧の取り直しの 39・56 に適用<br/>*a 通信に失敗した場合: 22、24、一覧の取り直しの 39・56 に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 21、一覧の取り直しの 35 (8a の取り直しも同じ) に適用<br/>*a 通信に失敗した場合: 19、21、一覧の取り直しの 35 (8a の取り直しも同じ) に適用
 
     User->>Orders: 注文履歴の一覧から対象の注文をクリックし、<br/>詳細を開く (事前条件。EC-B13 の基本フロー 6)
     Orders->>Form: 注文の詳細の中に、キャンセル申請欄を表示<br/>(OrderBody → CancelOrderForm)
-    alt 1a キャンセル、引き渡し完了、旧注文 (CANCELLED、COMPLETED、DEMO_CONFIRMED)
-        Form-->>User: 何も出さない
-    else 1a 注文受付以外の注文 (受取準備完了、支払い待ち)
-        Form-->>User: 「受取準備完了後はキャンセルを申請できません。<br/>受取店舗へお問い合わせください。」
-    else 1a 申請中の注文 (cancellationStatus が PENDING)
-        Form-->>User: 「キャンセルを申請中です。<br/>店舗の回答は通知一覧でもお知らせします。」
-    else 注文受付で、申請していない
-        Form-->>User: 閉じた「注文のキャンセルを申請」
-        User->>Form: 「注文のキャンセルを申請」をクリック
-        Form-->>User: 申請欄を開く (details)。「店舗が申請を確認し、承認されるとキャンセルが<br/>確定して在庫が戻ります。却下される場合もあります。」、「キャンセル理由」の 4 つ、<br/>「詳細（任意）」、「申請後は取り消せないことを確認しました」、押せない「キャンセルを申請」
-        opt 3a 申請をやめる
-            User->>Form: もう一度「注文のキャンセルを申請」をクリック
-            Form-->>User: 申請欄を閉じるだけで、通信しない (3a-3 ユースケースを終了する)
-        end
-        User->>Form: 「キャンセル理由」からいずれかを選ぶ
-        Form->>Form: 選んだ理由を覚える (setReason)<br/>4a-1「その他」なら見出しを「詳細（必須）」にし、入力を必須にする
-        User->>Form: 必要なら「詳細」を入力する (4a-2「その他」なら必須)
-        Form->>Form: 入力を覚える (setDetail)
-        User->>Form: 「申請後は取り消せないことを確認しました」にチェック
-        Form->>Form: チェックを覚える (setAgreed)。理由とチェックがそろうと<br/>「キャンセルを申請」を押せる (6a 欠けていれば押せないまま)
-        User->>Form: 「キャンセルを申請」をクリック
-        alt 4a-2「その他」で詳細が空
-            Form-->>User: ブラウザーが入力を求める (textarea の required)。<br/>submit は呼ばれず、申請しない
-        else 送信できる
-            Form->>Hook: 申請の通信を実行し、成功の文を渡す (submit → run)<br/>「キャンセル申請を送信しました。」
-            Hook->>Http: 申請の通信を送る (write → request、<br/>本文は { reason: 「理由」か「理由：詳細」 })
-            Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (authFetch)
-            AuthJs->>AuthCtrl: GET /api/auth/csrf
-            AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
-            AuthJs->>Ctrl: POST /api/orders/{id}/cancellation<br/>(CSRF トークンのヘッダー付き)
-            Ctrl->>Ctrl: 入力を検査する (@Valid CancellationRequest、<br/>空でなく 500 文字まで)
-            Ctrl->>Svc: キャンセルを申請するよう頼む (requestCancellation)<br/>requestCancellation 全体が 1 つのトランザクション
-            Svc->>Auth: ログイン中の人が購入者か運営かを確かめる (requireBuyer)
-            Auth-->>Svc: 購入者である
-            Svc->>Repo: 注文をロックして読む (lockOrder)
-            Repo->>Db: SELECT ... FOR UPDATE orders
-            Db-->>Repo: 注文の行
-            Repo-->>Svc: 注文
-            Svc->>Auth: 注文の購入者が自分かを確かめる<br/>(requireBuyer(order) の中で requireBuyer)
-            Auth-->>Svc: 自分の注文である
-            Svc->>Svc: 注文状態と申請の状態を確かめる<br/>(status が ACCEPTED で、cancellationStatus が PENDING でない)
-            alt 8a 注文状態が変わっていた (受取準備完了になった、ほかの画面で申請したなど)
-                Svc--xErrs: 409 ORDER_CHANGED の例外を投げる (conflict)
-                Errs-->>Http: 409「注文状態が変わりました。<br/>最新の状態を確認してください。」(business)
-                Http--xHook: エラーを投げる (readResponse → ApiError)
-                Hook->>Http: 409 なので注文の一覧を取り直す (reload)<br/>流れは EC-B13 の図の 12〜38 と同じ
-                Http-->>Hook: 最新の注文の一覧
-                Hook-->>Orders: 失敗を返す (run が false、エラーの文を設定)
-                Orders-->>User: 8a-1「注文状態が変わりました。最新の状態を確認してください。」と<br/>「再取得」、最新の注文。申請しない (8a-2 ユースケースを終了する)
-            else 申請できる
-                Svc->>Svc: 申請を記録する (order.requestCancellation)<br/>申請中 (PENDING)、前後の空白を除いた理由、申請の日時、回答は空
-                Svc->>Ntf: 出店者に申請を知らせるよう頼む (toStore)<br/>種類 CANCEL_REQUEST、「キャンセル申請が届きました」、本文は注文番号
-                Ntf->>Db: 店舗、組織のオーナー、その店舗にロールのある担当者を読む<br/>(StoreRepository・OrganizationRepository の findById、findAssignedAtStore、findAllById)
-                Db-->>Ntf: 宛先の会員
-                Ntf->>Db: 利用中の会員ごとに出店者通知を保存する<br/>(isEnabled で絞り、forStore → save、notifications)
-                Ntf-->>Svc: 終わった
-                Svc->>Db: 応答用に明細、商品画像、決済、返金、店舗を読む<br/>(view → findAllForOrder、OrderResponseMapper の toView)
-                Db-->>Svc: 行
-                Svc->>Db: 書き換えた行を保存してコミットする<br/>(UPDATE orders、INSERT notifications)
-                Db-->>Svc: 完了
-                Svc-->>Ctrl: 申請した注文
-                Ctrl-->>Http: 200 注文 (cancellationStatus は PENDING)
-                Http-->>Hook: 申請した注文
-                Hook->>Http: 注文の一覧を取り直す (reload)<br/>流れは EC-B13 の図の 12〜38 と同じ
-                Http-->>Hook: 最新の注文の一覧
-                Hook-->>Form: 成功を返す (run が true、「キャンセル申請を送信しました。」を設定)
-                Form-->>User: 「キャンセル申請を送信しました。」、注文の見出しに「キャンセル申請中」、<br/>申請欄の代わりに「キャンセルを申請中です。店舗の回答は通知一覧でもお知らせします。」
-            end
-        end
+    break 1a 申請対象外の注文 (注文受付でない、または申請中)
+        Form-->>User: 1a-1「注文のキャンセルを申請」を出さない
+        Note over User,Form: 画面: 受取準備完了・支払い待ちは「受取準備完了後はキャンセルを申請できません。…」、<br/>申請中は「キャンセルを申請中です。…」、キャンセル・引き渡し完了・旧注文は何も出さない (1a-2 終了)。
     end
+    Form-->>User: 閉じた「注文のキャンセルを申請」
+    User->>Form: 「注文のキャンセルを申請」をクリック
+    Form-->>User: 申請欄を開く (details)。「店舗が申請を確認し、承認されるとキャンセルが<br/>確定して在庫が戻ります。却下される場合もあります。」、「キャンセル理由」の 4 つ、<br/>「詳細（任意）」、「申請後は取り消せないことを確認しました」、押せない「キャンセルを申請」
+    break 3a 申請をやめる
+        User->>Form: 3a-1 もう一度「注文のキャンセルを申請」をクリック
+        Form-->>User: 3a-2 申請欄を閉じるだけで、通信しない (3a-3 ユースケースを終了する)
+    end
+    User->>Form: 「キャンセル理由」からいずれかを選ぶ
+    Form->>Form: 選んだ理由を覚える (setReason)<br/>4a-1「その他」なら見出しを「詳細（必須）」にし、入力を必須にする
+    User->>Form: 必要なら「詳細」を入力する (setDetail。4a-2「その他」なら必須)
+    User->>Form: 「申請後は取り消せないことを確認しました」にチェック
+    Form->>Form: チェックを覚える (setAgreed)。理由とチェックがそろうと<br/>「キャンセルを申請」を押せる (6a 欠けていれば押せないまま)
+    User->>Form: 「キャンセルを申請」をクリック
+    break 4a-2「その他」で詳細が空
+        Form-->>User: ブラウザーが入力を求める (textarea の required)。<br/>submit は呼ばれず、申請しない
+    end
+    Form->>Hook: 申請の通信を実行し、成功の文を渡す (submit → run)<br/>「キャンセル申請を送信しました。」
+    Hook->>Http: 申請の通信を送る (write → request、<br/>本文は { reason: 「理由」か「理由：詳細」 })
+    Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (authFetch)
+    AuthJs->>AuthCtrl: GET /api/auth/csrf
+    AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
+    AuthJs->>Ctrl: POST /api/orders/{id}/cancellation<br/>(CSRF トークンのヘッダー付き)
+    Ctrl->>Svc: 入力を検査し (@Valid CancellationRequest、空でなく 500 文字まで)、<br/>キャンセルを申請するよう頼む (requestCancellation)。全体が 1 つのトランザクション<br/>購入者か運営かを確かめる (AuthService の requireBuyer)
+    Svc->>Repo: 注文をロックして読む (lockOrder、SELECT ... FOR UPDATE orders)
+    Repo-->>Svc: 注文
+    Svc->>Svc: 注文の購入者が自分かを確かめ (requireBuyer(order))、<br/>注文状態と申請の状態を確かめる<br/>(status が ACCEPTED で、cancellationStatus が PENDING でない)
+    break 8a 注文状態が変わっていた (受取準備完了になった、ほかの画面で申請したなど)
+        Svc--xErrs: 409 ORDER_CHANGED の例外を投げる (conflict)
+        Note over Errs,Orders: 結果: 409 を返し、申請しない。<br/>画面: 8a-1 一覧を取り直して「注文状態が変わりました。最新の状態を確認してください。」と「再取得」(8a-2 終了)。
+    end
+    Svc->>Svc: 申請を記録する (order.requestCancellation)<br/>申請中 (PENDING)、前後の空白を除いた理由、申請の日時、回答は空
+    Svc->>Ntf: 出店者に申請を知らせるよう頼む (toStore)<br/>種類 CANCEL_REQUEST、「キャンセル申請が届きました」、本文は注文番号
+    Ntf->>Db: 店舗、組織のオーナー、その店舗にロールのある担当者を読み、<br/>利用中の会員ごとに出店者通知を保存する (findById、findAssignedAtStore、<br/>findAllById、isEnabled で絞り、forStore → save、notifications)
+    Svc->>Db: 応答用に明細、商品画像、決済、返金、店舗を読み<br/>(view → findAllForOrder、OrderResponseMapper の toView)、<br/>書き換えた行を保存してコミットする (UPDATE orders、INSERT notifications)
+    Db-->>Svc: 完了
+    Svc-->>Ctrl: 申請した注文
+    Ctrl-->>Http: 200 注文 (cancellationStatus は PENDING)
+    Http-->>Hook: 申請した注文
+    Hook->>Http: 注文の一覧を取り直す (reload)<br/>GET /api/orders。流れは EC-B13 の図と同じ
+    Http-->>Hook: 最新の注文の一覧
+    Hook-->>Form: 成功を返す (run が true、「キャンセル申請を送信しました。」を設定)
+    Form-->>User: 「キャンセル申請を送信しました。」、注文の見出しに「キャンセル申請中」、<br/>申請欄の代わりに「キャンセルを申請中です。店舗の回答は通知一覧でもお知らせします。」
 ```
+
+![EC-B14 シーケンス図](<images/EC-B14_注文キャンセルを申請する-1.png>)
 
 ## 共通代替フローを直接書いた図
 
@@ -181,7 +159,7 @@ sequenceDiagram
             AuthJs->>Filter: POST /api/orders/{id}/cancellation
             Filter->>Ctrl: 要求を通す (chain.doFilter)
             Ctrl->>Svc: キャンセルを申請するよう頼む (requestCancellation)
-            Svc->>Db: 注文をロックして確かめ、申請を記録し、<br/>出店者通知を保存してコミットする (上の図の 27〜52)
+            Svc->>Db: 注文をロックして確かめ、申請を記録し、<br/>出店者通知を保存してコミットする (上の図の 22〜31)
             alt *a MySQL との通信に失敗
                 Db--xSvc: 失敗 (DataAccessException)。<br/>申請の記録と通知はすべて取り消す
                 Svc--xCtrl: 例外
@@ -209,6 +187,8 @@ sequenceDiagram
         end
     end
 ```
+
+![EC-B14 共通代替フローを直接書いた図](<images/EC-B14_注文キャンセルを申請する-2.png>)
 
 ## ユースケース記述との差
 

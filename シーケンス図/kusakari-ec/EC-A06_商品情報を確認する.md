@@ -8,6 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
+代替フローのうち、表示だけで終わるもの（2a・5a）は分かれる所だけを break で描いています。
 
 ```mermaid
 sequenceDiagram
@@ -25,53 +26,39 @@ sequenceDiagram
     box rgba(27,127,92,0.12) EC API Spring Boot
         participant Ctrl as 商品の警告・停止API<br/>ProductModerationController<br/>(ProductModerationController.java)
         participant Svc as 商品の警告・停止の処理<br/>ProductModerationService<br/>(ProductModerationService.java)
-        participant Auth as ログイン中の会員<br/>AuthService<br/>(AuthService.java)
         participant Hist as 履歴の読み方<br/>ModerationHistory<br/>(ModerationHistory.java)
         participant Repo as 商品の読み書き<br/>ProductRepository<br/>(ProductRepository.java)
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、5、40 に適用<br/>*a 通信に失敗した場合: 5、40 に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、5、28 に適用<br/>*a 通信に失敗した場合: 5、28 に適用
 
     User->>Work: 運営者メニューの「商品管理」をクリック
     Work->>Page: URL を /operator/products に変え、<br/>ReviewPage を商品の一覧として表示 (products)
     Page->>Hook: 商品の一覧を取りに行くよう頼む (useResource)
     Hook->>Http: 画面を開いたときに自動で<br/>一覧の通信を始める (reload → request)
     Http->>Ctrl: GET /api/operator/products
-    Ctrl->>Svc: 商品の一覧を作るよう頼む (list)<br/>list 全体が読むだけのトランザクション
-    Svc->>Auth: ログイン中の人が運営者かを確かめる (requireAdmin)
-    Auth-->>Svc: 運営者である
-    Svc->>Db: 全店舗を読む (StoreRepository.findAll)
-    Db-->>Svc: 店舗の行 (店舗 ID と店舗名の対応にする)
-    Svc->>Db: 全在庫を読む (InventoryRepository.findAll)
-    Db-->>Svc: 在庫の行 (商品 ID と公開の状態の対応にする)
-    Svc->>Db: 商品の警告と警告の解除の履歴を新しい順に読む<br/>(ProductModerationEventRepository.findByEventTypeInOrderByIdDesc)
-    Db-->>Svc: 履歴の行
+    Ctrl->>Svc: 商品の一覧を作るよう頼む (list)。list 全体が読むだけのトランザクション<br/>ログイン中の人が運営者かを確かめる (AuthService.requireAdmin)
+    Svc->>Db: 全店舗 (StoreRepository.findAll) と全在庫 (InventoryRepository.findAll)、<br/>商品の警告と警告の解除の履歴を新しい順に読む<br/>(ProductModerationEventRepository.findByEventTypeInOrderByIdDesc)
+    Db-->>Svc: 店舗の行 (店舗 ID と店舗名の対応にする)、<br/>在庫の行 (商品 ID と公開の状態の対応にする)、履歴の行
     Svc->>Hist: 商品ごとに、警告と警告の解除のうち最新の行が<br/>警告なら警告中とするよう頼む (activeWarnings)
     Hist-->>Svc: 警告中の商品と、その警告 (理由、日時)
-    Svc->>Repo: 商品を追加した人の表示名を読むよう頼む (findAllCreatorNames)
-    Repo->>Db: SELECT products JOIN members
-    Db-->>Repo: 商品 ID と表示名 (追加した人がない商品は入らない)
-    Repo-->>Svc: 商品 ID と表示名
-    Svc->>Repo: 全商品を画像ごと読むよう頼む (findAll)
-    Repo->>Db: SELECT products、product_images
-    Db-->>Repo: 全商品の行 (削除済みも含む)
-    Repo-->>Svc: 商品のリスト
+    Svc->>Repo: 商品を追加した人の表示名 (findAllCreatorNames、SELECT products JOIN members) と、<br/>全商品を画像ごと読む (findAll、SELECT products、product_images)
+    Repo-->>Svc: 商品 ID と表示名 (追加した人がない商品は入らない)、<br/>全商品のリスト (削除済みも含む)
     Svc->>Svc: 商品ごとにまとめる。在庫が DELETED でなければ active<br/>(在庫の行がなければ削除済みと同じ)、停止は商品の suspended の列
     Svc-->>Ctrl: 商品のリスト (id、name、storeId、storeName、<br/>active、suspended、warning、createdByName)
     Ctrl-->>Http: 200 商品の配列
     Http-->>Hook: 商品の一覧
     Hook-->>Page: 商品の一覧
-    alt 2a 商品が 1 件もない
+    break 2a 商品が 1 件もない
         Page-->>User: 2a-1「対象の商品はありません。」
-    else 商品がある
-        loop 商品ごと (サーバーが返した順のまま)
-            Page->>Row: 商品の行を表示 (ProductModerationRow)
-            Row->>Row: 公開状態を決める。停止なら「公開停止中」、<br/>そうでなく active なら「公開可能」、それ以外は「販売終了」
-            Row->>Mod: 警告と警告・停止の操作を表示 (ModerationControls)
-            Mod-->>User: 警告中なら「警告中」、「運営からの警告：理由」と日時 (WarningBadge)、<br/>「警告・停止の履歴」、警告・停止の操作 (EC-A10)
-            Row-->>User: 商品名、「店舗：店舗名」、<br/>「追加した人：表示名」(なければ「初期データ」)、公開状態
-        end
+    end
+    loop 商品ごと (サーバーが返した順のまま)
+        Page->>Row: 商品の行を表示 (ProductModerationRow)
+        Row->>Row: 公開状態を決める。停止なら「公開停止中」、<br/>そうでなく active なら「公開可能」、それ以外は「販売終了」
+        Row->>Mod: 警告と警告・停止の操作を表示 (ModerationControls)
+        Mod-->>User: 警告中なら「警告中」、「運営からの警告：理由」と日時 (WarningBadge)、<br/>「警告・停止の履歴」、警告・停止の操作 (EC-A10)
+        Row-->>User: 商品名、「店舗：店舗名」、<br/>「追加した人：表示名」(なければ「初期データ」)、公開状態
     end
 
     User->>Mod: 対象商品の「警告・停止の履歴」を開く
@@ -79,29 +66,22 @@ sequenceDiagram
     Ev->>Hook: 履歴を取りに行くよう頼む (useResource)。<br/>取るのは開いたときが初めて (取得中は「読み込み中です。」)
     Hook->>Http: 履歴の通信を始める (reload → request)
     Http->>Ctrl: GET /api/operator/products/{商品 ID}/moderation-events
-    Ctrl->>Svc: 商品の履歴を読むよう頼む (events)<br/>全体が読むだけのトランザクション
-    Svc->>Auth: ログイン中の人が運営者かを確かめる (requireAdmin)
-    Auth-->>Svc: 運営者である
-    Svc->>Repo: 商品があるかを確かめるよう頼む (existsById)
-    Repo->>Db: SELECT products
-    Db-->>Repo: ある
-    Repo-->>Svc: ある
+    Ctrl->>Svc: 商品の履歴を読むよう頼む (events)。全体が読むだけのトランザクション<br/>運営者かを確かめ (AuthService.requireAdmin)、<br/>商品があるかを確かめる (ProductRepository.existsById、SELECT products)
     Svc->>Db: その商品の履歴を新しい順に読む<br/>(ProductModerationEventRepository.findByProductIdOrderByIdDesc)
     Db-->>Svc: 警告・警告の解除・停止・再開の行
-    Svc->>Hist: 履歴を表示の形にするよう頼む (views)
-    Hist->>Db: 操作した運営者の会員を読む (AuthMemberRepository.findAllById)
-    Db-->>Hist: 会員の行
+    Svc->>Hist: 履歴を表示の形にするよう頼む (views)<br/>操作した運営者の会員を読む (AuthMemberRepository.findAllById)
     Hist-->>Svc: 履歴 (type、reason、actorName は表示名か、<br/>空ならメールアドレス、createdAt)
     Svc-->>Ctrl: 履歴のリスト
     Ctrl-->>Http: 200 履歴の配列
     Http-->>Hook: 履歴
     Hook-->>Ev: 履歴
-    alt 5a 履歴がない
+    break 5a 履歴がない
         Ev-->>User: 5a-1「履歴はありません。」
-    else 履歴がある
-        Ev-->>User: 新しい順に 1 行ずつ「日時 警告／警告の解除／停止／再開<br/>（運営者名）：理由」(理由が空なら「：理由」を出さない)
     end
+    Ev-->>User: 新しい順に 1 行ずつ「日時 警告／警告の解除／停止／再開<br/>（運営者名）：理由」(理由が空なら「：理由」を出さない)
 ```
+
+![EC-A06 シーケンス図](<images/EC-A06_商品情報を確認する-1.png>)
 
 ## 共通代替フローを直接書いた図
 
@@ -160,7 +140,7 @@ sequenceDiagram
         Http->>Filter: GET /api/operator/products/{商品 ID}/moderation-events
         Filter->>Ctrl: 要求を通す (chain.doFilter)
         Ctrl->>Svc: 商品の履歴を読むよう頼む (events)
-        Svc->>Db: 運営者かを確かめ、商品の有無、履歴、<br/>操作した運営者を読む (上の図の 42〜53)
+        Svc->>Db: 運営者かを確かめ、商品の有無、履歴、<br/>操作した運営者を読む (上の図の 29〜33)
         alt *a MySQL との通信に失敗
             Db--xSvc: 失敗 (DataAccessException)
             Svc--xCtrl: 例外
@@ -174,7 +154,7 @@ sequenceDiagram
             Ctrl-->>Http: 200 履歴の配列
             Http-->>Hook: 履歴
             Hook-->>Ev: 履歴
-            Ev-->>User: 履歴 (上の図の 58〜59 のとおり)
+            Ev-->>User: 履歴 (上の図の 38〜39 のとおり)
         end
     end
     opt *a-3 やり直す
@@ -182,6 +162,8 @@ sequenceDiagram
         Mod->>Ev: 閉じると ModerationEvents を消し (setHistoryOpen(false))、<br/>開くと作り直して 3 から取り直す
     end
 ```
+
+![EC-A06 共通代替フローを直接書いた図](<images/EC-A06_商品情報を確認する-2.png>)
 
 ## ユースケース記述との差
 

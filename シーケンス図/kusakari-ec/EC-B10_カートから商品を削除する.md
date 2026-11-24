@@ -8,6 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
+代替フロー 2a はエラーで終わるので、分かれる所だけを描き、結果と画面は Note に文で書いています。エラーのときの画面の後処理（`readResponse` が `ApiError` を投げる → `run` の catch でエラーの文を覚える → `refreshOnFailure` なので最新のカートを取り直す（`GET /api/cart` などの流れは EC-B08 の図と同じ）→ エラーの文と最新のカートを出す）は、共通代替フローの失敗でも同じです。取り直しの `GET /api/cart` にも共通代替フロー \*a・\*b が起こります。
 
 削除のための API はありません。ごみ箱アイコンは `useShop` の `setQuantity()` に数量 0 を渡し、[EC-B07](<EC-B07_商品をカートに追加する.md>)・[EC-B09](<EC-B09_カートの数量を変更する.md>) と同じ `PUT /api/cart/items/{productId}`（`CartService.updateItem()`）を送ります。サーバーは数量が 0 のとき、購入できるか・在庫・種類数の検査を通して明細を削除します。削除の前に確認のダイアログは出ません。
 
@@ -33,7 +34,7 @@ sequenceDiagram
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 7、最新のカートの取り直しの 45 に適用<br/>*a 通信に失敗した場合: 5、7、最新のカートの取り直しの 45 に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 7 に適用<br/>*a 通信に失敗した場合: 5、7 に適用
 
     User->>Cart: 対象商品のごみ箱アイコン (「(商品名)を削除」) をクリック<br/>(通信中は押せない)
     Cart->>Shop: 数量を 0 に書き換えるよう頼む (setQuantity(line.product.id, 0))
@@ -43,55 +44,38 @@ sequenceDiagram
     AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
     AuthJs->>Ctrl: PUT /api/cart/items/{productId}<br/>(CSRF トークンのヘッダー付き)
     Ctrl->>Ctrl: 本文を検査する (@Valid、ItemRequest)。0 は @Min(0) を満たす
-    Ctrl->>Resolver: 会員のカートを特定するよう頼む (resolve)<br/>中身は EC-B08 の図の 7〜24 と同じ
+    Ctrl->>Resolver: 会員のカートを特定するよう頼む (resolve)<br/>中身は EC-B08 の図と同じ流れ
     Resolver-->>Ctrl: カートの ID
     Ctrl->>Svc: 明細の数量を書き換えるよう頼む (updateItem)<br/>updateItem 全体が 1 つのトランザクション
-    Svc->>CartRepo: カートの行をロックして読む (findLocked)
-    CartRepo->>Db: SELECT ... FOR UPDATE carts
-    Db-->>CartRepo: カートの行
+    Svc->>CartRepo: カートの行をロックして読む (findLocked、SELECT ... FOR UPDATE carts)
     CartRepo-->>Svc: カート
     Svc->>Svc: 送られた revision と今の revision を比べる (checkRevision)
-    alt 2a 別の操作でカートが更新されていた (revision が違う)
+    break 2a 別の操作でカートが更新されていた (revision が違う)
         Svc--xErrs: 409 CART_CHANGED の例外を投げる (ApiException)
-        Errs-->>Http: 409「別の操作でカートが更新されました。<br/>最新の内容を確認してください。」(business)
-    else revision が同じ
-        Svc->>ItemRepo: その商品の明細を読む (findById)
-        ItemRepo->>Db: SELECT cart_items
-        Db-->>ItemRepo: 明細の行
-        ItemRepo-->>Svc: 今の明細
-        Svc->>Catalog: 商品と、今買えるかを調べるよう頼む (listing)
-        Catalog->>Db: 商品・在庫・店舗・組織を読む<br/>(findByIdIn、findAllById、SELECT products、inventory、stores、organizations)
-        Db-->>Catalog: 行
-        Catalog-->>Svc: 商品と買えない理由 (Listing)
-        Svc->>Svc: 数量が 0 なので、購入できるか・在庫の検査は通る<br/>(購入できない明細や在庫不足の明細も削除できる)
-        Svc->>ItemRepo: カートの全明細を読む (findAllForCart)。<br/>数量が 0 なので 50 種類の上限の検査も通る
-        ItemRepo->>Db: SELECT cart_items
-        Db-->>ItemRepo: 明細の行
-        ItemRepo-->>Svc: 明細のリスト
-        Svc->>ItemRepo: 明細を削除する (existing.ifPresent(items::delete))
-        ItemRepo->>Db: DELETE cart_items
-        Svc->>Svc: カートの revision を 1 増やす (incrementRevision)
-        Svc->>Svc: 残りの明細の金額、合計、点数、注文に進めるかを計算する<br/>(view。中身は EC-B08 の図の 43 と同じ)
-        Svc-->>Ctrl: 残りのカートの内容 (CartView)。updateItem の終わりにコミット
-        Ctrl-->>Http: 200 残りのカートの内容
-        Http-->>Shop: 残りのカートの内容
-        Shop->>Shop: カートを置き換え、数量が 0 なので削除の文を覚える<br/>(setCart、setNotice('カートから削除しました。'))
-        Shop-->>Cart: 新しいカートと削除の文 (shop.cart、shop.notice)
-        alt 商品が残っている
-            Cart-->>User: 3 更新後の明細と「ご請求内容」(商品小計、うち消費税、合計)、<br/>「カートから削除しました。」
-        else 最後の商品を削除した (cart.items.length が 0)
-            Cart-->>User: 3「まだ商品が入っていません。」「商品を探す」<br/>「庭に設置したものから追加」(「カートから削除しました。」は出ない)
-        end
+        Note over Errs,Cart: 結果: 409「別の操作でカートが更新されました。最新の内容を確認してください。」を返し (business)、明細は残る。<br/>画面: 2a-1 その文と、取り直した最新のカート。2a-2 ユースケースを終了する。
     end
-    opt 2a のとき (例外でロールバックし、明細は残る)
-        Http--xShop: エラーを投げる (readResponse → ApiError)
-        Shop->>Shop: エラーの文を覚える (run の catch → setError)
-        Shop->>Http: 最新のカートを取り直す (refreshOnFailure なので refresh → api.cart)<br/>GET /api/cart の流れは EC-B08 の図の 5〜47 と同じ
-        Http-->>Shop: 最新のカート (setCart)
-        Shop-->>Cart: エラーの文と最新のカート (shop.error、shop.cart)
-        Cart-->>User: 2a-1 エラーの文と最新のカート。2a-2 ユースケースを終了する
+    Svc->>ItemRepo: その商品の明細を読む (findById、SELECT cart_items)
+    ItemRepo-->>Svc: 今の明細
+    Svc->>Catalog: 商品と、今買えるかを調べるよう頼む (listing)<br/>商品・在庫・店舗・組織を読む (findByIdIn、findAllById、<br/>SELECT products、inventory、stores、organizations)
+    Catalog-->>Svc: 商品と買えない理由 (Listing)
+    Svc->>Svc: 数量が 0 なので、購入できるか・在庫の検査は通る<br/>(購入できない明細や在庫不足の明細も削除できる)
+    Svc->>ItemRepo: カートの全明細を読む (findAllForCart、SELECT cart_items)。<br/>数量が 0 なので 50 種類の上限の検査も通る
+    ItemRepo-->>Svc: 明細のリスト
+    Svc->>ItemRepo: 明細を削除する (existing.ifPresent(items::delete)、DELETE cart_items)
+    Svc->>Svc: カートの revision を 1 増やし (incrementRevision)、残りの明細の金額、合計、<br/>点数、注文に進めるかを計算する (view。中身は EC-B08 の図と同じ流れ)
+    Svc-->>Ctrl: 残りのカートの内容 (CartView)。updateItem の終わりにコミット
+    Ctrl-->>Http: 200 残りのカートの内容
+    Http-->>Shop: 残りのカートの内容
+    Shop->>Shop: カートを置き換え、数量が 0 なので削除の文を覚える<br/>(setCart、setNotice('カートから削除しました。'))
+    Shop-->>Cart: 新しいカートと削除の文 (shop.cart、shop.notice)
+    alt 商品が残っている
+        Cart-->>User: 3 更新後の明細と「ご請求内容」(商品小計、うち消費税、合計)、<br/>「カートから削除しました。」
+    else 最後の商品を削除した (cart.items.length が 0)
+        Cart-->>User: 3「まだ商品が入っていません。」「商品を探す」<br/>「庭に設置したものから追加」(「カートから削除しました。」は出ない)
     end
 ```
+
+![EC-B10 シーケンス図](<images/EC-B10_カートから商品を削除する-1.png>)
 
 ## 共通代替フローを直接書いた図
 
@@ -165,7 +149,7 @@ sequenceDiagram
             AuthJs->>Filter: PUT /api/cart/items/{productId}
             Filter->>Ctrl: 要求を通す (chain.doFilter)
             Ctrl->>Svc: 明細の数量を書き換えるよう頼む (updateItem)
-            Svc->>Db: カートをロックして読み、明細を削除してコミットする<br/>(上の図の 12〜35)
+            Svc->>Db: カートをロックして読み、明細を削除してコミットする<br/>(上の図の 12〜25)
             alt *a MySQL との通信に失敗
                 Db--xSvc: 失敗 (DataAccessException)。<br/>トランザクションの変更はすべて取り消す
                 Svc--xCtrl: 例外
@@ -188,6 +172,8 @@ sequenceDiagram
         User->>Cart: もう一度ごみ箱アイコンをクリック (この図の 1 へ戻る)
     end
 ```
+
+![EC-B10 共通代替フローを直接書いた図](<images/EC-B10_カートから商品を削除する-2.png>)
 
 ## ユースケース記述との差
 

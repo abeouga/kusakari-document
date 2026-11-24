@@ -7,8 +7,9 @@
 ## シーケンス図
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
-パスワードの再設定は、Amazon Cognito の Managed Login の画面で行います。EC のコードが受け持つのは、「ログイン」画面のリンクから Cognito の認可の画面（`/oauth2/authorize`）へ送り出すところまでと、Cognito の画面でログインした後に戻ってくるところです。メールアドレスの入力、確認コードの送信と照合、新しいパスワードの保存（基本フロー 5〜16、代替フロー 8a・9a・10a・15a）は Cognito の中の処理で、EC のコードには呼び出しがありません。図ではその部分を、利用者と Cognito の間の 2 本の矢印（29・30）だけにしています。この 2 本はコードではなく、ユースケース記述と Cognito の画面に合わせて書いたものです。
+パスワードの再設定は、Amazon Cognito の Managed Login の画面で行います。EC のコードが受け持つのは、「ログイン」画面のリンクから Cognito の認可の画面（`/oauth2/authorize`）へ送り出すところまでと、Cognito の画面でログインした後に戻ってくるところです。メールアドレスの入力、確認コードの送信と照合、新しいパスワードの保存（基本フロー 5〜16、代替フロー 8a・9a・10a・15a）は Cognito の中の処理で、EC のコードには呼び出しがありません。図ではその部分を、利用者と Cognito の間の 2 本の矢印（24・25）だけにしています。この 2 本はコードではなく、ユースケース記述と Cognito の画面に合わせて書いたものです。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
+記述にない続き（再設定の後に Cognito の画面でログインして EC へ戻る）は、コールバックの矢印 1 本だけを `opt` で描き、トークンの交換・セッションの作成・戻り先への移動と画面は Note に文で書いています。
 
 ```mermaid
 sequenceDiagram
@@ -32,18 +33,15 @@ sequenceDiagram
         participant Cog as Amazon Cognito<br/>Managed Login
     end
 
-    Note over User,Cog: 共通代替フロー<br/>*a 通信に失敗した場合: 8、17、24、27、32、33 に適用
+    Note over User,Cog: 共通代替フロー<br/>*a 通信に失敗した場合: 6、14、20、22、ログインした後のコールバックの 26 に適用
 
     User->>Header: 「メイン」画面の共通ヘッダーの「ログイン」をクリック
     Header->>App: ログインのボタンが押されたことを伝える<br/>(onPanel('login') → openHeaderPanel)
-    App->>AuthJs: ログイン画面へ移るよう頼む (login)
-    AuthJs->>App: 今の画面の URL を returnTo に入れて、URL を<br/>/account/login?returnTo=… に変える (loginPath → navigate、navigation.js)。<br/>ページは読み込み直さない
-    App->>Login: path が /account/login なので LoginPage を表示
+    App->>Login: 今の画面の URL を returnTo に入れて、URL を /account/login?returnTo=… に変え、<br/>LoginPage を表示 (login → loginPath → navigate)。ページは読み込み直さない
     Login->>Panel: ログインの入力欄を表示 (AuthPanel)
     Panel->>AuthJs: 画面を開いたときに自動で<br/>ログイン状態を読む (useAuth → readSession)<br/>LoginPage の useAuth も同じ通信を送る
     AuthJs->>AuthCtrl: GET /api/auth/me
-    AuthCtrl->>AuthSvc: ログイン状態をまとめるよう頼む (me → session)
-    AuthSvc->>AuthSvc: ログイン中の会員を確かめる (current)。<br/>認証情報が無いので 401 を投げ、session が受け止める
+    AuthCtrl->>AuthSvc: ログイン状態をまとめるよう頼む (me → session)<br/>認証情報が無いので current が 401 を投げ、session が受け止める
     AuthSvc-->>AuthCtrl: 未ログイン (SessionView、authenticated=false)
     AuthCtrl-->>AuthJs: 200 mode=cognito、authenticated=false
     AuthJs-->>Panel: ログイン状態
@@ -55,29 +53,26 @@ sequenceDiagram
     AuthCtrl->>AuthSvc: Cognito を使う設定かを確かめる (enabled)
     AuthSvc-->>AuthCtrl: 使う (mode が cognito)
     AuthCtrl->>Urls: 戻り先を確かめる (safeReturn)
-    Urls-->>AuthCtrl: 戻り先 (EC と Canvas のオリジン以外、<br/>/account/login、/api/auth/ は EC の「/」に換える)
-    AuthCtrl->>AuthCtrl: 戻り先をセッションの AUTH_RETURN_TO に保存 (login)
+    Urls-->>AuthCtrl: 戻り先 (EC と Canvas のオリジン以外、/account/login、/api/auth/ は<br/>EC の「/」に換える)。セッションの AUTH_RETURN_TO に保存する (login)
     AuthCtrl-->>Browser: 302 /api/auth/authorize/cognito
     Browser->>Sec: GET /api/auth/authorize/cognito
-    Sec->>Sec: 認可要求 (PKCE、state、nonce) を作り、セッションに保存<br/>(DefaultOAuth2AuthorizationRequestResolver、withPkce)
-    Sec-->>Browser: 302 KUSAKARI_COGNITO_DOMAIN の /oauth2/authorize
+    Sec-->>Browser: 認可要求 (PKCE、state、nonce) を作ってセッションに保存し<br/>(DefaultOAuth2AuthorizationRequestResolver、withPkce)、<br/>302 KUSAKARI_COGNITO_DOMAIN の /oauth2/authorize
     Browser->>Cog: GET /oauth2/authorize
     Cog-->>User: 認証サービスの画面 (Managed Login のサインインの画面)
     User->>Cog: 認証サービスの画面でパスワードの再設定へ進み、<br/>メールアドレス、届いた確認コード、新しいパスワードと確認用を入力して送る<br/>(基本フロー 5〜15、代替フロー 8a・9a・10a・15a。Cognito の画面の中)
     Cog-->>User: 認証サービスの画面の表示 (基本フロー 16。<br/>完了の表示か、ログインの画面かは確かめていない)
 
-    opt ユースケースの後 利用者が Cognito の画面でログインした
-        Cog-->>Browser: 302 /api/auth/callback/cognito (code と state)
-        Browser->>Sec: GET /api/auth/callback/cognito
-        Sec->>Cog: 認可コードをトークンに換え、会員を確かめてセッションを作る<br/>(oauth2Login、successHandler。流れは EC-B01 の図の 35 と、その後の Note と同じ)
-        Sec-->>Browser: 302 AUTH_RETURN_TO の戻り先、<br/>または /account/login?auth=failed
-        Browser-->>User: 戻り先の画面 (ログイン状態)、または<br/>「認証が完了しませんでした。もう一度ログインしてください。」
+    opt ユースケースの後 利用者が Cognito の画面でログインした (記述なし)
+        Browser->>Sec: Cognito の 302 で戻る GET /api/auth/callback/cognito (code と state)
+        Note over Browser,Cog: 結果: 認可コードをトークンに換え、会員を確かめてセッションを作り (oauth2Login、successHandler)、AUTH_RETURN_TO の戻り先へ 302。<br/>画面: 戻り先の画面 (ログイン状態)。失敗したときは /account/login?auth=failed で「認証が完了しませんでした。もう一度ログインしてください。」
     end
 ```
 
+![EC-B20 シーケンス図](<images/EC-B20_パスワードを再設定する-1.png>)
+
 ## 共通代替フローを直接書いた図
 
-上の図の、ログイン画面を開いたときの `GET /api/auth/me` と、リンクをクリックした後のページの移動に、この画面で起こる共通代替フロー（\*a）を書き込んだ図です。ログインの前のユースケースなので、\*b（未ログインの場合）は適用しません。Cognito の画面の中（上の図の 29・30）で通信に失敗したときの表示は Cognito の画面によるもので、EC のコードでは確かめられないので描いていません。
+上の図の、ログイン画面を開いたときの `GET /api/auth/me` と、リンクをクリックした後のページの移動に、この画面で起こる共通代替フロー（\*a）を書き込んだ図です。ログインの前のユースケースなので、\*b（未ログインの場合）は適用しません。Cognito の画面の中（上の図の 24・25）で通信に失敗したときの表示は Cognito の画面によるもので、EC のコードでは確かめられないので描いていません。
 
 ```mermaid
 sequenceDiagram
@@ -96,7 +91,7 @@ sequenceDiagram
         participant Cog as Amazon Cognito<br/>Managed Login
     end
 
-    User->>Panel: 共通ヘッダーの「ログイン」をクリック<br/>(上の図の 1〜6 でログイン画面を表示)
+    User->>Panel: 共通ヘッダーの「ログイン」をクリック<br/>(上の図の 1〜4 でログイン画面を表示)
     Panel->>AuthJs: ログイン状態を読む (useAuth → readSession)
     alt *a GET /api/auth/me が届かない
         AuthJs-xAuthCtrl: GET /api/auth/me
@@ -130,13 +125,15 @@ sequenceDiagram
             Browser->>Sec: GET /api/auth/authorize/cognito
             Sec-->>Browser: 302 Cognito の /oauth2/authorize
             Browser->>Cog: GET /oauth2/authorize
-            Cog-->>User: 認証サービスの画面 (上の図の 28 以降)
+            Cog-->>User: 認証サービスの画面 (上の図の 23 以降)
         end
     end
     opt *a-3 やり直す
         User->>Browser: ブラウザーで再読み込みするか、戻ってもう一度リンクをクリック<br/>(画面にやり直しのボタンは無い。基本フロー 2 か 3 へ戻る)
     end
 ```
+
+![EC-B20 共通代替フローを直接書いた図](<images/EC-B20_パスワードを再設定する-2.png>)
 
 ## ユースケース記述との差
 

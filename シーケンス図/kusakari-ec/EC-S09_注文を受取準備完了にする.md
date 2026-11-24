@@ -8,6 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
+代替フローのうち、エラーで終わるもの（3a・6a）と記述にない分岐（注文がない・店舗を扱えないときの 404）は、分かれる所だけを描き、結果と画面は Note に文で書いています。5a（確認ダイアログの「取消」）は、`break` の中の矢印 1 本と Note にしています。サーバーが失敗を返したときの画面の後処理（`readResponse` が `ApiError` を投げる → 404・409 なら `reload` で一覧を取り直す → `run` が false → ダイアログを閉じてエラーの文を出す）は、どれも同じです。
 
 ```mermaid
 sequenceDiagram
@@ -24,7 +25,6 @@ sequenceDiagram
     box rgba(27,127,92,0.12) EC API Spring Boot
         participant AuthCtrl as ログイン状態API<br/>AuthController<br/>(AuthController.java)
         participant Ctrl as 注文の処理API<br/>OrderWorkflowController<br/>(OrderWorkflowController.java)
-        participant Errs as エラーの応答<br/>ApiErrors<br/>(ApiErrors.java)
         participant Svc as 注文の処理<br/>OrderWorkflowService<br/>(OrderWorkflowService.java)
         participant Auth as ログイン中の会員<br/>AuthService<br/>(AuthService.java)
         participant OrderRepo as 注文の読み書き<br/>OrderRepository<br/>(OrderRepository.java)
@@ -33,72 +33,54 @@ sequenceDiagram
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、5、24、一覧の取り直しの 35・51 に適用<br/>*a 通信に失敗した場合: 5、22、24、一覧の取り直しの 35・51 に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、4、18、一覧の取り直しの 28 に適用<br/>*a 通信に失敗した場合: 4、16、18、一覧の取り直しの 28 に適用
 
     User->>Work: 出店者メニューの「店舗受け取り」をクリック
     Work->>Page: URL を /seller/orders に変え、<br/>選択中の店舗の ID を渡して OrderPage を表示
     Page->>Hook: 店舗の注文を取りに行くよう頼む (useResource)
-    Hook->>Http: 自動で一覧の通信を始める (reload → request)
-    Http->>Ctrl: GET /api/seller/orders?storeId={店舗ID}
-    Ctrl->>Svc: 店舗の注文の一覧を作るよう頼む (sellerOrders)<br/>中身は EC-S08 の図の 10〜28 と同じ
-    Svc-->>Ctrl: 注文の一覧
-    Ctrl-->>Http: 200 注文の配列
-    Http-->>Hook: 注文の一覧
-    Hook-->>Page: 注文の一覧
+    Hook->>Ctrl: 自動で一覧の通信を始める (reload → request)<br/>GET /api/seller/orders?storeId={店舗ID}
+    Ctrl->>Svc: 店舗の注文の一覧を作るよう頼む (sellerOrders)<br/>中身は EC-S08 の図と同じ流れ
+    Ctrl-->>Hook: 200 注文の配列
     Page->>Card: キャンセル申請中、準備待ち、受け取り待ち、そのほかの順に<br/>並べ (priority)、注文ごとにカードを表示 (PickupCard)
-    alt 3a 対象の注文がキャンセル申請中
-        Card-->>User: 3a-1「キャンセル申請中」、「キャンセル申請に回答してから<br/>進めてください。」と、押せない「受取準備完了にする」<br/>(3a-2 EC-S13 でキャンセル申請を処理する。3a-3 終わり)
-    else 注文受付で、キャンセル申請がない
-        Card-->>User: 「商品を揃えたら、受取準備完了にして購入者へ<br/>通知します。」と「受取準備完了にする」
-        User->>Card: 対象の注文の「受取準備完了にする」をクリック
-        Card-->>User: 今の状態を覚えて確認ダイアログを表示 (setConfirming('ACCEPTED') → ConfirmDialog)<br/>「受取準備完了の確認」、注文番号：…、受取人：…、<br/>「注文状態を「受取準備完了」に更新し、購入者に受け取りの準備が<br/>できたことを通知します。」、「受取準備完了を確定」、「取消」
-        alt 5a 確認ダイアログで「取消」をクリック
-            User->>Card: 「取消」をクリック<br/>(Esc キー、「閉じる」、ダイアログの外側のクリックも同じ)
-            Card-->>User: 5a-1 ダイアログを閉じる (onCancel → setConfirming(''))。<br/>通信せず、注文状態は変わらない (5a-2 終わり)
-        else 確定した
-            User->>Card: 「受取準備完了を確定」をクリック
-            Card->>Hook: 変更を実行し、成功の文を渡す (onConfirm → run)<br/>「受取準備完了にし、購入者に通知しました。」
-            Hook->>Http: 注文状態を変える通信を送る (write → request、<br/>本文は { expectedStatus: 'ACCEPTED', status: 'READY' })
-            Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (send → authFetch)
-            AuthJs->>AuthCtrl: GET /api/auth/csrf
-            AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
-            AuthJs->>Ctrl: PUT /api/seller/orders/{id}/status<br/>(CSRF トークンのヘッダー付き)
-            Ctrl->>Svc: 入力を確かめ (StatusRequest)、注文状態を変えるよう頼む (changeStatus)<br/>changeStatus 全体が 1 つのトランザクション
-            Svc->>OrderRepo: 注文の行をロックして読む (lockOrder)
-            OrderRepo->>Db: SELECT ... FOR UPDATE orders
-            Db-->>OrderRepo: ロックした注文の行
-            OrderRepo-->>Svc: 注文 (なければ 404 ORDER_NOT_FOUND)
-            Svc->>Auth: ログイン中の人がこの店舗で STAFF 以上かを確かめる<br/>(requireStore → requireSeller)。だめなら 404 ORDER_NOT_FOUND にする
-            Auth-->>Svc: 扱える
-            alt 6a 注文状態が「注文受付」でなくなっている、またはキャンセル申請中になっている
-                Svc--xErrs: 409 ORDER_CHANGED の例外を投げる (conflict)
-                Errs-->>Http: 409「注文状態が変わりました。<br/>最新の状態を確認してください。」(business)
-                Http--xHook: エラーを投げる (readResponse → ApiError)
-                Hook->>Http: 409 なので一覧を取り直す (reload)<br/>流れは 5〜9 と同じ
-                Http-->>Hook: 最新の注文の一覧
-                Hook-->>Card: 失敗を返す (run が false、エラーの文を設定)
-                Card-->>User: 6a-1・6a-2 ダイアログを閉じ (setConfirming(''))、<br/>「注文状態が変わりました。最新の状態を確認してください。」<br/>と最新の一覧 (6a-3 終わり)
-            else 更新できる
-                Svc->>Svc: 注文状態を受取準備完了にし、<br/>準備完了の日時を記録する (markReady)
-                Svc->>Ntf: 購入者に知らせるよう頼む (send)<br/>「受取準備が完了しました」、本文は「注文番号 / 店舗名」
-                Ntf->>Db: 購入者あての通知を保存する (save、INSERT notifications)
-                Db-->>Ntf: 完了
-                Ntf-->>Svc: 終わった
-                Svc->>Mapper: 店舗向けの注文の形にするよう頼む (storeView → toStoreView)<br/>中身は EC-S08 の図の 21〜28 と同じ
-                Mapper-->>Svc: 更新後の注文
-                Svc->>Db: 書き換えた行を保存してコミットする<br/>(save は呼ばない。UPDATE orders)
-                Db-->>Svc: 完了
-                Svc-->>Ctrl: 更新後の注文
-                Ctrl-->>Http: 200 更新後の注文
-                Http-->>Hook: 更新後の注文
-                Hook->>Http: 一覧を取り直す (reload)<br/>流れは 5〜9 と同じ
-                Http-->>Hook: 最新の注文の一覧
-                Hook-->>Card: 成功を返す (run が true、成功の文を設定)
-                Card-->>User: ダイアログを閉じ (setConfirming(''))、<br/>「受取準備完了にし、購入者に通知しました。」と、<br/>注文状態が「受取準備完了」になった最新の一覧
-            end
-        end
+    break 3a 対象の注文がキャンセル申請中
+        Note over User,Card: 結果: 「受取準備完了にする」を押せない。<br/>画面: 3a-1「キャンセル申請中」、「キャンセル申請に回答してから進めてください。」(3a-2 EC-S13 でキャンセル申請を処理する。3a-3 終わり)
     end
+    Card-->>User: 注文受付でキャンセル申請がない注文に、「商品を揃えたら、<br/>受取準備完了にして購入者へ通知します。」と「受取準備完了にする」
+    User->>Card: 対象の注文の「受取準備完了にする」をクリック
+    Card-->>User: 今の状態を覚えて確認ダイアログを表示 (setConfirming('ACCEPTED') → ConfirmDialog)<br/>「受取準備完了の確認」、注文番号：…、受取人：…、<br/>「注文状態を「受取準備完了」に更新し、購入者に受け取りの準備が<br/>できたことを通知します。」、「受取準備完了を確定」、「取消」
+    break 5a 確認ダイアログで「取消」をクリック
+        User->>Card: 「取消」をクリック<br/>(Esc キー、「閉じる」、ダイアログの外側のクリックも同じ)
+        Note over User,Card: 結果: 通信せず、注文状態は変わらない (onCancel → setConfirming(''))。<br/>画面: 5a-1 ダイアログを閉じる (5a-2 終わり)
+    end
+    User->>Card: 「受取準備完了を確定」をクリック
+    Card->>Hook: 変更を実行し、成功の文を渡す (onConfirm → run)<br/>「受取準備完了にし、購入者に通知しました。」
+    Hook->>Http: 注文状態を変える通信を送る (write → request、<br/>本文は { expectedStatus: 'ACCEPTED', status: 'READY' })
+    Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (send → authFetch)
+    AuthJs->>AuthCtrl: GET /api/auth/csrf
+    AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
+    AuthJs->>Ctrl: PUT /api/seller/orders/{id}/status<br/>(CSRF トークンのヘッダー付き)
+    Ctrl->>Svc: 入力を確かめ (StatusRequest)、注文状態を変えるよう頼む (changeStatus)<br/>changeStatus 全体が 1 つのトランザクション
+    Svc->>OrderRepo: 注文の行をロックして読む (lockOrder、SELECT ... FOR UPDATE orders)
+    Svc->>Auth: ログイン中の人がこの店舗で STAFF 以上かを確かめる<br/>(requireStore → requireSeller)
+    break 注文がない、この店舗を扱えない (記述なし)
+        Note over Auth,Card: 結果: 404 ORDER_NOT_FOUND を返し、何も変えない (扱えないときも 404 にする)。<br/>画面: 一覧を取り直し、ダイアログを閉じてエラーの文
+    end
+    break 6a 注文状態が「注文受付」でなくなっている、またはキャンセル申請中になっている
+        Note over Auth,Card: 結果: 409 ORDER_CHANGED を返し、何も変えない (conflict)。<br/>画面: 6a-1・6a-2 一覧を取り直し (reload)、ダイアログを閉じ、「注文状態が変わりました。最新の状態を確認してください。」(6a-3 終わり)
+    end
+    Svc->>Svc: 注文状態を受取準備完了にし、<br/>準備完了の日時を記録する (markReady)
+    Svc->>Ntf: 購入者に知らせるよう頼む (send)。「受取準備が完了しました」、<br/>本文は「注文番号 / 店舗名」。購入者あての通知を保存する (save、INSERT notifications)
+    Svc->>Mapper: 店舗向けの注文の形にするよう頼む (storeView → toStoreView)<br/>中身は EC-S08 の図と同じ流れ
+    Svc->>Db: 書き換えた行を保存してコミットする<br/>(save は呼ばない。UPDATE orders)
+    Ctrl-->>Http: 200 更新後の注文
+    Http-->>Hook: 更新後の注文
+    Hook->>Ctrl: 一覧を取り直す (reload)<br/>GET /api/seller/orders?storeId={店舗ID}。流れは 4〜6 と同じ
+    Ctrl-->>Hook: 最新の注文の一覧
+    Hook-->>Card: 成功を返す (run が true、成功の文を設定)
+    Card-->>User: ダイアログを閉じ (setConfirming(''))、<br/>「受取準備完了にし、購入者に通知しました。」と、<br/>注文状態が「受取準備完了」になった最新の一覧
 ```
+
+![EC-S09 シーケンス図](<images/EC-S09_注文を受取準備完了にする-1.png>)
 
 ## 共通代替フローを直接書いた図
 
@@ -175,7 +157,7 @@ sequenceDiagram
             AuthJs->>Filter: PUT /api/seller/orders/{id}/status
             Filter->>Ctrl: 要求を通す (chain.doFilter)
             Ctrl->>Svc: 注文状態を変えるよう頼む (changeStatus)
-            Svc->>Db: 注文をロックして読み、店舗の担当かと状態を確かめ、<br/>書き換えて通知を保存し、コミットする (上の図の 26〜47)
+            Svc->>Db: 注文をロックして読み、店舗の担当かと状態を確かめ、<br/>書き換えて通知を保存し、コミットする (上の図の 20〜25)
             alt *a MySQL との通信に失敗
                 Db--xSvc: 失敗 (DataAccessException)。<br/>トランザクションの変更はすべて取り消す (状態と通知の両方)
                 Svc--xCtrl: 例外
@@ -204,6 +186,8 @@ sequenceDiagram
         end
     end
 ```
+
+![EC-S09 共通代替フローを直接書いた図](<images/EC-S09_注文を受取準備完了にする-2.png>)
 
 ## ユースケース記述との差
 

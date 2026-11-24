@@ -8,6 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
+代替フローのうち、エラーで終わるもの（5a・6a・6b・6c）と記述にない分岐（同じ名前の店舗がある）は、分かれる所だけを描き、結果と画面は Note に文で書いています。エラーのときの画面の後処理（`readResponse` が `ApiError` を投げる → 409 なら `reload` でプロフィールを取り直す → `run` が false → エラーの文を出す）は、どれも同じです。1a（店舗を選び直す）は、選ぶ矢印 1 本と Note にまとめています。
 
 ```mermaid
 sequenceDiagram
@@ -35,7 +36,7 @@ sequenceDiagram
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 5 (URL を直接開いたときのログインの確認)、8、42、プロフィールの取り直しの 66・73・84・100 に適用<br/>*a 通信に失敗した場合: 8、40、42、プロフィールの取り直しの 66・73・84・100 に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 5 (URL を直接開いたときのログインの確認)、8、27、プロフィールの取り直しの 45 に適用<br/>*a 通信に失敗した場合: 8、25、27、プロフィールの取り直しの 45 に適用
 
     alt 1b 「店舗一覧」から開く
         User->>Stores: 「店舗一覧」画面で対象の店舗の「店舗情報を編集」をクリック<br/>(閉鎖済みの店舗にはこのボタンを出さない)
@@ -50,22 +51,10 @@ sequenceDiagram
     Hook->>Http: 画面を開いたときに自動で<br/>プロフィールの通信を始める (reload → request)
     Http->>Ctrl: GET /api/stores/{id}
     Ctrl->>Svc: 店舗のプロフィールを作るよう頼む (get)<br/>読むだけのトランザクション
-    Svc->>Repo: 店舗を読む (require → findById)
-    Repo->>Db: SELECT stores
-    Db-->>Repo: 店舗の行
-    Repo-->>Svc: 店舗
-    Svc->>Auth: ログイン中の人が店舗側の立場で<br/>この店舗を見られるかを確かめる (canViewAsStaff)
-    Auth->>Db: 会員と、オーナーの組織か店舗の担当かを読む<br/>(current、canManageView)
-    Db-->>Auth: 会員、組織、担当の行
-    Auth-->>Svc: 見られる
-    Svc->>OrgRepo: 会社名を読む (view → findById)<br/>(その前に publiclyVisible が公開中かを確かめるが、見られるので結果は使わない)
-    OrgRepo->>Db: SELECT organizations
-    Db-->>OrgRepo: 組織の行
-    OrgRepo-->>Svc: 組織 (会社名)
-    Svc->>Mod: 店舗に今出ている運営の警告を求めるよう頼む (warnings)
-    Mod->>Db: 警告と警告の解除の履歴を読む<br/>(findByStoreIdInAndEventTypeInOrderByIdDesc、SELECT store_moderation_events)
-    Db-->>Mod: 履歴の行
-    Mod-->>Svc: 今出ている警告 (activeWarnings。なければなし)
+    Svc->>Repo: 店舗を読む (require → findById、SELECT stores)
+    Svc->>Auth: ログイン中の人が店舗側の立場でこの店舗を見られるかを確かめる (canViewAsStaff)<br/>会員と、オーナーの組織か店舗の担当かを読む (current、canManageView)
+    Svc->>OrgRepo: 会社名を読む (view → findById、SELECT organizations)<br/>(その前に publiclyVisible が公開中かを確かめるが、見られるので結果は使わない)
+    Svc->>Mod: 店舗に今出ている運営の警告を求めるよう頼む (warnings → activeWarnings)<br/>(findByStoreIdInAndEventTypeInOrderByIdDesc、SELECT store_moderation_events)
     Svc-->>Ctrl: 警告を付けたプロフィール (withWarning)
     Ctrl-->>Http: 200 プロフィール (revision、company、name、contact、<br/>email、address、hours、story、warning)
     Http-->>Hook: プロフィール
@@ -74,99 +63,61 @@ sequenceDiagram
 
     opt 1a 複数の店舗を扱う (管理できる店舗が 2 つ以上なら、画面上部に選択欄が出る)
         User->>Select: 「管理する店舗」の選択欄で、編集する店舗を選ぶ
-        Select->>Shop: 選んだ店舗にする (onChange → setSellerStoreId)
-        Shop-->>Work: 選んでいる店舗が変わったので画面を描き直す (sellerStoreId)
-        Work->>Page: key={storeId} が変わるので ProfilePage を作り直す<br/>(基本フロー 2 へ。流れは 6〜30 と同じ)
+        Note over User,Page: 結果: 選んだ店舗にし (onChange → setSellerStoreId)、Workspace が描き直す。key={storeId} が変わるので ProfilePage を作り直す。<br/>画面: 基本フロー 2 へ (流れは 6〜18 と同じ)
     end
 
     User->>Page: 入力欄を編集し、「店舗情報を保存」をクリック
-    alt 5a 店舗名・所在地・営業時間が空 (画面で止まる)
+    break 5a 店舗名・所在地・営業時間が空 (画面で止まる)
         Page-->>User: 5a-1 ブラウザーが送信を止め、空の入力欄に標準のメッセージを出す<br/>(Input の required)。通信しない。文字数は maxLength で上限を超えて入力できない
-    else 画面の検査を通る
-        Page->>Hook: 6 項目と、表示したときの revision で保存するよう頼む<br/>(save → values → run)
-        Hook->>Http: プロフィールを書き換える通信を送る (write → request)
-        Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (authFetch)
-        AuthJs->>AuthCtrl: GET /api/auth/csrf
-        AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
-        AuthJs->>Ctrl: PUT /api/seller/stores/{id}<br/>(CSRF トークンのヘッダー付き)
-        Ctrl->>Ctrl: 入力を検査する (@Valid の StoreService.Input。<br/>@NotBlank、@NotNull、@Size、@Email)
-        alt 5a 入力が不正 (空白だけ、メールの形が違う、文字数の超過)
-            Ctrl--xErrs: 入力の違反の例外を投げる (MethodArgumentNotValidException)
-            Errs-->>Http: 400「入力内容・文字数・数値の範囲を<br/>確認してください。」(invalid、INVALID_INPUT)
-            Http--xHook: エラーを投げる (readResponse → ApiError)
-            Hook-->>Page: 失敗を返す (run が false、エラーの文を設定)。400 なので取り直さない
-            Page-->>User: 5a-1「入力内容・文字数・数値の範囲を確認してください。」<br/>入力欄は入力のまま (5a-2 基本フロー 3 へ戻る)
-        else 検査を通る
-            Ctrl->>Svc: 店舗のプロフィールを保存するよう頼む (save)<br/>save 全体が 1 つのトランザクション
-            Svc->>Auth: オーナーか、その店舗の MANAGER かを確かめる<br/>(requireManager → requireStoreRole)
-            Auth->>Db: 会員、店舗、オーナーの組織か、店舗の担当とロールを読む
-            Db-->>Auth: 会員、店舗、組織、担当の行
-            alt 6b 権限がない (STAFF、ロールなし、運営が停止した店舗、閉鎖で担当から外れた MANAGER)
-                Auth--xErrs: 403 FORBIDDEN の例外を投げる (denied)
-                Errs-->>Http: 403「この操作の権限がありません。」(business)
-                Http--xHook: エラーを投げる (readResponse → ApiError)
-                Hook-->>Page: 失敗を返す (run が false、エラーの文を設定)。403 なので取り直さない
-                Page-->>User: 6b-1「この操作の権限がありません。」。変更は確定しない
-            else オーナーか MANAGER
-                Auth-->>Svc: 扱える
-                Svc->>Repo: 店舗を読む (require → findById)
-                Repo->>Db: SELECT stores
-                Db-->>Repo: 店舗の行
-                Repo-->>Svc: 店舗
-                alt 6c 閉鎖済み (closedAt がある)
-                    Svc--xErrs: 409 STORE_CLOSED の例外を投げる (requireNotClosed)
-                    Errs-->>Http: 409「この店舗は閉鎖済みです。」(business)
-                    Http--xHook: エラーを投げる (readResponse → ApiError)
-                    Hook->>Http: 409 なので最新のプロフィールを取り直す (reload)<br/>流れは 8〜29 と同じ
-                    Http-->>Hook: 最新のプロフィール
-                    Hook-->>Page: 失敗を返す (run が false、エラーの文を設定)
-                    Page-->>User: 6c-1「この店舗は閉鎖済みです。」。変更は確定しない
-                else 6a 表示した後にほかの人が更新した (revision が違う)
-                    Svc--xErrs: 409 STORE_CHANGED の例外を投げる (ApiException)
-                    Errs-->>Http: 409「店舗情報が更新されています。」(business)
-                    Http--xHook: エラーを投げる (readResponse → ApiError)
-                    Hook->>Http: 409 なので最新のプロフィールを取り直す (reload)<br/>流れは 8〜29 と同じ
-                    Http-->>Hook: 最新のプロフィール (新しい revision)
-                    Hook-->>Page: 失敗を返す (run が false、エラーの文を設定)
-                    Page-->>User: 6a-1「店舗情報が更新されています。」と、6a-2 最新のプロフィールの入力欄<br/>(revision が変わったので form key={p.revision} を作り直す。6a-3 基本フロー 3 へ戻る)
-                else revision が同じ
-                    opt 店舗名を変えた (前後の空白を除いて今の名前と比べる)
-                        Svc->>Repo: 同じ組織に同じ名前の店舗があるかを読む<br/>(existsByOrganizationIdAndName)
-                        Repo->>Db: SELECT stores
-                        Db-->>Repo: 行 (なければなし)
-                        Repo-->>Svc: ある か ない
-                    end
-                    alt 同じ組織に同じ名前の店舗がある (記述なし)
-                        Svc--xErrs: 409 STORE_NAME_EXISTS の例外を投げる (ApiException)
-                        Errs-->>Http: 409「同じ名前の店舗がすでにあります。」(business)
-                        Http--xHook: エラーを投げる (readResponse → ApiError)
-                        Hook->>Http: 409 なので最新のプロフィールを取り直す (reload)<br/>流れは 8〜29 と同じ
-                        Http-->>Hook: 最新のプロフィール (revision は同じ)
-                        Hook-->>Page: 失敗を返す (run が false、エラーの文を設定)
-                        Page-->>User: 「同じ名前の店舗がすでにあります。」<br/>revision が同じなので form を作り直さず、入力欄は入力のまま
-                    else 基本フロー 6 保存できる
-                        Svc->>Svc: 入力を店舗に書き込む (updateProfile。<br/>問い合わせメール以外は前後の空白を除く)
-                        Svc->>Repo: 書き込んだ店舗を送る (flush)
-                        Repo->>Db: UPDATE stores ... WHERE id と revision<br/>(@Version で revision を 1 増やす)
-                        Db-->>Repo: 1 行を更新
-                        Repo-->>Svc: 終わった
-                        Svc->>OrgRepo: 会社名を読む (view → findById)
-                        OrgRepo->>Db: SELECT organizations
-                        Db-->>OrgRepo: 組織の行
-                        OrgRepo-->>Svc: 組織 (会社名)
-                        Svc-->>Ctrl: 保存後のプロフィール。コミットする
-                        Ctrl-->>Http: 200 保存後のプロフィール
-                        Http-->>Hook: 保存後のプロフィール
-                        Hook->>Http: 最新のプロフィールを取り直す (reload)<br/>流れは 8〜29 と同じ
-                        Http-->>Hook: 最新のプロフィール (1 増えた revision)
-                        Hook-->>Page: 成功を返す (run が true、「保存しました。」を設定)
-                        Page-->>User: 「保存しました。」と、保存した内容の入力欄<br/>(revision が増えたので form key={p.revision} を作り直す)
-                    end
-                end
-            end
-        end
     end
+    Page->>Hook: 6 項目と、表示したときの revision で保存するよう頼む<br/>(save → values → run)
+    Hook->>Http: プロフィールを書き換える通信を送る (write → request)
+    Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (authFetch)
+    AuthJs->>AuthCtrl: GET /api/auth/csrf
+    AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
+    AuthJs->>Ctrl: PUT /api/seller/stores/{id}<br/>(CSRF トークンのヘッダー付き)
+    Ctrl->>Ctrl: 入力を検査する (@Valid の StoreService.Input。<br/>@NotBlank、@NotNull、@Size、@Email)
+    break 5a 入力が不正 (空白だけ、メールの形が違う、文字数の超過)
+        Ctrl--xErrs: 入力の違反の例外を投げる (MethodArgumentNotValidException)
+        Note over Page,Errs: 結果: 400 INVALID_INPUT を返す (invalid)。400 なので取り直さない。<br/>画面: 5a-1「入力内容・文字数・数値の範囲を確認してください。」入力欄は入力のまま (5a-2 基本フロー 3 へ戻る)
+    end
+    Ctrl->>Svc: 店舗のプロフィールを保存するよう頼む (save)<br/>save 全体が 1 つのトランザクション
+    Svc->>Auth: オーナーか、その店舗の MANAGER かを確かめる (requireManager → requireStoreRole)<br/>会員、店舗、オーナーの組織か、店舗の担当とロールを読む
+    break 6b 権限がない (STAFF、ロールなし、運営が停止した店舗、閉鎖で担当から外れた MANAGER)
+        Auth--xErrs: 403 FORBIDDEN の例外を投げる (denied)
+        Note over Page,Errs: 結果: 403 を返す (business)。403 なので取り直さない。<br/>画面: 6b-1「この操作の権限がありません。」。変更は確定しない
+    end
+    Svc->>Repo: 店舗を読む (require → findById、SELECT stores)
+    break 6c 閉鎖済み (closedAt がある)
+        Svc--xErrs: 409 STORE_CLOSED の例外を投げる (requireNotClosed)
+        Note over Page,Errs: 結果: 409 を返す (business)。画面は 409 なので最新のプロフィールを取り直す (reload。流れは 8〜16 と同じ)。<br/>画面: 6c-1「この店舗は閉鎖済みです。」。変更は確定しない
+    end
+    break 6a 表示した後にほかの人が更新した (revision が違う)
+        Svc--xErrs: 409 STORE_CHANGED の例外を投げる (ApiException)
+        Note over Page,Errs: 結果: 409 を返す (business)。画面は最新のプロフィール (新しい revision) を取り直す (reload)。<br/>画面: 6a-1「店舗情報が更新されています。」と、6a-2 最新のプロフィールの入力欄 (form key={p.revision} を作り直す。6a-3 基本フロー 3 へ戻る)
+    end
+    opt 店舗名を変えた (前後の空白を除いて今の名前と比べる)
+        Svc->>Repo: 同じ組織に同じ名前の店舗があるかを読む<br/>(existsByOrganizationIdAndName)
+        Note over Svc,Repo: 結果: SELECT stores で、ある か ない かを返す
+    end
+    break 同じ組織に同じ名前の店舗がある (記述なし)
+        Svc--xErrs: 409 STORE_NAME_EXISTS の例外を投げる (ApiException)
+        Note over Page,Errs: 結果: 409 を返す (business)。画面は最新のプロフィールを取り直す (revision は同じ)。<br/>画面: 「同じ名前の店舗がすでにあります。」revision が同じなので form を作り直さず、入力欄は入力のまま
+    end
+    Svc->>Svc: 基本フロー 6 入力を店舗に書き込む (updateProfile。<br/>問い合わせメール以外は前後の空白を除く)
+    Svc->>Repo: 書き込んだ店舗を送る (flush)
+    Repo->>Db: UPDATE stores ... WHERE id と revision<br/>(@Version で revision を 1 増やす)
+    Svc->>OrgRepo: 会社名を読む (view → findById、SELECT organizations)
+    Svc-->>Ctrl: 保存後のプロフィール。コミットする
+    Ctrl-->>Http: 200 保存後のプロフィール
+    Http-->>Hook: 保存後のプロフィール
+    Hook->>Ctrl: 最新のプロフィールを取り直す (reload → request)<br/>GET /api/stores/{id}。流れは 8〜16 と同じ
+    Ctrl-->>Hook: 最新のプロフィール (1 増えた revision)
+    Hook-->>Page: 成功を返す (run が true、「保存しました。」を設定)
+    Page-->>User: 「保存しました。」と、保存した内容の入力欄<br/>(revision が増えたので form key={p.revision} を作り直す)
 ```
+
+![EC-S02 シーケンス図](<images/EC-S02_店舗プロフィールを編集する-1.png>)
 
 ## 共通代替フローを直接書いた図
 
@@ -254,7 +205,7 @@ sequenceDiagram
         Http->>Filter: GET /api/stores/{id}
         Filter->>Ctrl: 要求を通す (chain.doFilter)
         Ctrl->>Svc: 店舗のプロフィールを作るよう頼む (get)
-        Svc->>Db: 店舗、会員、組織、警告を読む (上の図の 10〜25)
+        Svc->>Db: 店舗、会員、組織、警告を読む (上の図の 10〜13)
         Db--xSvc: 失敗 (DataAccessException)
         Svc--xCtrl: 例外
         Ctrl-->>Http: 503 DATABASE_UNAVAILABLE (ApiErrors.java の database)
@@ -264,7 +215,7 @@ sequenceDiagram
     else 読めた
         Http->>Filter: GET /api/stores/{id}
         Filter->>Ctrl: 要求を通す (chain.doFilter)
-        Ctrl-->>Http: 200 プロフィール (上の図の 9〜27)
+        Ctrl-->>Http: 200 プロフィール (上の図の 9〜15)
         Http-->>Hook: プロフィール
         Hook-->>Page: プロフィール
         Page-->>User: 会社名と 6 つの入力欄、「店舗情報を保存」
@@ -314,7 +265,7 @@ sequenceDiagram
                 AuthJs->>Filter: PUT /api/seller/stores/{id}
                 Filter->>Ctrl: 要求を通す (chain.doFilter)
                 Ctrl->>Svc: 店舗のプロフィールを保存するよう頼む (save)
-                Svc->>Db: 立場を確かめ、店舗を読み、revision と店舗名を確かめて<br/>書き換え、コミットする (上の図の 49〜97)
+                Svc->>Db: 立場を確かめ、店舗を読み、revision と店舗名を確かめて<br/>書き換え、コミットする (上の図の 31〜42)
                 alt *a MySQL との通信に失敗
                     Db--xSvc: 失敗 (DataAccessException)。<br/>トランザクションの変更はすべて取り消す
                     Svc--xCtrl: 例外
@@ -342,6 +293,8 @@ sequenceDiagram
         end
     end
 ```
+
+![EC-S02 共通代替フローを直接書いた図](<images/EC-S02_店舗プロフィールを編集する-2.png>)
 
 ## ユースケース記述との差
 

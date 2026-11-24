@@ -9,6 +9,7 @@
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 図は、EC-C01 でマイページを開いた後から始まります。マイページを開いたときに `Workspace` がサイドバー用に `GET /api/account/store-applications` で申請を読み、申請がまだないので、リンクは「出店申請」になっています。再申請（前回の申請が却下か取り下げ済み）のときはリンクが「出店申請状況」のままなので、EC-B18 の「再申請する」から同じ出店申請画面を開きます（図の 2 から同じ流れ）。
 入力の手順と確認（基本フロー 3〜9）は画面の中だけで、通信しません。共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
+代替フローのうち、エラーで終わるもの（4a・4b・11a）と記述にない分岐（項目の 400 `INVALID_INPUT`、出店申請用アカウントでない 403、書類の 400 `INVALID_DOCUMENT`）は、分かれる所だけを描き、結果と画面は Note に文で書いています。画面の中だけで終わる 5a・10a と、再申請のときの前の申請の書き換え（opt）も、頼む矢印 1 本と Note にしています。サーバーがエラーを返したときの画面の後処理（`readResponse` が `ApiError` を投げる → `submit` の `catch` で、400 なら手順 1 に戻し、エラーの文を出す）は、どれも同じです。
 
 ```mermaid
 sequenceDiagram
@@ -27,144 +28,100 @@ sequenceDiagram
         participant Ctrl as 出店申請API<br/>StoreApplicationController<br/>(StoreApplicationController.java)
         participant Errs as エラーの応答<br/>ApiErrors<br/>(ApiErrors.java)
         participant Svc as 出店申請の処理<br/>StoreApplicationService<br/>(StoreApplicationService.java)
-        participant Auth as ログイン中の会員<br/>AuthService<br/>(AuthService.java)
-        participant Mem as 会員の読み書き<br/>AuthMemberRepository<br/>(AuthMemberRepository.java)
         participant Repo as 出店申請の読み書き<br/>StoreApplicationRepository<br/>(StoreApplicationRepository.java)
         participant Ntf as 通知の保存<br/>NotificationService<br/>(NotificationService.java)
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、5、42、サイドバーの取り直しの 90 に適用<br/>*a 通信に失敗した場合: 5、40、42、サイドバーの取り直しの 90 に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、4、24、サイドバーの取り直しの 43 に適用<br/>*a 通信に失敗した場合: 4、22、24、サイドバーの取り直しの 43 に適用
 
     User->>Work: マイページのサイドバー「出店をご検討の方」の<br/>「出店申請」をクリック
     Work->>Page: URL を /seller/application に変え、<br/>ApplicationPage を表示
     Page->>Hook: 自分の出店申請を取りに行くよう頼む (useResource)
-    Hook->>Http: 画面を開いたときに自動で<br/>申請の一覧の通信を始める (reload → request)
-    Http->>Ctrl: GET /api/account/store-applications
-    Ctrl->>Svc: 自分の申請の一覧を作るよう頼む (list)<br/>読み取り専用のトランザクション
-    Svc->>Auth: ログイン中の会員を読む (current)
-    Auth-->>Svc: ログイン中の会員
-    Svc->>Repo: その会員の申請を新しい順に読む<br/>(findByMemberIdOrderByCreatedAtDesc)
-    Repo->>Db: SELECT organization_applications
-    Db-->>Repo: 今の申請と前回の申請の行 (申請がなければ 0 件)
-    Repo-->>Svc: 申請のリスト
-    Svc-->>Ctrl: 申請のリスト (view)
-    Ctrl-->>Http: 200 申請の配列
-    Http-->>Hook: 申請の配列
+    Hook->>Ctrl: 画面を開いたときに自動で申請の一覧の通信を始める (reload → request)<br/>GET /api/account/store-applications
+    Ctrl->>Svc: 自分の申請の一覧を作るよう頼む (list)。読み取り専用のトランザクション<br/>ログイン中の会員を読み (current)、その会員の申請を新しい順に読む<br/>(findByMemberIdOrderByCreatedAtDesc、SELECT organization_applications)
+    Svc-->>Ctrl: 今の申請と前回の申請のリスト (view。申請がなければ 0 件)
+    Ctrl-->>Hook: 200 申請の配列
     Hook-->>Page: 申請の配列
-    Page->>Page: 先頭を最新の申請とし、却下か取り下げ済みなら<br/>前回の申請として使う (latest、canReapply)
-    alt 申請がない
-        Page->>Wiz: 入力の手順を表示 (ApplicationWizard、previous は null)
+    Page->>Wiz: 先頭を最新の申請とし、却下か取り下げ済みなら前回の申請として、<br/>入力の手順を表示 (latest、canReapply、ApplicationWizard の previous)
+    alt 申請がない (previous は null)
         Wiz-->>User: 手順「事業者情報」「担当者・連絡先」「事業確認書類」「入力内容の確認」、<br/>「ステップ 1 / 4：事業者情報」と「会社・事業者名」「所在地」の入力欄
     else 再申請 (EC-B18 の「再申請する」から開いた。最新の申請が却下か取り下げ済み)
-        Page->>Wiz: 入力の手順を表示 (ApplicationWizard、previous は前回の申請)
         Wiz-->>User: 同じ手順と入力欄に前回の内容を入れ、「前回の申請内容を入力しています。<br/>事業確認書類はもう一度選択してください。」
     end
 
     loop 手順ごと (事業者情報 → 担当者・連絡先 → 事業確認書類)
         opt 5a 前の手順に戻る (担当者・連絡先、事業確認書類の手順)
             User->>Wiz: 5a-1「戻る」をクリック
-            Wiz-->>User: 5a-2 前の手順の入力欄 (go(step - 1))。<br/>入力欄は隠すだけなので、入力はそのまま
+            Note over User,Wiz: 結果: 入力欄は隠すだけなので、入力はそのまま (go(step - 1))。<br/>画面: 5a-2 前の手順の入力欄。
         end
         User->>Wiz: その手順の項目を入力し、「次へ」<br/>(事業確認書類では「確認画面へ」) をクリック
-        Wiz->>Wiz: その手順の項目だけを確かめる (next → stepError)<br/>文字の項目は前後の空白を除いて調べる
-        alt 4a 必須項目が空
-            Wiz-->>User: 4a-1「未入力の項目があります：(不足項目)」。次の手順へ進まない
-            User->>Wiz: 4a-2 入力を直し、同じボタンをクリック (24 へ戻る)
-        else 4b 形式が不正 (連絡先メール、電話番号、書類の大きさ)
-            Wiz-->>User: 4b-1「連絡先メールの形式が正しくありません。」<br/>「電話番号は数字・＋・括弧・ハイフンで入力してください。」<br/>「事業確認書類は5MB以内のファイルを選択してください。」のどれか
-            User->>Wiz: 4b-2 入力を直し、同じボタンをクリック (24 へ戻る)
-        else 事業者情報か担当者・連絡先で、確かめを通った
+        break 4a 必須項目が空 (next → stepError。文字の項目は前後の空白を除いて調べる)
+            Wiz-->>User: 4a-1「未入力の項目があります：(不足項目)」。次の手順へ進まない<br/>(通信しない)。4a-2 入力を直し、同じボタンをクリック (13 へ戻る)
+        end
+        break 4b 形式が不正 (連絡先メール、電話番号、書類の大きさ)
+            Wiz-->>User: 4b-1「連絡先メールの形式が正しくありません。」<br/>「電話番号は数字・＋・括弧・ハイフンで入力してください。」<br/>「事業確認書類は5MB以内のファイルを選択してください。」のどれか。<br/>4b-2 入力を直し、同じボタンをクリック (13 へ戻る)
+        end
+        alt 事業者情報か担当者・連絡先の手順
             Wiz-->>User: 次の手順の入力欄 (go(step + 1))
-        else 事業確認書類で、確かめを通った
-            Wiz->>Wiz: 入力した値 (前後の空白を除く) と<br/>書類のファイル名を覚える (setDraft)
-            Wiz-->>User: 「入力内容の確認」、「この内容で出店を申請します。…」、<br/>入力した内容 (Summary)、「…を修正」の 3 つのボタンと「申請する」
+        else 事業確認書類の手順
+            Wiz-->>User: 入力した値 (前後の空白を除く) と書類のファイル名を覚え (setDraft)、<br/>「入力内容の確認」、「この内容で出店を申請します。…」、<br/>入力した内容 (Summary)、「…を修正」の 3 つのボタンと「申請する」
         end
     end
     opt 10a 入力内容を修正する
         User->>Wiz: 10a-1「事業者情報を修正」「担当者・連絡先を修正」<br/>「事業確認書類を修正」のどれかをクリック
-        Wiz-->>User: 10a-2 その手順の入力欄 (go(index))。入力と選んだ書類はそのまま
-        User->>Wiz: 10a-3 入力を直し、「確認画面へ」まで進める<br/>(上の手順ごとの流れ。基本フロー 9 へ戻る)
+        Note over User,Wiz: 結果: 10a-2 その手順の入力欄に戻る (go(index))。入力と選んだ書類はそのまま。<br/>画面: 10a-3 入力を直し、「確認画面へ」まで進める (基本フロー 9 へ戻る)。
     end
 
     User->>Wiz: 入力内容を確かめ、「申請する」をクリック
-    Wiz->>Wiz: 送る本文を作る (submit)。application に入力の JSON、<br/>document に書類を入れ、ボタンは「申請しています…」
-    Wiz->>Http: 申請を送るよう頼む (send)
+    Wiz->>Http: 送る本文を作り、申請を送るよう頼む (submit → send)<br/>application に入力の JSON、document に書類。ボタンは「申請しています…」
     Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (authFetch)
     AuthJs->>AuthCtrl: GET /api/auth/csrf
     AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
     AuthJs->>Ctrl: POST /api/account/store-applications<br/>(multipart/form-data、CSRF トークンのヘッダー付き)
     Ctrl->>Ctrl: application の項目を確かめる (submit の @Valid、Input)<br/>必須、文字数、メールの形式、電話番号の文字
-    alt 項目が条件に合わない (記述なし)
+    break 項目が条件に合わない (記述なし)
         Ctrl--xErrs: 例外を投げる (MethodArgumentNotValidException)
-        Errs-->>Http: 400 INVALID_INPUT「入力内容・文字数・<br/>数値の範囲を確認してください。」(invalid)
-        Http--xWiz: エラーを投げる (readResponse → ApiError 400)
-        Wiz-->>User: 手順 1 の入力欄 (setStep(0)) と<br/>「入力内容・文字数・数値の範囲を確認してください。」
-    else 条件に合う
-        Ctrl->>Svc: 申請を保存するよう頼む (submit)<br/>submit 全体が 1 つのトランザクション
-        Svc->>Auth: ログイン中の会員を読む (current)
-        Auth-->>Svc: ログイン中の会員
-        Svc->>Mem: 会員の行をロックして読み直す (lockMember)
-        Mem->>Db: SELECT ... FOR UPDATE members
-        Db-->>Mem: ロックした会員の行
-        Mem-->>Svc: 会員
-        alt 出店申請用アカウントでない (記述なし)
-            Svc--xErrs: 403 APPLICANT_REQUIRED の例外を投げる (ApiException)
-            Errs-->>Http: 403「出店の申請は、企業様向けの登録で<br/>作ったアカウントで行ってください。」(business)
-            Http--xWiz: エラーを投げる (readResponse → ApiError)
-            Wiz-->>User: 「入力内容の確認」のまま、その文
-        else 出店申請用アカウント
-            Svc->>Repo: 自分の申請をすべてロックして読む (lockAllForMember)
-            Repo->>Db: SELECT ... FOR UPDATE organization_applications
-            Db-->>Repo: ロックした申請の行
-            Repo-->>Svc: 申請のリスト (今の申請が先頭)
-            alt 11a 今の申請が審査中 (SUBMITTED)
-                Svc--xErrs: 409 APPLICATION_EXISTS の例外を投げる (ApiException)
-                Errs-->>Http: 409「審査中の申請があります。」(business)
-                Http--xWiz: エラーを投げる (readResponse → ApiError)
-                Wiz-->>User: 11a-1「入力内容の確認」のまま「審査中の申請があります。」<br/>申請は保存しない (11a-2 ユースケースを終了する)
-            else 書類が空か、PDF・PNG・JPEG でない (記述なし)
-                Svc--xErrs: 400 INVALID_DOCUMENT の例外を投げる (ApiException)<br/>空なら「確認書類は5MB以内で指定してください。」、先頭のバイトが<br/>PDF・PNG・JPEG でなければ「PDF・PNG・JPEGを指定してください。」
-                Errs-->>Http: 400 とその文 (business)
-                Http--xWiz: エラーを投げる (readResponse → ApiError 400)
-                Wiz-->>User: 手順 1 の入力欄 (setStep(0)) とその文
-            else 保存できる
-                Svc->>Svc: 新しい申請を作る (new StoreApplicationEntity)<br/>審査中 (SUBMITTED)、今の申請 (is_latest が真)
-                opt 再申請 (今の申請がある)
-                    Svc->>Repo: 前々回の申請を消し、DB に反映する (delete、flush)
-                    Repo->>Db: DELETE organization_applications
-                    Svc->>Svc: 今の申請を前回の申請にする (becomePrevious)
-                    Svc->>Repo: DB に反映する (flush)
-                    Repo->>Db: UPDATE organization_applications (is_latest を偽にする)
-                end
-                Svc->>Repo: 新しい申請を保存する (save)
-                Svc->>Ntf: 12 サイト内通知「出店申請を受け付けました」を<br/>保存するよう頼む (send、本文は会社・事業者名)
-                Ntf-->>Svc: 終わった
-                Svc->>Db: 申請と通知を保存してコミットする<br/>(INSERT organization_applications、notifications)
-                Db-->>Svc: 完了
-                Svc-->>Ctrl: 保存した申請 (view)
-                Ctrl-->>Http: 200 保存した申請
-                Http-->>Wiz: 保存した申請 (readResponse)
-                Wiz->>Page: 申請が終わったことを伝える (onDone)
-                Page->>Work: 受付の表示に切り替え (setDone(true))、<br/>申請が変わったことを知らせる (applicationsChanged のイベント)
-                Page-->>User: 11「出店申請を受け付けました」「審査結果は通知でお知らせします。」、<br/>「出店申請状況を確認する」リンク
-                Work->>Hook: サイドバー用の申請を取り直すよう頼む<br/>(applicationsChanged のリスナー → reload)
-                Hook->>Http: 申請の一覧の通信を送る (request)
-                Http->>Ctrl: GET /api/account/store-applications
-                Ctrl->>Svc: 自分の申請の一覧を作るよう頼む (list)<br/>中身は 7〜13 と同じ
-                Svc-->>Ctrl: 申請のリスト
-                Ctrl-->>Http: 200 申請の配列 (今の申請が 1 件以上)
-                Http-->>Hook: 申請の配列
-                Hook-->>Work: 申請の配列
-                Work-->>User: サイドバーのリンクが「出店申請状況」になる
-            end
-        end
+        Note over Errs,Wiz: 結果: 400 INVALID_INPUT「入力内容・文字数・数値の範囲を確認してください。」を返す。<br/>画面: 手順 1 の入力欄 (setStep(0)) とその文。
     end
+    Ctrl->>Svc: 申請を保存するよう頼む (submit)。全体が 1 つのトランザクション<br/>ログイン中の会員を読み (current)、会員の行をロックして読み直す<br/>(lockMember、SELECT ... FOR UPDATE members)
+    break 出店申請用アカウントでない (記述なし)
+        Svc--xErrs: 403 APPLICANT_REQUIRED の例外を投げる (ApiException)
+        Note over Errs,Wiz: 結果: 403 を返し、申請は保存しない。<br/>画面: 「入力内容の確認」のまま「出店の申請は、企業様向けの登録で作ったアカウントで行ってください。」
+    end
+    Svc->>Repo: 自分の申請をすべてロックして読む (lockAllForMember、<br/>SELECT ... FOR UPDATE organization_applications)。今の申請が先頭
+    break 11a 今の申請が審査中 (SUBMITTED)
+        Svc--xErrs: 409 APPLICATION_EXISTS の例外を投げる (ApiException)
+        Note over Errs,Wiz: 結果: 409 を返し、申請は保存しない。<br/>画面: 11a-1「入力内容の確認」のまま「審査中の申請があります。」(11a-2 ユースケースを終了する)
+    end
+    break 書類が空か、PDF・PNG・JPEG でない (記述なし)
+        Svc--xErrs: 400 INVALID_DOCUMENT の例外を投げる (ApiException)
+        Note over Errs,Wiz: 結果: 400 を返す。空なら「確認書類は5MB以内で指定してください。」、<br/>先頭のバイトが PDF・PNG・JPEG でなければ「PDF・PNG・JPEGを指定してください。」<br/>画面: 手順 1 の入力欄 (setStep(0)) とその文。
+    end
+    Svc->>Svc: 新しい申請を作る (new StoreApplicationEntity)<br/>審査中 (SUBMITTED)、今の申請 (is_latest が真)
+    opt 再申請 (今の申請がある)
+        Svc->>Repo: 前々回の申請を消し、今の申請を前回の申請にする<br/>(delete、becomePrevious、flush)
+        Note over Svc,Db: 結果: DELETE organization_applications (前々回の申請)、<br/>UPDATE organization_applications (今の申請の is_latest を偽にする)。
+    end
+    Svc->>Repo: 新しい申請を保存する (save)
+    Svc->>Ntf: 12 サイト内通知「出店申請を受け付けました」を<br/>保存するよう頼む (send、本文は会社・事業者名)
+    Svc->>Db: 申請と通知を保存してコミットする<br/>(INSERT organization_applications、notifications)
+    Db-->>Svc: 完了
+    Svc-->>Ctrl: 保存した申請 (view)
+    Ctrl-->>Http: 200 保存した申請
+    Http-->>Wiz: 保存した申請 (readResponse)
+    Wiz->>Page: 申請が終わったことを伝える (onDone)。受付の表示に切り替え (setDone(true))、<br/>申請が変わったことを知らせる (applicationsChanged のイベント)
+    Page-->>User: 11「出店申請を受け付けました」「審査結果は通知でお知らせします。」、<br/>「出店申請状況を確認する」リンク
+    Work->>Ctrl: applicationsChanged を受けて、サイドバー用の申請を取り直す (リスナー → reload)<br/>GET /api/account/store-applications。中身は 5〜6 と同じ
+    Ctrl-->>Work: 200 申請の配列 (今の申請が 1 件以上)
+    Work-->>User: サイドバーのリンクが「出店申請状況」になる
 ```
+
+![EC-B17 シーケンス図](<images/EC-B17_出店の申請をする-1.png>)
 
 ## 共通代替フローを直接書いた図
 
-上の図の通信に、この画面で起こる共通代替フロー（\*a、\*b）を書き込んだ図です。画面を開いて申請を取る通信（上の図の 5）と、申請を送る通信（上の図の 40、42）に分けています。入力の手順と確認は通信しないので、共通代替フローは起こりません。申請を送った後にサイドバー用に取り直す通信（上の図の 90）は、\*a では画面にエラーを出さず、サイドバーのリンクが「出店申請」のまま残るだけです。\*b では「画面を開いて申請を取るとき」の \*b と同じ期限切れのお知らせが出ます。どちらも申請の受付の表示は変わらないので、図から省いています。
+上の図の通信に、この画面で起こる共通代替フロー（\*a、\*b）を書き込んだ図です。画面を開いて申請を取る通信（上の図の 4）と、申請を送る通信（上の図の 22、24）に分けています。入力の手順と確認は通信しないので、共通代替フローは起こりません。申請を送った後にサイドバー用に取り直す通信（上の図の 43）は、\*a では画面にエラーを出さず、サイドバーのリンクが「出店申請」のまま残るだけです。\*b では「画面を開いて申請を取るとき」の \*b と同じ期限切れのお知らせが出ます。どちらも申請の受付の表示は変わらないので、図から省いています。
 
 ### 画面を開いて申請を取るとき
 
@@ -268,7 +225,7 @@ sequenceDiagram
         Http->>Filter: GET /api/account/store-applications
         Filter->>Ctrl: 要求を通す (chain.doFilter)
         Ctrl->>Svc: 自分の申請の一覧を作るよう頼む (list)
-        Svc->>Db: ログイン中の会員と申請を読む (上の図の 7〜11)
+        Svc->>Db: ログイン中の会員と申請を読む (上の図の 5)
         alt *a MySQL との通信に失敗
             Db--xSvc: 失敗 (DataAccessException)
             Svc--xCtrl: 例外
@@ -283,7 +240,7 @@ sequenceDiagram
             Http-->>Hook: 申請の配列
             Hook-->>Page: 申請の配列
             Page->>Wiz: 入力の手順を表示 (ApplicationWizard)
-            Wiz-->>User: 「ステップ 1 / 4：事業者情報」の入力欄 (上の図の 19、21)
+            Wiz-->>User: 「ステップ 1 / 4：事業者情報」の入力欄 (上の図の 10、11)
         end
     end
     opt *a-3 一覧を取り直す
@@ -291,6 +248,8 @@ sequenceDiagram
         Status->>Hook: 申請を取り直す (reload)。この図の 36 からやり直す
     end
 ```
+
+![EC-B17 共通代替フローを直接書いた図（画面を開いて申請を取るとき）](<images/EC-B17_出店の申請をする-2.png>)
 
 ### 申請を送るとき
 
@@ -352,7 +311,7 @@ sequenceDiagram
             AuthJs->>Filter: POST /api/account/store-applications
             Filter->>Ctrl: 要求を通す (chain.doFilter)
             Ctrl->>Svc: 申請を保存するよう頼む (submit)
-            Svc->>Db: 会員と申請をロックして読み、申請と通知を保存して<br/>コミットする (上の図の 49〜81)
+            Svc->>Db: 会員と申請をロックして読み、申請と通知を保存して<br/>コミットする (上の図の 27〜37)
             alt *a MySQL との通信に失敗
                 Db--xSvc: 失敗 (DataAccessException)。<br/>トランザクションの変更はすべて取り消す
                 Svc--xCtrl: 例外
@@ -364,7 +323,7 @@ sequenceDiagram
                 Svc-->>Ctrl: 保存した申請
                 Ctrl-->>Http: 200 保存した申請
                 Http-->>Wiz: 保存した申請
-                Wiz-->>User: 「出店申請を受け付けました」(上の図の 85〜96)
+                Wiz-->>User: 「出店申請を受け付けました」(上の図の 38〜42)
             end
         end
     end
@@ -372,6 +331,8 @@ sequenceDiagram
         User->>Wiz: 残った入力のまま、もう一度「申請する」をクリック<br/>(この図の 1 へ戻る)
     end
 ```
+
+![EC-B17 共通代替フローを直接書いた図（申請を送るとき）](<images/EC-B17_出店の申請をする-3.png>)
 
 ## ユースケース記述との差
 

@@ -8,6 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
+代替フローのうち、2a（カートが空）は画面の中で終わるので `break` の中に矢印 1 本で、2b（買えなくなった明細を外す、お知らせを閉じる）は `opt` の中を矢印 1 本と Note にしています。店舗側・出店申請用のアカウントの 403（関連情報）も、分かれる所だけを描き、結果と画面は Note に文で書いています。
 
 カートは、EC の画面を開いたときに `useShop` が `GET /api/cart` で読み込みます。共通ヘッダーの「カート」をクリックしても通信せず、読み込み済みのカートを「ショッピングカート」画面に出します。購入できなくなった明細を外す処理（2b）も、画面を開いたときの `GET /api/cart` の中でサーバーが行います。そのため図は、画面を開く操作から始めています。
 
@@ -36,7 +37,7 @@ sequenceDiagram
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (ログイン状態の確認)、5、50 に適用<br/>*a 通信に失敗した場合: 2、5 に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (ログイン状態の確認)、5、31 に適用<br/>*a 通信に失敗した場合: 2、5 に適用
 
     User->>App: EC の画面 (「トップ」画面など) を開く
     App->>App: ログイン状態を読む<br/>(useAuth → readSession、GET /api/auth/me)
@@ -45,85 +46,57 @@ sequenceDiagram
     Http->>Ctrl: GET /api/cart
     Ctrl->>Resolver: 会員のカートを特定するよう頼む (resolve)
     Resolver->>Auth: ログイン中の人が購入できるアカウントかを確かめる (requireBuyer)
-    alt 関連情報 店舗側・出店申請用のアカウント (SHOP_OWNER、SHOP_STAFF、SHOP_OWNER_APPLICANT)
+    break 関連情報 店舗側・出店申請用のアカウント (SHOP_OWNER、SHOP_STAFF、SHOP_OWNER_APPLICANT)
         Auth--xErrs: 403 BUYER_REQUIRED の例外を投げる (ApiException)
-        Errs-->>Http: 403「店舗・出店申請用のアカウントでは購入できません。<br/>購入者のアカウントでご利用ください。」(business)
-        Http--xShop: エラーを投げる (readResponse → ApiError)
-        Shop->>Shop: 購入できないアカウントとして覚える<br/>(refresh の catch → setRefusedBuyer(true)、setCart(null))。<br/>続けて商品を読む (api.products、GET /api/products)
-    else 購入者 (USER) か運営者 (ADMIN)
-        Auth-->>Resolver: ログイン中の会員
-        Resolver->>MemberCart: 会員のカートの ID を求めるよう頼む (resolve)<br/>resolve 全体が 1 つのトランザクション
-        MemberCart->>Db: 会員の行をロックして読む<br/>(lockMember、SELECT ... FOR UPDATE members)
-        Db-->>MemberCart: 会員の行
-        MemberCart->>CartRepo: 会員のカートを探す (findByMemberId)
-        CartRepo->>Db: SELECT carts
-        Db-->>CartRepo: カートの行 (なければなし)
-        CartRepo-->>MemberCart: カート (なければなし)
-        opt 会員のカートがまだない
-            MemberCart->>CartRepo: 新しいカートを保存する (saveAndFlush)
-            CartRepo->>Db: INSERT carts
-            Db-->>CartRepo: 完了
-            CartRepo-->>MemberCart: 新しいカート
-        end
-        MemberCart-->>Resolver: カートの ID (ここでコミット)
-        Resolver-->>Ctrl: カートの ID
-        Ctrl->>Svc: カートを読むよう頼む (read)<br/>read 全体が 1 つのトランザクション
-        Svc->>CartRepo: カートの行をロックして読む (findLocked)
-        CartRepo->>Db: SELECT ... FOR UPDATE carts
-        Db-->>CartRepo: カートの行
-        CartRepo-->>Svc: カート
-        Svc->>ItemRepo: カートの明細を読む (findAllForCart)
-        ItemRepo->>Db: SELECT cart_items
-        Db-->>ItemRepo: 明細の行
-        ItemRepo-->>Svc: 明細のリスト
-        Svc->>Catalog: 明細の商品が今買えるか、買えない理由を<br/>調べるよう頼む (listingsByIds)
-        Catalog->>Db: 商品・在庫・店舗・組織を読む<br/>(findByIdIn、findAllById、SELECT products、inventory、stores、organizations)
-        Db-->>Catalog: 行
-        Catalog-->>Svc: 商品ごとの販売状態 (Listing、買えない理由の unavailableReason)
-        opt 2b 戻らない理由で買えなくなった明細がある<br/>(DELETED、STORE_CLOSED、STORE_SUSPENDED、ORGANIZATION_SUSPENDED)
-            loop 外す明細ごと
-                Svc->>ItemRepo: 明細を外し、外した明細を覚える (delete、RemovedLine)
-            end
-            Svc->>ItemRepo: 削除を MySQL に送る (flush)
-            ItemRepo->>Db: DELETE cart_items
-            Svc->>Svc: カートの revision を 1 増やす (incrementRevision)
-        end
-        Svc->>Svc: 明細と販売状態を読み直し、明細ごとの金額 (lineTotalYen) と<br/>買えるか (available)、合計、点数、注文に進めるか (canCheckout) を計算し、<br/>受取連絡先を付ける (view → findAllForCart、listingsByIds、pickupDetails)
-        Svc-->>Ctrl: カートの内容 (CartView)。read の終わりにコミット
-        Ctrl-->>Http: 200 カートの内容 (revision、items、subtotalYen、<br/>totalYen、itemCount、canCheckout、removedItems)
-        Http-->>Shop: カートの内容
-        Shop->>Shop: カートを覚える (setCart)。外した明細があれば覚える<br/>(setRemovedLines)。続けて商品と注文履歴を読む<br/>(api.products、api.orders、GET /api/products、GET /api/orders)
+        Note over Errs,Page: 結果: 403「店舗・出店申請用のアカウントでは購入できません。…」を返す (business)。画面は購入できないアカウントとして覚え (setRefusedBuyer(true)、setCart(null))、商品を読む。<br/>画面: 「カート」をクリックすると、カートの代わりに「店舗・出店申請用のアカウントでは購入できません。購入は購入者のアカウントでご利用ください。」と「商品を探す」(CartPage の buyerBlocked)。
     end
-    Shop->>Shop: 最後に近くの店舗を読む (api.stores、GET /api/stores)
+    Auth-->>Resolver: ログイン中の会員 (購入者 (USER) か運営者 (ADMIN))
+    Resolver->>MemberCart: 会員のカートの ID を求めるよう頼む (resolve)。resolve 全体が 1 つのトランザクション<br/>会員の行をロックして読む (lockMember、SELECT ... FOR UPDATE members)
+    MemberCart->>CartRepo: 会員のカートを探す (findByMemberId、SELECT carts)
+    CartRepo-->>MemberCart: カート (なければなし)
+    opt 会員のカートがまだない (記述なし)
+        MemberCart->>CartRepo: 新しいカートを保存する (saveAndFlush)
+        Note over MemberCart,CartRepo: 結果: INSERT carts で新しいカートを作り、その ID を使う。
+    end
+    MemberCart-->>Resolver: カートの ID (ここでコミット)
+    Resolver-->>Ctrl: カートの ID
+    Ctrl->>Svc: カートを読むよう頼む (read)<br/>read 全体が 1 つのトランザクション
+    Svc->>CartRepo: カートの行をロックして読む (findLocked、SELECT ... FOR UPDATE carts)
+    CartRepo-->>Svc: カート
+    Svc->>ItemRepo: カートの明細を読む (findAllForCart、SELECT cart_items)
+    ItemRepo-->>Svc: 明細のリスト
+    Svc->>Catalog: 明細の商品が今買えるか、買えない理由を調べるよう頼む (listingsByIds)<br/>商品・在庫・店舗・組織を読む (findByIdIn、findAllById、<br/>SELECT products、inventory、stores、organizations)
+    Catalog-->>Svc: 商品ごとの販売状態 (Listing、買えない理由の unavailableReason)
+    opt 2b 戻らない理由で買えなくなった明細がある<br/>(DELETED、STORE_CLOSED、STORE_SUSPENDED、ORGANIZATION_SUSPENDED)
+        Svc->>ItemRepo: 2b-1 明細を外す (明細ごとに delete、まとめて flush)
+        Note over Svc,ItemRepo: 結果: DELETE cart_items。外した明細を覚え (RemovedLine)、カートの revision を 1 増やす (incrementRevision)。
+    end
+    Svc->>Svc: 明細と販売状態を読み直し、明細ごとの金額 (lineTotalYen) と<br/>買えるか (available)、合計、点数、注文に進めるか (canCheckout) を計算し、<br/>受取連絡先を付ける (view → findAllForCart、listingsByIds、pickupDetails)
+    Svc-->>Ctrl: カートの内容 (CartView)。read の終わりにコミット
+    Ctrl-->>Http: 200 カートの内容 (revision、items、subtotalYen、<br/>totalYen、itemCount、canCheckout、removedItems)
+    Http-->>Shop: カートの内容
+    Shop->>Shop: カートを覚える (setCart)。外した明細があれば覚える (setRemovedLines)。<br/>続けて商品・注文履歴・近くの店舗を読む (api.products、api.orders、api.stores、<br/>GET /api/products、GET /api/orders、GET /api/stores)
 
     User->>Header: 共通ヘッダーの「カート」をクリック
     Header->>App: URL を /cart に変え、画面を切り替える。通信しない<br/>(follow → onNavigate → navigateFromHeader → navigate)
     App->>Page: path が /cart でログイン中なので、<br/>ショッピングカート画面を表示 (CartPage)
-    alt 関連情報 店舗側・出店申請用のアカウント (buyerBlocked)
-        Page-->>User: 「店舗・出店申請用のアカウントでは購入できません。<br/>購入は購入者のアカウントでご利用ください。」と「商品を探す」
-    else 購入者か運営者
-        Page->>Cart: 読み込み済みのカートで表示するよう頼む (Cart)
-        alt 2a カートが空 (cart.items.length が 0)
-            Cart-->>User: 2a-1「まだ商品が入っていません。」「商品を探す」<br/>「庭に設置したものから追加」(2a-2 ユースケースを終了する)
-        else 商品がある
-            loop 明細ごと (cart.items.map)
-                Cart->>Cart: 明細の注意書きを決める<br/>(2c unavailableReason があれば「現在は購入できません」、<br/>2d available が偽で unavailableReason がなければ「在庫不足（現在 N 点）」)
-            end
-            Cart->>Cart: うち消費税を計算する (Math.floor(totalYen × 10 / 110))
-            Cart-->>User: 「ショッピングカート (点数)」、明細ごとの画像・名前・価格・<br/>受取店舗・数量・金額と 2c・2d の注意書き、「庭に設置したものから追加」、<br/>「ご請求内容」(商品小計、うち消費税、合計)、<br/>「注文内容を確認する」(canCheckout が偽なら押せない)
-        end
-        opt 2b 外した明細がある (shop.removedLines)
-            Cart-->>User: 2b-1「(商品名)は購入できなくなったため<br/>カートから外しました。」と「閉じる」
-            User->>Cart: 2b-2「閉じる」をクリック
-            Cart->>Shop: 外した明細を忘れる (setRemovedLines([]))。通信しない
-            Cart-->>User: お知らせを消す (2b-3 基本フロー 3 へ進む)
-        end
+    Page->>Cart: 読み込み済みのカートで表示するよう頼む (Cart)
+    break 2a カートが空 (cart.items.length が 0)
+        Cart-->>User: 2a-1「まだ商品が入っていません。」「商品を探す」<br/>「庭に設置したものから追加」(2a-2 ユースケースを終了する)
+    end
+    Cart->>Cart: 明細ごとに注意書きを決め (cart.items.map。2c unavailableReason があれば<br/>「現在は購入できません」、2d available が偽で unavailableReason がなければ<br/>「在庫不足（現在 N 点）」)、うち消費税を計算する (Math.floor(totalYen × 10 / 110))
+    Cart-->>User: 「ショッピングカート (点数)」、明細ごとの画像・名前・価格・<br/>受取店舗・数量・金額と 2c-1・2d-1 の注意書き、「庭に設置したものから追加」、<br/>「ご請求内容」(商品小計、うち消費税、合計)、「注文内容を確認する」(canCheckout が偽なら押せない)。<br/>2b-1 外した明細があれば「(商品名)は購入できなくなったためカートから外しました。」と「閉じる」
+    opt 2b 外した明細がある (shop.removedLines)
+        User->>Cart: 2b-2「閉じる」をクリック
+        Note over User,Cart: 結果: 通信せず、外した明細を忘れる (setRemovedLines([]))。<br/>画面: お知らせを消す。2b-3 基本フロー 3 へ進む。
     end
 ```
 
+![EC-B08 シーケンス図](<images/EC-B08_カートを確認する-1.png>)
+
 ## 共通代替フローを直接書いた図
 
-上の図の、画面を開いたときのログイン状態の確認（`GET /api/auth/me`）とカートの読み込み（`GET /api/cart`）、「カート」のクリックに、この画面で起こる共通代替フロー（\*a、\*b）を書き込んだ図です。`GET /api/cart` が Controller に届いた後の流れは上の図の 6〜44 と同じなので、まとめて書いています。`GET /api/products`、`GET /api/orders`、`GET /api/stores` の失敗は省いています。
+上の図の、画面を開いたときのログイン状態の確認（`GET /api/auth/me`）とカートの読み込み（`GET /api/cart`）、「カート」のクリックに、この画面で起こる共通代替フロー（\*a、\*b）を書き込んだ図です。`GET /api/cart` が Controller に届いた後の流れは上の図の 6〜24 と同じなので、まとめて書いています。`GET /api/products`、`GET /api/orders`、`GET /api/stores` の失敗は省いています。
 
 ```mermaid
 sequenceDiagram
@@ -182,7 +155,7 @@ sequenceDiagram
     else 要求が Controller まで届いた
         Http->>Filter: GET /api/cart
         Filter->>Ctrl: 要求を通す (chain.doFilter)
-        Ctrl->>Db: 会員のカートを特定し、明細を読んで、<br/>買えなくなった明細を外す (上の図の 6〜44)
+        Ctrl->>Db: 会員のカートを特定し、明細を読んで、<br/>買えなくなった明細を外す (上の図の 6〜24)
         alt *a MySQL との通信に失敗
             Db--xCtrl: 失敗 (DataAccessException)。トランザクションの変更は取り消す
             Ctrl-->>Http: 503 DATABASE_UNAVAILABLE「保存処理を完了できませんでした。<br/>時間をおいて再試行してください。」(ApiErrors.java の database)
@@ -215,9 +188,11 @@ sequenceDiagram
         end
     else カートを読めた
         App->>Cart: ショッピングカート画面を表示 (CartPage → Cart)
-        Cart-->>User: カートの内容 (上の図の 53〜)
+        Cart-->>User: カートの内容 (上の図の 32〜)
     end
 ```
+
+![EC-B08 共通代替フローを直接書いた図](<images/EC-B08_カートを確認する-2.png>)
 
 ## ユースケース記述との差
 

@@ -8,6 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
+代替フローのうち、エラーで終わるもの（4a・5a・5b）は分かれる所だけを描き、結果と画面は Note に文で書いています。エラーのときの画面の後処理（`readResponse` が `ApiError` を投げる → 409 なら `reload` で一覧を取り直す → `run` が false → エラーの文を出す）は、どれも同じです。
 
 ```mermaid
 sequenceDiagram
@@ -25,24 +26,18 @@ sequenceDiagram
         participant Ctrl as カテゴリAPI<br/>CategoryController<br/>(CategoryController.java)
         participant Errs as エラーの応答<br/>ApiErrors<br/>(ApiErrors.java)
         participant Svc as カテゴリの処理<br/>CategoryService<br/>(CategoryService.java)
-        participant Auth as ログイン中の会員<br/>AuthService<br/>(AuthService.java)
         participant Repo as カテゴリの読み書き<br/>CategoryRepository<br/>(CategoryRepository.java)
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、5、24、一覧の取り直しの 41・53 に適用<br/>*a 通信に失敗した場合: 2 (URL を直接開いたときのログインの確認)、5、22、24、一覧の取り直しの 41・53 に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、5、19、一覧の取り直しの 31 に適用<br/>*a 通信に失敗した場合: 2 (URL を直接開いたときのログインの確認)、5、17、19、一覧の取り直しの 31 に適用
 
     User->>Work: 運営者メニューの「カテゴリ管理」をクリック
     Work->>Page: URL を /operator/categories に変え、<br/>CategoriesPage を表示
     Page->>Hook: カテゴリの一覧を取りに行くよう頼む (useResource)
     Hook->>Http: 画面を開いたときに自動で<br/>一覧の通信を始める (reload → request)
     Http->>Ctrl: GET /api/categories
-    Ctrl->>Svc: カテゴリの一覧を作るよう頼む (list)
-    Svc->>Repo: 削除されていないカテゴリを読む (findByDeletedAtIsNull)
-    Repo->>Db: SELECT categories WHERE deleted_at IS NULL
-    Db-->>Repo: カテゴリの行
-    Repo-->>Svc: カテゴリのリスト
-    Svc->>Svc: 名前を文字コードの順に並べる (sorted)
+    Ctrl->>Svc: カテゴリの一覧を作るよう頼む (list)<br/>削除されていないカテゴリを読み (findByDeletedAtIsNull、<br/>SELECT categories WHERE deleted_at IS NULL)、名前を文字コードの順に並べる (sorted)
     Svc-->>Ctrl: カテゴリ名のリスト
     Ctrl-->>Http: 200 カテゴリ名の配列
     Http-->>Hook: カテゴリ名の一覧
@@ -50,56 +45,40 @@ sequenceDiagram
     Page-->>User: 「カテゴリ名」入力欄 (30 文字まで)、「保存」「編集を取消」、<br/>カテゴリごとの「編集」「削除」と一覧
 
     User->>Page: 「カテゴリ名」に入力し、「保存」をクリック
-    alt 4a カテゴリ名が未入力
+    break 4a カテゴリ名が未入力
         Page-->>User: 4a-1 ブラウザーが必須入力のメッセージを出し、送信しない<br/>(入力欄の required。基本フロー 3 へ戻る)
-    else 入力がある
-        Page->>Hook: 保存を実行するよう頼む (save → run)
-        Hook->>Http: カテゴリを保存する通信を送る<br/>(write → request、本文は { previous: 空文字, name: 入力値 })
-        Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (authFetch)
-        AuthJs->>AuthCtrl: GET /api/auth/csrf
-        AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
-        AuthJs->>Ctrl: PUT /api/operator/categories<br/>(CSRF トークンのヘッダー付き)
-        alt 5a カテゴリ名が空白だけ
-            Ctrl--xErrs: 入力の検査で止める (@Valid の @NotBlank、<br/>MethodArgumentNotValidException)
-            Errs-->>Http: 400 INVALID_INPUT「入力内容・文字数・数値の範囲を<br/>確認してください。」(invalid)
-            Http--xHook: エラーを投げる (readResponse → ApiError)
-            Hook-->>Page: 失敗を返す (run が false、エラーの文を設定)。<br/>400 なので一覧は取り直さない
-            Page-->>User: 5a-1「入力内容・文字数・数値の範囲を確認してください。」<br/>入力欄はそのまま (基本フロー 3 へ戻る)
-        else 検査を通った
-            Ctrl->>Svc: カテゴリを保存するよう頼む (save)<br/>save 全体が 1 つのトランザクション
-            Svc->>Auth: ログイン中の人が運営者かを確かめる (requireAdmin)
-            Auth-->>Svc: 運営者である
-            Svc->>Svc: 前後の空白を取り除く (trim)
-            Svc->>Repo: 同じ名前の行をロックして読む (lock)
-            Repo->>Db: SELECT ... FOR UPDATE categories
-            Db-->>Repo: 同じ名前の行 (なければなし)
-            Repo-->>Svc: カテゴリ (なければなし)
-            alt 5b 同じ名前のカテゴリがある (削除されていない行、isAvailable)
-                Svc--xErrs: 409 CATEGORY_EXISTS の例外を投げる (ApiException)
-                Errs-->>Http: 409「同じカテゴリがあります。」(business)
-                Http--xHook: エラーを投げる (readResponse → ApiError)
-                Hook->>Http: 409 なので一覧を取り直す (reload)<br/>流れは 5〜13 と同じ
-                Http-->>Hook: 最新のカテゴリ名の一覧
-                Hook-->>Page: 失敗を返す (run が false、エラーの文を設定)
-                Page-->>User: 5b-1「同じカテゴリがあります。」と最新の一覧<br/>入力欄はそのまま (基本フロー 3 へ戻る)
-            else 追加できる
-                Svc->>Svc: 新しいカテゴリを作る。削除済みの同じ名前の行が<br/>あればそれを使い、削除の印を消す (new CategoryEntity、setDeletedAt(null))
-                Svc->>Repo: カテゴリを保存する (saveAndFlush)
-                Repo->>Db: INSERT categories<br/>(削除済みの行を使うときは UPDATE)
-                Db-->>Repo: 完了
-                Repo-->>Svc: 保存したカテゴリ
-                Svc-->>Ctrl: 終わった (コミット)。previous が空文字なので<br/>商品のカテゴリ名は書き換えない
-                Ctrl-->>Http: 200 { saved: true }
-                Http-->>Hook: 保存の結果
-                Hook->>Http: 一覧を取り直す (reload)<br/>流れは 5〜13 と同じ
-                Http-->>Hook: 最新のカテゴリ名の一覧
-                Hook-->>Page: 成功を返す (run が true、「保存しました。」を設定)
-                Page->>Page: 入力欄を空にする (setEditing('')、form.reset)
-                Page-->>User: 「保存しました。」、空の入力欄、<br/>追加したカテゴリを含む一覧
-            end
-        end
     end
+    Page->>Hook: 保存を実行するよう頼む (save → run)
+    Hook->>Http: カテゴリを保存する通信を送る<br/>(write → request、本文は { previous: 空文字, name: 入力値 })
+    Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (authFetch)
+    AuthJs->>AuthCtrl: GET /api/auth/csrf
+    AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
+    AuthJs->>Ctrl: PUT /api/operator/categories<br/>(CSRF トークンのヘッダー付き)
+    break 5a カテゴリ名が空白だけ
+        Ctrl--xErrs: 入力の検査で止める (@Valid の @NotBlank、<br/>MethodArgumentNotValidException)
+        Note over Errs,Page: 結果: 400 INVALID_INPUT を返し、保存しない。一覧は取り直さない。<br/>画面: 5a-1「入力内容・文字数・数値の範囲を確認してください。」入力欄はそのまま (基本フロー 3 へ戻る)
+    end
+    Ctrl->>Svc: カテゴリを保存するよう頼む (save)。save 全体が 1 つのトランザクション<br/>運営者かを確かめ (AuthService.requireAdmin)、前後の空白を取り除く (trim)
+    Svc->>Repo: 同じ名前の行をロックして読む (lock、SELECT ... FOR UPDATE categories)
+    Repo-->>Svc: カテゴリ (なければなし)
+    break 5b 同じ名前のカテゴリがある (削除されていない行、isAvailable)
+        Svc--xErrs: 409 CATEGORY_EXISTS の例外を投げる (ApiException)
+        Note over Errs,Page: 結果: 409 を返し、追加しない。<br/>画面: 5b-1 一覧を取り直して「同じカテゴリがあります。」入力欄はそのまま (基本フロー 3 へ戻る)
+    end
+    Svc->>Svc: 新しいカテゴリを作る。削除済みの同じ名前の行が<br/>あればそれを使い、削除の印を消す (new CategoryEntity、setDeletedAt(null))
+    Svc->>Repo: カテゴリを保存する (saveAndFlush)<br/>INSERT categories (削除済みの行を使うときは UPDATE)
+    Repo-->>Svc: 保存したカテゴリ
+    Svc-->>Ctrl: 終わった (コミット)。previous が空文字なので<br/>商品のカテゴリ名は書き換えない
+    Ctrl-->>Http: 200 { saved: true }
+    Http-->>Hook: 保存の結果
+    Hook->>Http: 一覧を取り直す (reload)<br/>流れは 5〜9 と同じ
+    Http-->>Hook: 最新のカテゴリ名の一覧
+    Hook-->>Page: 成功を返す (run が true、「保存しました。」を設定)
+    Page->>Page: 入力欄を空にする (setEditing('')、form.reset)
+    Page-->>User: 「保存しました。」、空の入力欄、<br/>追加したカテゴリを含む一覧
 ```
+
+![EC-A07 シーケンス図](<images/EC-A07_商品カテゴリを追加する-1.png>)
 
 ## 共通代替フローを直接書いた図
 
@@ -197,7 +176,7 @@ sequenceDiagram
         Http->>Filter: GET /api/categories
         Filter->>Ctrl: 要求を通す (chain.doFilter)。この GET はログインなしでも<br/>呼べるので、サーバーのセッションがなくても 401 にならない
         Ctrl->>Svc: カテゴリの一覧を作るよう頼む (list)
-        Svc->>Db: 削除されていないカテゴリを読む (上の図の 7〜10)
+        Svc->>Db: 削除されていないカテゴリを読む (上の図の 6)
         alt *a MySQL との通信に失敗
             Db--xSvc: 失敗 (DataAccessException)
             Svc--xCtrl: 例外
@@ -219,6 +198,8 @@ sequenceDiagram
         Status->>Hook: 一覧を取り直す (reload)。流れはこの図の 2 つ目の alt と同じ
     end
 ```
+
+![EC-A07 共通代替フローを直接書いた図](<images/EC-A07_商品カテゴリを追加する-2.png>)
 
 ### 「保存」をクリックしたとき
 
@@ -295,7 +276,7 @@ sequenceDiagram
             AuthJs->>Filter: PUT /api/operator/categories
             Filter->>Ctrl: 要求を通す (chain.doFilter)
             Ctrl->>Svc: カテゴリを保存するよう頼む (save)
-            Svc->>Db: 運営者かを確かめ、同じ名前の行をロックして読み、<br/>追加してコミットする (上の図の 31〜50)
+            Svc->>Db: 運営者かを確かめ、同じ名前の行をロックして読み、<br/>追加してコミットする (上の図の 21〜28)
             alt *a MySQL との通信に失敗
                 Db--xSvc: 失敗 (DataAccessException)。<br/>トランザクションの変更はすべて取り消す
                 Svc--xCtrl: 例外
@@ -323,6 +304,8 @@ sequenceDiagram
         end
     end
 ```
+
+![EC-A07 共通代替フローを直接書いた図](<images/EC-A07_商品カテゴリを追加する-3.png>)
 
 ## ユースケース記述との差
 

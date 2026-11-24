@@ -9,6 +9,7 @@
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 基本フロー 1〜3 は Canvas の画面で、4 からは EC の「ショッピングカート」画面です。EC の画面は Canvas の買い物リストを直接読まず、EC API がサーバーから Canvas API を呼びます。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
+代替フローのうち、エラーで終わるもの（5b・5c）、選べない理由や選択欄を出すだけのもの（6a・6b・7a・7b）、画面の中だけで終わるもの（4b、閉じる）は、分かれる所だけを描き、結果と画面は Note に文で書いています。エラーのときの画面の後処理（`readResponse` が `ApiError` を投げる → `useShoppingData` がエラーの文を出す）は、どれも同じです。
 
 ```mermaid
 sequenceDiagram
@@ -24,7 +25,6 @@ sequenceDiagram
         participant Shop as カートの状態<br/>useShop<br/>(useShop.js)
         participant Dlg as 庭に設置したものから追加<br/>AddFromGardenCard・GardenItemsDialog・GardenItems<br/>(GardenItemsDialog.jsx)
         participant Data as 買い物リストの取得<br/>useShoppingData<br/>(useShoppingData.js)
-        participant Http as 通信<br/>request<br/>(api.js)
     end
     box rgba(27,127,92,0.12) EC API Spring Boot
         participant CartCtrl as カートAPI<br/>CartController<br/>(CartController.java)
@@ -42,30 +42,29 @@ sequenceDiagram
         participant CApi as 庭と買い物リストのAPI<br/>create_app・thumbnail_router<br/>(main.py、thumbnails.py)
     end
 
-    Note over User,CApi: 共通代替フロー<br/>*b 未ログインの場合: 11 (URL を開いたときのログインの確認)、13、23、70 に適用<br/>*a 通信に失敗した場合: 13、23、70 に適用<br/>Canvas の共通代替フロー *a・*b: 7 に適用 (保存に失敗すると EC へ移らない)
+    Note over User,CApi: 共通代替フロー<br/>*b 未ログインの場合: 10 (URL を開いたときのログインの確認)、12、20、43、取り直しの 66 に適用<br/>*a 通信に失敗した場合: 12、20、43、取り直しの 66 に適用<br/>Canvas の共通代替フロー *a・*b: 7 に適用 (保存に失敗すると EC へ移らない)
 
     alt 基本フロー 1〜3 Canvas の庭シミュレーション画面から開く
         User->>Panel: サイドバーの「買い物リスト（n）」タブをクリック (UC-09)
         Panel-->>User: 買い物リストの行と「リストを確認」を表示する (setTab('list'))。<br/>行は UC-09 で読み込み済みで、ここでは通信しない。<br/>行が無いときは「植物が設置されていません」だけ
         User->>Panel: 「リストを確認」をクリック
         Panel->>Editor: EC の /cart?garden={庭の ID} へ移るよう頼む<br/>(onNavigate → requestNavigation)
-        alt 輪郭の描画中か、保存できない写真がある
-            Editor-->>User: 「変更を保存せずに戻りますか？」か<br/>「庭写真を保存せずに戻りますか？」の確認 (この先は図では省略)
-        else 移れる
-            Editor->>Save: 未保存の編集を保存し終えるまで待つ (flush)
-            opt 未保存の編集がある (isDirty)
-                Save->>CApi: PUT /api/gardens/{id} (save → saveGarden、gardens.js)
-                CApi-->>Save: 200 保存した庭。失敗すると保存のエラーを出し、<br/>flush が false を返して EC へ移らない
-            end
-            Save-->>Editor: 保存が済んだ (true)
-            Editor->>App: EC の画面を読み込む (window.location.assign)
-            App->>App: ログイン状態を確かめる (useAuth → readSession、GET /api/auth/me)。<br/>/cart なので、ログインしていなければログイン画面へ移る
-            App->>Shop: カートを読み込むよう頼む (useShop の initialize → refresh)
-            Shop->>CartCtrl: GET /api/cart (api.cart → request)
-            CartCtrl-->>Shop: 200 カート (読む流れは EC-B08 の図のとおり)。<br/>続けて商品・注文・店舗も読む (図では省略)
-            Shop-->>App: カート
-            App->>Dlg: カート画面を描き (CartPage → Cart → AddFromGardenCard)、<br/>URL の garden を読んでダイアログを開く<br/>(useRequestedGarden。initialGarden は庭の ID)
+        opt 輪郭の描画中か、保存できない写真がある (記述なし)
+            Editor-->>User: 移る前に確認を出す (requestNavigation)
+            Note over User,Editor: 画面: 「変更を保存せずに戻りますか？」か「庭写真を保存せずに戻りますか？」。<br/>この先は図では省略。
         end
+        Editor->>Save: 未保存の編集を保存し終えるまで待つ (flush)
+        opt 未保存の編集がある (isDirty)
+            Save->>CApi: PUT /api/gardens/{id} (save → saveGarden、gardens.js)
+            Note over Save,CApi: 結果: 200 で保存した庭を返す。<br/>画面: 失敗すると保存のエラーを出し、flush が false を返して EC へ移らない。
+        end
+        Save-->>Editor: 保存が済んだ (true)
+        Editor->>App: EC の画面を読み込む (window.location.assign)
+        App->>App: ログイン状態を確かめる (useAuth → readSession、GET /api/auth/me)。<br/>/cart なので、ログインしていなければログイン画面へ移る
+        App->>Shop: カートを読み込むよう頼む (useShop の initialize → refresh)
+        Shop->>CartCtrl: GET /api/cart (api.cart → request)。中身は EC-B08 の図と同じ流れ。<br/>続けて商品・注文・店舗も読む (図では省略)
+        CartCtrl-->>Shop: 200 カート
+        App->>Dlg: カート画面を描き (CartPage → Cart → AddFromGardenCard)、<br/>URL の garden を読んでダイアログを開く<br/>(useRequestedGarden。initialGarden は庭の ID)
     else 1a EC のカート画面から開く
         User->>App: 1a-1 共通ヘッダーの「カート」をクリック
         App-->>User: 1a-2 URL を /cart に変え、「ショッピングカート」画面を表示する<br/>(navigateFromHeader → navigate。EC-B08)
@@ -74,145 +73,92 @@ sequenceDiagram
     end
 
     Dlg->>Data: 4 庭の一覧を取りに行くよう頼む (useShoppingData(''))。<br/>3 秒ごと (画面が見えているとき) と、画面に戻ったとき (focus) にも取り直す
-    Data->>Http: 庭の一覧の通信を始める (load → api.shoppingLists → request)
-    Http->>Ctrl: GET /api/shopping-lists
-    Ctrl->>Res: 購入者かを確かめ、会員のカートを決めるよう頼む (resolve)
-    Res-->>Ctrl: カートの ID (requireBuyer、MemberCartService.resolve)
+    Data->>Ctrl: 庭の一覧の通信を始める (load → api.shoppingLists → request)<br/>GET /api/shopping-lists
+    Ctrl->>Res: 購入者かを確かめ、会員のカートを決めるよう頼む<br/>(resolve → requireBuyer、MemberCartService.resolve)
     Ctrl->>Svc: 庭の一覧を作るよう頼む (summaries)
-    Svc->>Saved: EC で商品を追加した庭を読む (gardens)
-    Saved->>Db: SELECT garden_id FROM garden_shopping_lists<br/>(revision が 0 より大きい行)
-    Db-->>Saved: 庭の ID
-    Saved-->>Svc: 庭の ID のリスト
+    Svc->>Saved: EC で商品を追加した庭の ID を読む (gardens)<br/>SELECT garden_id FROM garden_shopping_lists (revision が 0 より大きい行)
     Svc->>Client: Canvas から庭の一覧を取るよう頼む (summaries)
     Client->>CApi: GET /api/shopping-lists (Cookie の KUSAKARI_SESSION を付ける)
-    alt 5c Canvas に接続できない (届かない、時間切れ、エラーの応答)
-        CApi--xClient: 応答が無い、またはエラーの応答
+    break 5c Canvas に接続できない (届かない、時間切れ、エラーの応答)
         Client--xErrs: 503 SHOPPING_LIST_UNAVAILABLE の例外を投げる (unavailable)
-        Errs-->>Http: 503「庭の買い物リストを取得できません。<br/>接続を確認して再試行してください。」(business)
-        Http--xData: エラーを投げる (readResponse → ApiError)
-        Data-->>Dlg: エラーの文 (error)
-        Dlg-->>User: 5c-1「庭の買い物リストを取得できません。<br/>接続を確認して再試行してください。」と「再取得」
-        User->>Dlg: 5c-2「再取得」をクリック
-        Dlg->>Data: 5c-3 庭の一覧を取り直す (reload → load)。流れは 22〜 と同じ
-    else 取得できた
-        CApi->>CApi: EC の GET /api/auth/me で持ち主を確かめ、<br/>Canvas の MySQL から持ち主の庭をすべて読む<br/>(authenticate、shopping.summaries)
-        CApi-->>Client: 200 庭の一覧 (名前、庭の版、サムネイルの版、種類数)
-        Client-->>Svc: 庭の一覧
-        loop EC で商品を追加した庭ごと
-            Svc->>Client: 配置の行を取るよう頼む (detail)
-            Client->>CApi: GET /api/gardens/{id}/shopping-list
-            CApi-->>Client: 200 配置の行
-            Client-->>Svc: 配置の行
-            Svc->>Saved: EC で追加した商品を読む (read)
-            Saved->>Db: SELECT garden_shopping_lists と<br/>garden_shopping_items、products
-            Db-->>Saved: 行
-            Saved-->>Svc: 買い物リストの版と EC で追加した商品
-            Svc->>Svc: EC で追加した商品を足して、<br/>種類数と点数を数え直す (supplement)
-        end
-        Svc-->>Ctrl: 庭の一覧
-        Ctrl-->>Http: 200 庭の配列
-        Http-->>Data: 庭の一覧
-        Data-->>Dlg: 庭の一覧 (lists)
-        alt 4a 庭がない
-            Dlg-->>User: 4a-1「庭はまだありません。<br/>Canvasで庭をつくると、ここから追加できます。」
-        else 庭がある
-            Dlg->>Dlg: 選ぶ庭を決める<br/>(URL の庭が一覧にあればその庭、なければ先頭の庭)
-            loop 庭ごと
-                Dlg->>Ctrl: GET /api/shopping-lists/{id}/thumbnail?v=サムネイルの版<br/>(img の src。api.js を通らない)
-                Ctrl->>Svc: 購入者かを確かめ (requireBuyer)、<br/>サムネイルを取るよう頼む (thumbnail)
-                Svc->>Client: Canvas からサムネイルを取るよう頼む (thumbnail)
-                Client->>CApi: GET /api/gardens/{id}/thumbnail
-                CApi-->>Client: 200 PNG
-                Client-->>Svc: 画像
-                Svc-->>Ctrl: 画像
-                Ctrl-->>Dlg: 200 image/png (Cache-Control private, no-cache)
-            end
-            Dlg-->>User: 「庭をえらび、カートに入れる商品にチェックしてください。」と<br/>庭の一覧 (サムネイル、名前、n種類)。選んだ庭は押された状態
-        end
+        Note over Errs,Dlg: 結果: 503 を返す (business)。<br/>画面: 5c-1「庭の買い物リストを取得できません。接続を確認して再試行してください。」と「再取得」。5c-2「再取得」で 5c-3 庭の一覧を取り直す (reload → load)
     end
+    CApi->>CApi: EC の GET /api/auth/me で持ち主を確かめ、<br/>Canvas の MySQL から持ち主の庭をすべて読む<br/>(authenticate、shopping.summaries)
+    CApi-->>Client: 200 庭の一覧 (名前、庭の版、サムネイルの版、種類数)
+    Client-->>Svc: 庭の一覧
+    loop EC で商品を追加した庭ごと
+        Svc->>Client: 配置の行を取るよう頼む (detail)。<br/>GET /api/gardens/{id}/shopping-list。流れは基本フロー 5 と同じ
+        Svc->>Saved: EC で追加した商品を読む (read)<br/>SELECT garden_shopping_lists と garden_shopping_items、products
+        Svc->>Svc: EC で追加した商品を足して、<br/>種類数と点数を数え直す (supplement)
+    end
+    Svc-->>Ctrl: 庭の一覧
+    Ctrl-->>Data: 200 庭の配列
+    Data-->>Dlg: 庭の一覧 (lists)
+    break 4a 庭がない
+        Dlg-->>User: 4a-1「庭はまだありません。<br/>Canvasで庭をつくると、ここから追加できます。」
+    end
+    Dlg->>Dlg: 選ぶ庭を決める<br/>(URL の庭が一覧にあればその庭、なければ先頭の庭)
+    loop 庭ごと
+        Dlg->>Ctrl: GET /api/shopping-lists/{id}/thumbnail?v=サムネイルの版<br/>(img の src。api.js を通らない)
+        Ctrl->>Svc: 購入者かを確かめ (requireBuyer)、サムネイルを取るよう頼む (thumbnail)。<br/>Canvas の GET /api/gardens/{id}/thumbnail から PNG を取る<br/>(CanvasShoppingClient.thumbnail)
+        Ctrl-->>Dlg: 200 image/png (Cache-Control private, no-cache)
+    end
+    Dlg-->>User: 「庭をえらび、カートに入れる商品にチェックしてください。」と<br/>庭の一覧 (サムネイル、名前、n種類)。選んだ庭は押された状態
 
     Dlg->>Data: 5 選んだ庭の買い物リストを取りに行くよう頼む<br/>(GardenItems の useShoppingData(gardenId))。<br/>3 秒ごとと focus でも取り直す
-    Data->>Http: 買い物リストの通信を始める (load → api.shoppingList → request)
-    Http->>Ctrl: GET /api/shopping-lists/{gardenId}
-    Ctrl->>Res: 購入者かを確かめ、会員のカートを決めるよう頼む (resolve)
-    Res-->>Ctrl: カートの ID
-    Ctrl->>Svc: 買い物リストを作るよう頼む (detail)
+    Data->>Ctrl: 買い物リストの通信を始める (load → api.shoppingList → request)<br/>GET /api/shopping-lists/{gardenId}
+    Ctrl->>Svc: 購入者の確認とカートの決定 (resolve) をしてから、<br/>買い物リストを作るよう頼む (detail)
     Svc->>Client: Canvas から配置の行を取るよう頼む (detail)
     Client->>CApi: GET /api/gardens/{id}/shopping-list
-    alt 5b 庭が見つからない (削除済み、ほかの購入者の庭)
-        CApi-->>Client: 404
-        Client--xErrs: 404 GARDEN_NOT_FOUND の例外を投げる (ApiException)
-        Errs-->>Http: 404「庭が見つかりません。」(business)
-        Http--xData: エラーを投げる (readResponse → ApiError)
-        Data->>Data: この庭の取り直しを止め、買い物リストを空にする<br/>(removed = true、setDetail(null))
-        Data-->>Dlg: エラーの文 (error)
-        Dlg-->>User: 5b-1「庭が見つかりません。」(買い物リストは出さない)
-    else 5c Canvas に接続できない
-        CApi--xClient: 応答が無い、またはエラーの応答
+    break 5b 庭が見つからない (削除済み、ほかの購入者の庭)
+        Client--xErrs: Canvas の 404 を受けて、404 GARDEN_NOT_FOUND の例外を投げる (ApiException)
+        Note over Errs,Dlg: 結果: 404「庭が見つかりません。」を返す (business)。<br/>画面: この庭の取り直しを止めて買い物リストを空にし (removed、setDetail(null))、5b-1「庭が見つかりません。」
+    end
+    break 5c Canvas に接続できない
         Client--xErrs: 503 SHOPPING_LIST_UNAVAILABLE の例外を投げる (unavailable)
-        Errs-->>Http: 503「庭の買い物リストを取得できません。<br/>接続を確認して再試行してください。」(business)
-        Http--xData: エラーを投げる (readResponse → ApiError)
-        Data-->>Dlg: エラーの文 (error)
-        Dlg-->>User: 5c-1「庭の買い物リストを取得できません。<br/>接続を確認して再試行してください。」<br/>(ここには「再取得」が無い。3 秒ごとの取り直しを待つ)
-    else 取得できた
-        CApi->>CApi: 持ち主を確かめ、配置を商品か素材ごとにまとめて数える<br/>(authenticate、shopping.detail)
-        CApi-->>Client: 200 配置の行 (key、productId、materialCode、個数) と庭の版
-        Client-->>Svc: 配置の行
-        Svc->>Saved: EC で追加した商品を読む (read)
-        Saved->>Db: SELECT revision FROM garden_shopping_lists と<br/>garden_shopping_items、products
-        Db-->>Saved: 行
-        Saved-->>Svc: 買い物リストの版と EC で追加した商品
-        Svc->>Svc: 6 EC で追加した商品を、庭に配置していなければ<br/>必要数 1 の行として足す (supplement)
-        Svc->>Mat: 素材コードに対応する商品を読む (findAllForCodes)
-        Mat->>Db: SELECT material_products
-        Db-->>Mat: 行
-        Mat-->>Svc: 素材コードと商品 ID の対応
-        Svc->>Cat: 商品と在庫と店舗を読む (listingsByIds)
-        Cat->>Db: SELECT products、inventory、stores、organizations
-        Db-->>Cat: 行
-        Cat-->>Svc: 商品、在庫、買えない理由 (Listing)
-        Svc->>Svc: 行ごとに候補の商品を決める (resolve)。<br/>素材コードから選ぶ候補からは、削除・閉店・停止で<br/>買えなくなった商品を外す (removed)
-        Svc-->>Ctrl: 買い物リスト
-        Ctrl-->>Http: 200 行と候補の商品 (価格、在庫、買えるか、店舗)、<br/>庭の版、買い物リストの版
-        Http-->>Data: 買い物リスト
-        Data-->>Dlg: 買い物リスト (detail)
-        Dlg->>Dlg: 行ごとに買う商品、カートの数量、選べない理由を決める<br/>(chosenProduct、quantityInCart、lineReason。shoppingSelection.js)
-        alt 5a 行がない
-            Dlg-->>User: 5a-1「この庭に配置した商品はありません。」
-        else 行がある
-            Dlg-->>User: 7 行ごとにチェックボックス、商品画像、商品名、<br/>「必要数 n点・店舗在庫 n点」、小計 (価格×必要数)、<br/>「すべて選択」「キャンセル」「カートに追加」
-            opt 6a 候補の商品がない
-                Dlg-->>User: 6a-1「対応する販売商品がありません」(チェックボックスは選べない)
-            end
-            opt 6b 候補の商品が複数ある
-                Dlg-->>User: 6b-1「購入商品を選択」の選択欄 (商品名 / 価格) と<br/>「購入商品を選択してください」(選ぶまでチェックボックスは選べない)
-                User->>Dlg: 6b-2「購入商品」の選択欄で商品を選ぶ
-                Dlg-->>User: 6b-3 選んだ商品の在庫と小計 (setChoices。通信しない)
-            end
-            opt 7a 販売終了、上限 99 点を超える、在庫不足
-                Dlg-->>User: 7a-1「販売終了」「カートの数量と合わせると上限99点を超えます」<br/>「在庫不足」のどれか (チェックボックスは選べない)
-            end
-            opt 7b すでにカートに入っている
-                Dlg-->>User: 7b-1「カートに入っています」(チェックボックスは選べない)
-            end
-        end
+        Note over Errs,Dlg: 結果: 503 を返す (business)。<br/>画面: 5c-1「庭の買い物リストを取得できません。接続を確認して再試行してください。」(「再取得」は無く、3 秒ごとの取り直しを待つ)
+    end
+    CApi->>CApi: 持ち主を確かめ、配置を商品か素材ごとにまとめて数える<br/>(authenticate、shopping.detail)
+    CApi-->>Client: 200 配置の行 (key、productId、materialCode、個数) と庭の版
+    Client-->>Svc: 配置の行
+    Svc->>Saved: 買い物リストの版と EC で追加した商品を読む (read)<br/>SELECT revision FROM garden_shopping_lists と garden_shopping_items、products
+    Svc->>Svc: 6 EC で追加した商品を、庭に配置していなければ<br/>必要数 1 の行として足す (supplement)
+    Svc->>Mat: 素材コードに対応する商品 ID を読む (findAllForCodes、SELECT material_products)
+    Svc->>Cat: 商品、在庫、店舗と買えない理由を読む (listingsByIds → Listing)<br/>SELECT products、inventory、stores、organizations
+    Svc->>Svc: 行ごとに候補の商品を決める (resolve)。<br/>素材コードから選ぶ候補からは、削除・閉店・停止で<br/>買えなくなった商品を外す (removed)
+    Svc-->>Ctrl: 買い物リスト
+    Ctrl-->>Data: 200 行と候補の商品 (価格、在庫、買えるか、店舗)、<br/>庭の版、買い物リストの版
+    Data-->>Dlg: 買い物リスト (detail)
+    Dlg->>Dlg: 行ごとに買う商品、カートの数量、選べない理由を決める<br/>(chosenProduct、quantityInCart、lineReason。shoppingSelection.js)
+    break 5a 行がない
+        Dlg-->>User: 5a-1「この庭に配置した商品はありません。」
+    end
+    Dlg-->>User: 7 行ごとにチェックボックス、商品画像、商品名、<br/>「必要数 n点・店舗在庫 n点」、小計 (価格×必要数)、<br/>「すべて選択」「キャンセル」「カートに追加」
+    opt 6a・7a・7b 選べない行がある
+        Dlg-->>User: その行のチェックボックスを選べなくし、理由を出す (lineReason)
+        Note over User,Dlg: 画面: 6a-1「対応する販売商品がありません」、7a-1「販売終了」「カートの数量と合わせると上限99点を超えます」「在庫不足」、<br/>7b-1「カートに入っています」のどれか
+    end
+    opt 6b 候補の商品が複数ある
+        User->>Dlg: 6b-2「購入商品」の選択欄で商品を選ぶ
+        Note over User,Dlg: 画面: 6b-1「購入商品を選択」の選択欄 (商品名 / 価格) と「購入商品を選択してください」(選ぶまでチェックボックスは選べない)。<br/>6b-3 選んだ商品の在庫と小計 (setChoices。通信しない)
     end
 
     User->>Dlg: 8 買い物リストの内容を確認する
     loop 3 秒ごと (画面が見えているとき) と、画面に戻ったとき (focus)
-        Data->>Http: 庭の一覧と買い物リストを取り直す (2 つの useShoppingData の load)。<br/>流れは 22〜 と 69〜 と同じ
-        Http-->>Data: 最新の庭の一覧と買い物リスト (在庫、価格、配置)
-        Data-->>Dlg: 描き直す。庭の版か買い物リストの版が変わったら<br/>チェックを外す (setSelection({}))
+        Data->>Ctrl: 庭の一覧と買い物リストを取り直す (2 つの useShoppingData の load)。<br/>流れは 20〜 と 43〜 と同じ
+        Data-->>Dlg: 最新の庭の一覧と買い物リスト (在庫、価格、配置) で描き直す。<br/>庭の版か買い物リストの版が変わったらチェックを外す (setSelection({}))
     end
     opt 4b 別の庭の買い物リストを確認する
         User->>Dlg: 4b-1 庭の一覧から別の庭をクリック
-        Dlg->>Dlg: 4b-2 その庭を選び、買い物リストを作り直す<br/>(setChosen。GardenItems の key が変わる)。基本フロー 5 (68) へ戻る
+        Note over User,Dlg: 結果: その庭を選び、買い物リストを作り直す (setChosen。GardenItems の key が変わる)。<br/>画面: 4b-2 基本フロー 5 (42) へ戻る
     end
     opt 閉じる
         User->>Dlg: 「キャンセル」か、ダイアログを閉じる操作
-        Dlg-->>User: ダイアログを閉じ、URL から garden を外す<br/>(close → setOpen(false)、requested.clear)。カートには追加しない
+        Note over User,Dlg: 結果: ダイアログを閉じ、URL から garden を外す (close → setOpen(false)、requested.clear)。<br/>画面: カートには追加しない
     end
 ```
+
+![EC-B24 シーケンス図](<images/EC-B24_買い物リストを確認する(EC)-1.png>)
 
 ## 共通代替フローを直接書いた図
 
@@ -258,7 +204,7 @@ sequenceDiagram
         AuthJs->>AuthCtrl: GET /api/auth/me
         AuthCtrl-->>AuthJs: 200 authenticated=true
         AuthJs-->>App: ログイン中の会員
-        App->>Dlg: カートを読んでからカート画面を描き、ダイアログを開く (上の図の 12〜16)
+        App->>Dlg: カートを読んでからカート画面を描き、ダイアログを開く (上の図の 11〜14)
     end
 
     Dlg->>Data: 庭の一覧を取りに行くよう頼む (useShoppingData(''))
@@ -292,7 +238,7 @@ sequenceDiagram
         AuthJs->>Filter: GET /api/shopping-lists
         Filter->>Ctrl: 要求を通す (chain.doFilter)
         Ctrl->>Svc: 庭の一覧を作るよう頼む (summaries)
-        Svc->>Db: EC で商品を追加した庭と、EC で追加した商品を読む<br/>(上の図の 28〜29、49〜50)
+        Svc->>Db: EC で商品を追加した庭と、EC で追加した商品を読む<br/>(上の図の 23、31)
         alt *a MySQL との通信に失敗
             Db--xSvc: 失敗 (DataAccessException)
             Svc--xCtrl: 例外
@@ -305,7 +251,7 @@ sequenceDiagram
             Svc-->>Ctrl: 庭の一覧 (Canvas に接続できないときの 5c は上の図のとおり)
             Ctrl-->>Http: 200 庭の配列
             Http-->>Data: 庭の一覧
-            Data-->>Dlg: 庭の一覧 (以降は上の図の 57〜)
+            Data-->>Dlg: 庭の一覧 (以降は上の図の 36〜)
         end
     end
     opt *a-3 やり直す
@@ -317,6 +263,8 @@ sequenceDiagram
         end
     end
 ```
+
+![EC-B24 共通代替フローを直接書いた図](<images/EC-B24_買い物リストを確認する(EC)-2.png>)
 
 ## ユースケース記述との差
 

@@ -8,7 +8,8 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
-基本フロー 3 で運営者が選ぶ操作ごとに、利用の停止（基本フロー）と 3a〜3d を `alt` で分けています。
+代替フローのうち、確認ダイアログを開くだけの 3a〜3c、画面の中だけで終わるもの（6a）とエラーで終わるもの（5a・7a）は、分かれる所だけを描き、結果と画面は Note に文で書いています。3b で今の警告を読む処理（opt）も、頼む矢印と Note に寄せています。3d は、そこでしか起きない履歴の通信があるので矢印で描いています。エラーのときの画面の後処理（`readResponse` が `ApiError` を投げる → 409 なら `reload` で一覧を取り直す → `run` が false → ダイアログを閉じてエラーの文を出す）は、どれも同じです。
+基本フロー 3 で運営者が選ぶ操作ごとに、利用の停止（基本フロー）と 3a〜3c を `alt` で分けています。3d（履歴の確認）は、確定の後の流れを通らないので、図の最後に別の `alt` で書いています。
 
 ```mermaid
 sequenceDiagram
@@ -30,21 +31,20 @@ sequenceDiagram
         participant Ctrl as 店舗の警告・停止API<br/>StoreModerationController<br/>(StoreModerationController.java)
         participant Errs as エラーの応答<br/>ApiErrors<br/>(ApiErrors.java)
         participant Svc as 店舗の警告・停止の処理<br/>StoreModerationService<br/>(StoreModerationService.java)
-        participant Auth as ログイン中の会員<br/>AuthService<br/>(AuthService.java)
         participant Hist as 履歴の読み方<br/>ModerationHistory<br/>(ModerationHistory.java)
         participant Notices as 出店者への通知<br/>NotificationService<br/>(NotificationService.java)
         participant Repo as 店舗の読み書き<br/>StoreRepository<br/>(StoreRepository.java)
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、5、25、27、71、97、124、149、一覧の取り直しの 38・59・86・113・141 に適用<br/>*a 通信に失敗した場合: 5、25、27、71、97、124、149、一覧の取り直しの 38・59・86・113・141 に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、5、26、48、一覧の取り直しの 41 に適用<br/>*a 通信に失敗した場合: 5、24、26、48、一覧の取り直しの 41 に適用
 
     User->>Work: 運営者メニューの「店舗管理」をクリック
     Work->>Page: URL を /operator/sellers に変え、<br/>OperatorStoresPage を表示
     Page->>Hook: 店舗の一覧を取りに行くよう頼む (useResource)
     Hook->>Http: 画面を開いたときに自動で<br/>一覧の通信を始める (reload → request)
     Http->>SCtrl: GET /api/operator/stores
-    SCtrl-->>Http: 200 店舗の配列<br/>(作り方は EC-A05 の図の 6〜24 と同じ)
+    SCtrl-->>Http: 200 店舗の配列<br/>(作り方は EC-A05 の図と同じ流れ)
     Http-->>Hook: 店舗の一覧
     Hook-->>Page: 店舗の一覧
     Page->>Mod: 閉鎖済みでない店舗ごとに、警告と停止の操作を表示<br/>(ModerationControls。停止中かは enabled の逆)
@@ -54,188 +54,73 @@ sequenceDiagram
         User->>Mod: 対象店舗のデンジャーエリアの「利用を停止」をクリック
         Mod->>Dlg: 理由を空にして確認ダイアログを表示<br/>(open('suspend') → ConfirmDialog)
         Dlg-->>User: 「利用停止の確認」、「対象：店舗名」、「この店舗の利用を停止します。<br/>商品は購入者向けの画面に表示されなくなり、出店者は商品・在庫・注文を<br/>操作できなくなります。確定済みの注文はキャンセルされません。」、<br/>「理由（必須・出店者に通知します）」欄、「利用停止を確定」、「取消」
-        User->>Dlg: 理由を入力 (onChange → setReason。500 文字まで)
-        alt 6a 「取消」をクリックした
-            User->>Dlg: 「取消」をクリック<br/>(Esc キー、「閉じる」、ダイアログの外側のクリックも同じ)
-            Dlg->>Mod: 取り消したことを伝える (onCancel)
-            Mod-->>User: 6a-1 ダイアログを閉じる (setPending(null))。<br/>通信せず、店舗の状態は変わらない
-        else 「利用停止を確定」をクリックした
-            User->>Dlg: 「利用停止を確定」をクリック
-            Dlg->>Mod: 確定したことを伝える (onConfirm → confirm)
-            alt 5a 理由が空 (reason.trim() が空)
-                Mod-->>User: 5a-1「理由を入力してください。」(setMissing(true))。<br/>ダイアログは開いたまま、通信しない
-                User->>Dlg: 5a-2 理由を入力し直す (基本フロー 5 へ戻る)
-            else 理由がある
-                Mod->>Hook: 停止を実行し、成功の文を渡す (run)<br/>「停止しました。出店者に通知しました。」
-                Hook->>Http: 停止の通信を始める<br/>(write → request、本文は { enabled: false, reason })
-                Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (authFetch)
-                AuthJs->>AuthCtrl: GET /api/auth/csrf
-                AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
-                AuthJs->>Ctrl: PUT /api/operator/stores/{店舗 ID}/enabled<br/>(CSRF トークンのヘッダー付き)
-                Ctrl->>Svc: 店舗の利用を停止するよう頼む (enabled → enable)<br/>enable 全体が 1 つのトランザクション
-                Svc->>Auth: ログイン中の人が運営者かを確かめる (requireAdmin)
-                Auth-->>Svc: 運営者である
-                Svc->>Repo: 店舗をロックして読むよう頼む (lock)
-                Repo->>Db: SELECT ... FOR UPDATE stores
-                Db-->>Repo: 店舗の行
-                Repo-->>Svc: 店舗
-                alt 7a 店舗が閉鎖済みになっていた (closedAt がある)
-                    Svc--xErrs: 409 STORE_CLOSED の例外を投げる (lock → ApiException)
-                    Errs-->>Http: 409「この店舗は閉鎖済みです。」(business)
-                    Http--xHook: エラーを投げる (readResponse → ApiError)
-                    Hook->>Http: 409 なので一覧を取り直す (reload)。流れは 5〜7 と同じ
-                    Http-->>Hook: 最新の店舗の一覧 (閉鎖済み)
-                    Hook-->>Mod: 失敗を返す (run が false、エラーの文を設定)
-                    Mod-->>User: 7a-1 ダイアログを閉じ (setPending(null))、「この店舗は閉鎖済みです。」と<br/>状態「閉鎖済み」の店舗 (警告・停止の操作は出なくなる)
-                else 閉鎖済みでない
-                    Svc->>Hist: 理由の前後の空白を除くよう頼む (reasonFor)<br/>(空なら 400 REASON_REQUIRED。画面の 5a が先に止める)
-                    Hist-->>Svc: 前後の空白を除いた理由
-                    alt すでに停止中 (isSuspended が真)
-                        Svc->>Svc: 何もしない。履歴も通知も足さない
-                    else 停止していない
-                        Svc->>Svc: 店舗を停止中にする (changeSuspended(true))
-                        Svc->>Db: 履歴に停止 (SUSPEND) を足す<br/>(record → StoreModerationEventRepository.save、store_moderation_events)
-                        Db-->>Svc: 保存した行
-                        Svc->>Notices: 店舗の出店者に知らせるよう頼む (toStore)<br/>題名「店舗の利用が停止されました」、本文「店舗名 / 理由」(noticeBody)
-                        Notices->>Db: 組織のオーナーと、店舗でロールのある担当者のうち<br/>利用中の会員ごとに通知を保存する (notifications)
-                        Db-->>Notices: 完了
-                        Notices-->>Svc: 終わった
-                    end
-                    Svc->>Db: 変更を送ってから、店舗の履歴を新しい順に読む<br/>(state → flush、findByStoreIdOrderByIdDesc)
-                    Db-->>Svc: 履歴
-                    Svc->>Hist: 今の警告を求めるよう頼む (activeWarning)
-                    Hist-->>Svc: 今の警告 (なければなし)
-                    Svc-->>Ctrl: 停止中かと今の警告 (State)。enable を抜けるとコミット
-                    Ctrl-->>Http: 200 { suspended: true, warning }
-                    Http-->>Hook: 変更後の値 (画面では使わない)
-                    Hook->>Http: 一覧を取り直す (reload)。流れは 5〜7 と同じ
-                    Http-->>Hook: 最新の店舗の一覧
-                    Hook-->>Mod: 成功を返す (run が true、成功の文を設定)
-                    Mod->>Mod: 履歴の欄を作り直す印を進め、ダイアログを閉じる<br/>(setVersion、setPending(null))
-                    Mod-->>User: 「停止しました。出店者に通知しました。」、状態は「運営により停止中」<br/>(stateOf。閉鎖中の店舗は閉鎖中のまま)、デンジャーエリアの代わりに「利用を再開」
-                end
-            end
-        end
     else 3a 停止せずに警告する
         User->>Mod: 3a-1「警告する」(警告中なら「もう一度警告する」) をクリック
-        Mod->>Dlg: 理由を空にして確認ダイアログを表示 (open('warn'))
-        Dlg-->>User: 3a-2「警告の確認」、「対象：店舗名」、「出店者に理由を通知します。<br/>公開・利用の状態は変わりません。」、「理由（必須・出店者に通知します）」欄、<br/>「警告する」、「取消」
-        User->>Dlg: 3a-3 理由を入力して「警告する」をクリック<br/>(「取消」は 6a、理由が空なら 5a と同じ)
-        Dlg->>Mod: 確定したことを伝える (onConfirm → confirm)
-        Mod->>Hook: 警告を実行し、成功の文を渡す (run)<br/>「警告しました。出店者に通知しました。」
-        Hook->>Http: 警告の通信を始める<br/>(write → request、本文は { warned: true, reason })
-        Http->>Ctrl: PUT /api/operator/stores/{店舗 ID}/warning<br/>(CSRF トークンの取得は 24〜26 と同じ)
-        Ctrl->>Svc: 店舗に警告するよう頼む (warning → warn)
-        Svc->>Repo: 運営者かを確かめ、店舗をロックして読む (requireAdmin、lock)<br/>流れと 7a は 29〜41 と同じ
-        Repo-->>Svc: 店舗
-        Svc->>Hist: 理由の前後の空白を除くよう頼む (reasonFor)
-        Hist-->>Svc: 理由
-        Svc->>Db: 3a-4 履歴に警告 (WARN) を足す (record → save)。<br/>警告中でも毎回足す
-        Db-->>Svc: 保存した行
-        Svc->>Notices: 店舗の出店者に知らせるよう頼む (toStore)<br/>題名「店舗に運営から警告がありました」、本文「店舗名 / 理由」
-        Notices->>Db: 利用中の出店者ごとに通知を保存する
-        Db-->>Notices: 完了
-        Notices-->>Svc: 終わった
-        Svc-->>Ctrl: 停止中かと今の警告 (state)
-        Ctrl-->>Http: 200 { suspended, warning }
-        Http-->>Hook: 変更後の値
-        Hook->>Http: 一覧を取り直す (reload)。流れは 5〜7 と同じ
-        Http-->>Hook: 最新の店舗の一覧
-        Hook-->>Mod: 成功を返す (run が true)
-        Mod-->>User: 3a-5 ダイアログを閉じ、「警告しました。出店者に通知しました。」、<br/>「警告中」と「運営からの警告：理由」と日時
+        Note over User,Dlg: 結果: 理由を空にして確認ダイアログを表示 (open('warn'))。<br/>画面: 3a-2「警告の確認」、「出店者に理由を通知します。公開・利用の状態は変わりません。」、「理由（必須・出店者に通知します）」欄、「警告する」、「取消」
     else 3b 警告を解除する
         User->>Mod: 3b-1「警告を解除」(警告中だけに出る) をクリック
-        Mod->>Dlg: 理由を空にして確認ダイアログを表示 (open('clear'))
-        Dlg-->>User: 3b-2「警告の解除の確認」、「対象：店舗名」、「警告を解除し、出店者に通知します。」、<br/>「理由（任意・出店者に通知します）」欄、「警告を解除する」、「取消」
-        User->>Dlg: 3b-3 必要なら理由を入力して「警告を解除する」をクリック
-        Dlg->>Mod: 確定したことを伝える (onConfirm → confirm)
-        Mod->>Hook: 警告の解除を実行し、成功の文を渡す (run)<br/>「警告を解除しました。出店者に通知しました。」
-        Hook->>Http: 警告の解除の通信を始める<br/>(write → request、本文は { warned: false, reason })
-        Http->>Ctrl: PUT /api/operator/stores/{店舗 ID}/warning<br/>(CSRF トークンの取得は 24〜26 と同じ)
-        Ctrl->>Svc: 店舗の警告を解除するよう頼む (warning → warn)
-        Svc->>Repo: 運営者かを確かめ、店舗をロックして読む (requireAdmin、lock)<br/>流れと 7a は 29〜41 と同じ
-        Repo-->>Svc: 店舗
-        Svc->>Db: 今の警告を求めるため、店舗の履歴を新しい順に読む<br/>(currentWarning → findByStoreIdOrderByIdDesc、activeWarning)
-        Db-->>Svc: 履歴
-        alt 警告していない
-            Svc->>Svc: 何もしない。履歴も通知も足さない
-        else 警告中
-            Svc->>Db: 3b-4 履歴に警告の解除 (CLEAR_WARNING) を足す (record → save)
-            Db-->>Svc: 保存した行
-            Svc->>Notices: 店舗の出店者に知らせるよう頼む (toStore)<br/>題名「店舗への運営の警告が解除されました」、<br/>本文は「店舗名」か「店舗名 / 理由」
-            Notices->>Db: 利用中の出店者ごとに通知を保存する
-            Db-->>Notices: 完了
-            Notices-->>Svc: 終わった
-        end
-        Svc-->>Ctrl: 停止中かと今の警告 (state。警告はなし)
-        Ctrl-->>Http: 200 { suspended, warning: null }
-        Http-->>Hook: 変更後の値
-        Hook->>Http: 一覧を取り直す (reload)。流れは 5〜7 と同じ
-        Http-->>Hook: 最新の店舗の一覧
-        Hook-->>Mod: 成功を返す (run が true)
-        Mod-->>User: 3b-5 ダイアログを閉じ、「警告を解除しました。出店者に通知しました。」、<br/>「警告中」のバッジが消える
+        Note over User,Dlg: 結果: 理由を空にして確認ダイアログを表示 (open('clear'))。<br/>画面: 3b-2「警告の解除の確認」、「警告を解除し、出店者に通知します。」、「理由（任意・出店者に通知します）」欄、「警告を解除する」、「取消」
     else 3c 利用を再開する
         User->>Mod: 3c-1「利用を再開」(停止中だけに出る) をクリック
-        Mod->>Dlg: 理由を空にして確認ダイアログを表示 (open('resume'))
-        Dlg-->>User: 3c-2「利用再開の確認」、「対象：店舗名」、<br/>「利用停止を解除し、再び利用できるようにします。」、<br/>「理由（任意・出店者に通知します）」欄、「利用再開を確定」、「取消」
-        User->>Dlg: 3c-3 必要なら理由を入力して「利用再開を確定」をクリック
-        Dlg->>Mod: 確定したことを伝える (onConfirm → confirm)
-        Mod->>Hook: 再開を実行し、成功の文を渡す (run)<br/>「再開しました。出店者に通知しました。」
-        Hook->>Http: 再開の通信を始める<br/>(write → request、本文は { enabled: true, reason })
-        Http->>Ctrl: PUT /api/operator/stores/{店舗 ID}/enabled<br/>(CSRF トークンの取得は 24〜26 と同じ)
-        Ctrl->>Svc: 店舗の利用を再開するよう頼む (enabled → enable)
-        Svc->>Repo: 運営者かを確かめ、店舗をロックして読む (requireAdmin、lock)<br/>流れと 7a は 29〜41 と同じ
-        Repo-->>Svc: 店舗
-        Svc->>Hist: 理由の前後の空白を除くよう頼む (reasonFor)
-        Hist-->>Svc: 理由 (空でもよい)
-        alt 停止していない (isSuspended が偽)
-            Svc->>Svc: 何もしない。履歴も通知も足さない
-        else 停止中
-            Svc->>Svc: 店舗の停止を解く (changeSuspended(false))
-            Svc->>Db: 3c-4 履歴に再開 (RESUME) を足す (record → save)
-            Db-->>Svc: 保存した行
-            Svc->>Notices: 店舗の出店者に知らせるよう頼む (toStore)<br/>題名「店舗の利用停止が解除されました」、<br/>本文は「店舗名」か「店舗名 / 理由」
-            Notices->>Db: 利用中の出店者ごとに通知を保存する
-            Db-->>Notices: 完了
-            Notices-->>Svc: 終わった
-        end
-        Svc-->>Ctrl: 停止中かと今の警告 (state)
-        Ctrl-->>Http: 200 { suspended: false, warning }
-        Http-->>Hook: 変更後の値
-        Hook->>Http: 一覧を取り直す (reload)。流れは 5〜7 と同じ
-        Http-->>Hook: 最新の店舗の一覧
-        Hook-->>Mod: 成功を返す (run が true)
-        Mod-->>User: 3c-5 ダイアログを閉じ、「再開しました。出店者に通知しました。」、<br/>更新後の状態 (stateOf) と、デンジャーエリアの「利用を停止」
-    else 3d 履歴を確認する
+        Note over User,Dlg: 結果: 理由を空にして確認ダイアログを表示 (open('resume'))。<br/>画面: 3c-2「利用再開の確認」、「利用停止を解除し、再び利用できるようにします。」、「理由（任意・出店者に通知します）」欄、「利用再開を確定」、「取消」
+    end
+    break 6a 「取消」をクリックした
+        User->>Dlg: 「取消」をクリック<br/>(Esc キー、「閉じる」、ダイアログの外側のクリックも同じ)
+        Note over User,Dlg: 結果: 取り消したことを伝え (onCancel)、ダイアログを閉じる (setPending(null))。通信しない。<br/>画面: 6a-1 店舗の状態は変わらない。
+    end
+    User->>Dlg: 理由を入力し (onChange → setReason。500 文字まで。3b・3c は任意)、<br/>「利用停止を確定」をクリック<br/>(3a-3「警告する」、3b-3「警告を解除する」、3c-3「利用再開を確定」)
+    Dlg->>Mod: 確定したことを伝える (onConfirm → confirm)
+    break 5a 理由が必須の操作 (停止・警告) で、理由が空 (reason.trim() が空)
+        Mod-->>User: 5a-1「理由を入力してください。」(setMissing(true))。<br/>ダイアログは開いたまま、通信しない (5a-2 理由を入力し直す。基本フロー 5 へ戻る)
+    end
+    Mod->>Hook: 操作を実行し、成功の文を渡す (run)<br/>「停止しました。出店者に通知しました。」<br/>(3a「警告しました。…」、3b「警告を解除しました。…」、3c「再開しました。…」)
+    Hook->>Http: 操作の通信を始める (write → request)<br/>本文は停止 { enabled: false, reason }、3c { enabled: true, reason }、<br/>3a { warned: true, reason }、3b { warned: false, reason }
+    Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (authFetch)
+    AuthJs->>AuthCtrl: GET /api/auth/csrf
+    AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
+    AuthJs->>Ctrl: PUT /api/operator/stores/{店舗 ID}/enabled (停止・3c)<br/>PUT /api/operator/stores/{店舗 ID}/warning (3a・3b)<br/>(CSRF トークンのヘッダー付き)
+    Ctrl->>Svc: 停止・再開は (enabled → enable)、警告・解除は (warning → warn) 頼む<br/>全体が 1 つのトランザクション。運営者かを確かめる (AuthService.requireAdmin)
+    Svc->>Repo: 店舗をロックして読む (lock、SELECT ... FOR UPDATE stores)
+    Repo-->>Svc: 店舗
+    break 7a 店舗が閉鎖済みになっていた (closedAt がある)
+        Svc--xErrs: 409 STORE_CLOSED の例外を投げる (lock → ApiException)
+        Note over Errs,Mod: 結果: 409 を返し、何も変えない。<br/>画面: 7a-1 ダイアログを閉じ、一覧を取り直して「この店舗は閉鎖済みです。」と状態「閉鎖済み」の店舗 (警告・停止の操作は出なくなる)
+    end
+    Svc->>Hist: 理由の前後の空白を除くよう頼む (reasonFor)<br/>(必須の理由が空なら 400 REASON_REQUIRED。画面の 5a が先に止める)
+    opt 3b 警告の解除
+        Svc->>Db: 今の警告を求めるため、店舗の履歴を読む (currentWarning)
+        Note over Svc,Db: 結果: 履歴を新しい順に読み (findByStoreIdOrderByIdDesc)、<br/>今の警告を求める (ModerationHistory.activeWarning)。
+    end
+    alt 記録する (停止は停止していないとき、再開は停止中のとき、<br/>警告はいつも (警告中でも毎回)、警告の解除は警告中のとき)
+        Svc->>Db: 停止・再開は店舗の停止の印を変え (changeSuspended)、<br/>履歴に SUSPEND・WARN・CLEAR_WARNING・RESUME のどれかを足す<br/>(record → StoreModerationEventRepository.save、store_moderation_events)
+        Svc->>Notices: 店舗の出店者に知らせるよう頼む (toStore)<br/>題名「店舗の利用が停止されました」(3a「店舗に運営から警告がありました」、<br/>3b「店舗への運営の警告が解除されました」、3c「店舗の利用停止が解除されました」)、<br/>本文「店舗名 / 理由」(noticeBody)。組織のオーナーと、店舗でロールのある<br/>担当者のうち、利用中の会員ごとに通知を保存する (notifications)
+    else すでにその状態
+        Svc->>Svc: 何もしない。履歴も通知も足さない
+    end
+    Svc->>Db: 変更を送ってから、店舗の履歴を新しい順に読む<br/>(state → flush、findByStoreIdOrderByIdDesc)
+    Db-->>Svc: 履歴
+    Svc-->>Ctrl: 今の警告を求め (ModerationHistory.activeWarning)、<br/>停止中かと今の警告 (State) を返す。ここでコミット
+    Ctrl-->>Http: 200 { suspended, warning }
+    Http-->>Hook: 変更後の値 (画面では使わない)
+    Hook->>Http: 一覧を取り直す (reload)。流れは 5〜7 と同じ
+    Http-->>Hook: 最新の店舗の一覧
+    Hook-->>Mod: 成功を返す (run が true、成功の文を設定)
+    Mod-->>User: 履歴の欄を作り直す印を進め、ダイアログを閉じ (setVersion、setPending(null))、<br/>「停止しました。出店者に通知しました。」、状態は「運営により停止中」<br/>(stateOf。閉鎖中の店舗は閉鎖中のまま)、デンジャーエリアの代わりに「利用を再開」<br/>(3a-5「警告中」と「運営からの警告：理由」と日時、3b-5「警告中」のバッジが消える、<br/>3c-5 更新後の状態とデンジャーエリアの「利用を停止」)
+
+    alt 3d 履歴を確認する
         User->>Mod: 3d-1 対象店舗の「警告・停止の履歴」を開く
         Mod->>Ev: 開いたことを覚え、履歴を表示する<br/>(details の onToggle → setHistoryOpen(true) → ModerationEvents)
         Ev->>Hook: 履歴を取りに行くよう頼む (useResource)。<br/>取るのは開いたときが初めて (取得中は「読み込み中です。」)
-        Hook->>Http: 履歴の通信を始める (reload → request)
-        Http->>Ctrl: GET /api/operator/stores/{店舗 ID}/moderation-events
-        Ctrl->>Svc: 店舗の履歴を読むよう頼む (events)<br/>全体が読むだけのトランザクション
-        Svc->>Auth: ログイン中の人が運営者かを確かめる (requireAdmin)
-        Auth-->>Svc: 運営者である
-        Svc->>Repo: 店舗があるかを確かめるよう頼む (existsById)
-        Repo->>Db: SELECT stores
-        Db-->>Repo: ある
-        Repo-->>Svc: ある
-        Svc->>Db: その店舗の履歴を新しい順に読む<br/>(StoreModerationEventRepository.findByStoreIdOrderByIdDesc)
-        Db-->>Svc: 警告・警告の解除・停止・再開の行
-        Svc->>Hist: 履歴を表示の形にするよう頼む (views)
-        Hist->>Db: 操作した運営者の会員を読む (AuthMemberRepository.findAllById)
-        Db-->>Hist: 会員の行
-        Hist-->>Svc: 履歴 (type、reason、actorName は表示名か、<br/>空ならメールアドレス、createdAt)
-        Svc-->>Ctrl: 履歴のリスト
-        Ctrl-->>Http: 200 履歴の配列
-        Http-->>Hook: 履歴
+        Hook->>Ctrl: GET /api/operator/stores/{店舗 ID}/moderation-events<br/>(reload → request)
+        Ctrl->>Svc: 店舗の履歴を読むよう頼む (events)。全体が読むだけのトランザクション<br/>運営者かを確かめ (AuthService.requireAdmin)、店舗があるかを確かめ<br/>(StoreRepository.existsById)、履歴を新しい順に読む<br/>(StoreModerationEventRepository.findByStoreIdOrderByIdDesc)、<br/>操作した運営者の会員を読んで表示の形にする (ModerationHistory.views、AuthMemberRepository.findAllById)
+        Svc-->>Ctrl: 履歴のリスト (type、reason、actorName は表示名か、<br/>空ならメールアドレス、createdAt)
+        Ctrl-->>Hook: 200 履歴の配列
         Hook-->>Ev: 履歴
-        alt 履歴がない
-            Ev-->>User: 3d-2「履歴はありません。」
-        else 履歴がある
-            Ev-->>User: 3d-2 新しい順に 1 行ずつ「日時 警告／警告の解除／停止／再開<br/>（運営者名）：理由」(理由が空なら「：理由」を出さない)
-        end
+        Ev-->>User: 3d-2 新しい順に 1 行ずつ「日時 警告／警告の解除／停止／再開<br/>（運営者名）：理由」(理由が空なら「：理由」を出さない。<br/>履歴がなければ「履歴はありません。」)
     end
 ```
+
+![EC-A11 シーケンス図](<images/EC-A11_店舗の利用を停止・再開する-1.png>)
 
 ## 共通代替フローを直接書いた図
 
@@ -315,7 +200,7 @@ sequenceDiagram
             AuthJs->>Filter: PUT /api/operator/stores/{店舗 ID}/enabled
             Filter->>Ctrl: 要求を通す (chain.doFilter)
             Ctrl->>Svc: 店舗の利用を停止するよう頼む (enable)
-            Svc->>Db: 運営者かを確かめ、店舗をロックして読み、<br/>停止して履歴と通知を保存し、コミットする (上の図の 29〜56)
+            Svc->>Db: 運営者かを確かめ、店舗をロックして読み、<br/>停止して履歴と通知を保存し、コミットする (上の図の 27〜38)
             alt *a MySQL との通信に失敗
                 Db--xSvc: 失敗 (DataAccessException)。<br/>トランザクションの変更はすべて取り消す
                 Svc--xCtrl: 例外
@@ -344,6 +229,8 @@ sequenceDiagram
         end
     end
 ```
+
+![EC-A11 共通代替フローを直接書いた図](<images/EC-A11_店舗の利用を停止・再開する-2.png>)
 
 ## ユースケース記述との差
 

@@ -8,6 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 図は、EC-C01 でマイページを開いた後から始まります。マイページを開いたときに `Workspace` がサイドバー用に `GET /api/account/store-applications` で申請を読み、申請があるので、リンクは「出店申請状況」になっています。共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
+代替フローのうち、エラーで終わるもの（4b）は分かれる所だけを描き、結果と画面は Note に文で書いています。EC-B17 の出店申請画面へ進む「再申請する」（3a-2・3b-2）は、クリックの矢印 1 本と Note にしています。そこでしか起きない取り下げの通信（4a）だけを矢印で描いています。
 
 ```mermaid
 sequenceDiagram
@@ -27,30 +28,19 @@ sequenceDiagram
         participant Ctrl as 出店申請API<br/>StoreApplicationController<br/>(StoreApplicationController.java)
         participant Errs as エラーの応答<br/>ApiErrors<br/>(ApiErrors.java)
         participant Svc as 出店申請の処理<br/>StoreApplicationService<br/>(StoreApplicationService.java)
-        participant Auth as ログイン中の会員<br/>AuthService<br/>(AuthService.java)
-        participant Repo as 出店申請の読み書き<br/>StoreApplicationRepository<br/>(StoreApplicationRepository.java)
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、5、24、33、取り直しの 44・55 に適用<br/>*a 通信に失敗した場合: 5、24、31、33、取り直しの 44・55 に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、4、「再申請する」の後の申請の取得の 13、20、取り直しの 29 (4b の後の取り直しも同じ) に適用<br/>*a 通信に失敗した場合: 4、「再申請する」の後の申請の取得の 13、18、20、取り直しの 29 (4b の後の取り直しも同じ) に適用
 
     User->>Work: マイページのサイドバー「出店をご検討の方」の<br/>「出店申請状況」をクリック
     Work->>Page: URL を /seller/application/status に変え、<br/>ApplicationStatusPage を表示
     Page->>Hook: 自分の出店申請を取りに行くよう頼む (useResource)
-    Hook->>Http: 画面を開いたときに自動で<br/>申請の一覧の通信を始める (reload → request)
-    Http->>Ctrl: GET /api/account/store-applications
-    Ctrl->>Svc: 自分の申請の一覧を作るよう頼む (list)<br/>読み取り専用のトランザクション
-    Svc->>Auth: ログイン中の会員を読む (current)
-    Auth-->>Svc: ログイン中の会員
-    Svc->>Repo: その会員の申請を新しい順に読む<br/>(findByMemberIdOrderByCreatedAtDesc)
-    Repo->>Db: SELECT organization_applications
-    Db-->>Repo: 今の申請と前回の申請の行
-    Repo-->>Svc: 申請のリスト
-    Svc-->>Ctrl: 申請のリスト (view)
-    Ctrl-->>Http: 200 申請の配列
-    Http-->>Hook: 申請の配列
-    Hook-->>Page: 申請の配列
-    Page->>Page: 先頭を最新の申請にする (latest = list[0])
+    Hook->>Ctrl: 画面を開いたときに自動で申請の一覧の通信を始める (reload → request)<br/>GET /api/account/store-applications
+    Ctrl->>Svc: 自分の申請の一覧を作るよう頼む (list)。読み取り専用のトランザクション<br/>ログイン中の会員を読み (current)、その会員の申請を新しい順に読む<br/>(findByMemberIdOrderByCreatedAtDesc、SELECT organization_applications)
+    Svc-->>Ctrl: 今の申請と前回の申請のリスト (view)
+    Ctrl-->>Hook: 200 申請の配列
+    Hook-->>Page: 申請の配列。先頭を最新の申請にする (latest = list[0])
     alt 3 最新の申請が審査中 (SUBMITTED)
         Page-->>User: 「審査状況：審査中」、「申請日：」、「申請内容」(Summary、閲覧のみ)、<br/>「提出書類を確認」、「審査結果は通知でお知らせします。」、「申請を取り下げる」
     else 3a 却下 (REJECTED)
@@ -63,13 +53,10 @@ sequenceDiagram
 
     opt 3a-2・3b-2 再申請する (却下か取り下げ済み、canReapply)
         User->>Page: 「再申請する」をクリック
-        Page->>Form: URL を /seller/application に変え、<br/>ApplicationPage を表示 (navigate)
-        Form->>Hook: 自分の出店申請を取りに行くよう頼む (useResource)<br/>通信は 4〜15 と同じ
-        Hook-->>Form: 申請の配列 (最新は却下か取り下げ済み)
-        Form-->>User: 3a-3 前回の内容が入った「ステップ 1 / 4：事業者情報」と<br/>「前回の申請内容を入力しています。事業確認書類はもう一度選択してください。」<br/>(3a-4 EC-B17 の基本フロー 2 へ進む)
+        Note over Page,Hook: 結果: URL を /seller/application に変えて ApplicationPage を表示し (navigate)、申請を取り直す (流れは 3〜7 と同じ)。<br/>画面: 3a-3 前回の内容が入った「ステップ 1 / 4：事業者情報」と「前回の申請内容を入力しています。…」(3a-4 EC-B17 の基本フロー 2 へ進む)
     end
 
-    opt 4a 審査中の申請を取り下げる
+    alt 4a 審査中の申請を取り下げる
         User->>Page: 4a-1「申請を取り下げる」をクリック
         Page->>Hook: 取り下げを実行し、成功の文「申請を取り下げました。」を渡す (run)<br/>終わるまでボタンは押せない (busy)
         Hook->>Http: 取り下げの通信を送る (write → request)
@@ -77,41 +64,29 @@ sequenceDiagram
         AuthJs->>AuthCtrl: GET /api/auth/csrf
         AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
         AuthJs->>Ctrl: PUT /api/account/store-applications/{id}/withdrawal<br/>(CSRF トークンのヘッダー付き)
-        Ctrl->>Svc: 申請を取り下げるよう頼む (withdraw)<br/>withdraw 全体が 1 つのトランザクション
-        Svc->>Repo: 申請の行をロックして読む (lock)
-        Repo->>Db: SELECT ... FOR UPDATE organization_applications
-        Db-->>Repo: ロックした申請の行
-        Repo-->>Svc: 申請
-        Svc->>Auth: ログイン中の会員を読む (current)
-        Auth-->>Svc: ログイン中の会員 (本人の申請である)
-        alt 4b 今の申請でないか、審査中でない (isLatest、SUBMITTED)
+        Ctrl->>Svc: 申請を取り下げるよう頼む (withdraw)。全体が 1 つのトランザクション<br/>申請の行をロックして読み (lock、SELECT ... FOR UPDATE organization_applications)、<br/>ログイン中の会員の申請かを確かめる (current)
+        break 4b 今の申請でないか、審査中でない (isLatest、SUBMITTED)
             Svc--xErrs: 409 APPLICATION_CHANGED の例外を投げる (ApiException)
-            Errs-->>Http: 409「この申請は取り下げできません。」(business)
-            Http--xHook: エラーを投げる (readResponse → ApiError)
-            Hook->>Http: 409 なので申請を取り直す (reload)<br/>流れは 5〜14 と同じ
-            Http-->>Hook: 最新の申請の配列
-            Hook->>Status: エラーの文を出す (run の catch → setError)
-            Hook-->>Page: 失敗を返す (run が false)
-            Status-->>User: 4b-1「この申請は取り下げできません。」と「再取得」、<br/>その下に最新の審査状況 (申請は変えない。4b-2 基本フロー 2 へ戻り、17〜21 の表示)
-        else 取り下げられる
-            Svc->>Svc: 申請を取り下げ済みにする (withdraw、WITHDRAWN)
-            Svc->>Db: 書き換えた行を保存してコミットする<br/>(save は呼ばない。UPDATE organization_applications)
-            Db-->>Svc: 完了
-            Svc-->>Ctrl: 取り下げた申請 (view)
-            Ctrl-->>Http: 200 取り下げた申請
-            Http-->>Hook: 取り下げた申請
-            Hook->>Http: 申請を取り直す (reload)<br/>流れは 5〜14 と同じ
-            Http-->>Hook: 最新の申請の配列 (取り下げ済み)
-            Hook->>Status: 成功の文を出す (setNotice)
-            Hook-->>Page: 成功を返す (run が true)
-            Status-->>User: 4a-2「申請を取り下げました。」と、その下に「審査状況：取り下げ済み」、<br/>「再申請する」(4a-3 代替フロー 3b へ進む)
+            Note over Errs,Page: 結果: 409「この申請は取り下げできません。」を返し、申請は変えない。<br/>画面: 4b-1 申請を取り直し (reload)、その文と「再取得」、その下に最新の審査状況 (4b-2 基本フロー 2 へ戻る)
         end
+        Svc->>Svc: 申請を取り下げ済みにする (withdraw、WITHDRAWN)
+        Svc->>Db: 書き換えた行を保存してコミットする<br/>(save は呼ばない。UPDATE organization_applications)
+        Db-->>Svc: 完了
+        Svc-->>Ctrl: 取り下げた申請 (view)
+        Ctrl-->>Http: 200 取り下げた申請
+        Http-->>Hook: 取り下げた申請
+        Hook->>Ctrl: 申請を取り直す (reload)<br/>GET /api/account/store-applications。流れは 4〜7 と同じ
+        Ctrl-->>Hook: 最新の申請の配列 (取り下げ済み)
+        Hook->>Status: 成功の文を出し (setNotice)、成功を返す (run が true)
+        Status-->>User: 4a-2「申請を取り下げました。」と、その下に「審査状況：取り下げ済み」、<br/>「再申請する」(4a-3 代替フロー 3b へ進む)
     end
 ```
 
+![EC-B18 シーケンス図](<images/EC-B18_出店申請状況を確認する-1.png>)
+
 ## 共通代替フローを直接書いた図
 
-上の図の取り下げの通信（CSRF トークンの取得と `PUT /api/account/store-applications/{id}/withdrawal`）に、この画面で起こる共通代替フロー（\*a、\*b）を書き込んだ図です。画面を開いて申請を取る通信（上の図の 5）と「再申請する」の後の通信（上の図の 24）の \*a・\*b は、[EC-B17](<EC-B17_出店の申請をする.md>) の「画面を開いて申請を取るとき」の図と同じなので省いています（`ApplicationPage` を `ApplicationStatusPage` に読み替え、失敗したときは審査状況の代わりにエラーの文と「再取得」だけが出ます）。
+上の図の取り下げの通信（CSRF トークンの取得と `PUT /api/account/store-applications/{id}/withdrawal`）に、この画面で起こる共通代替フロー（\*a、\*b）を書き込んだ図です。画面を開いて申請を取る通信（上の図の 4）と「再申請する」の後の通信（上の図の 13 の後）の \*a・\*b は、[EC-B17](<EC-B17_出店の申請をする.md>) の「画面を開いて申請を取るとき」の図と同じなので省いています（`ApplicationPage` を `ApplicationStatusPage` に読み替え、失敗したときは審査状況の代わりにエラーの文と「再取得」だけが出ます）。
 
 ```mermaid
 sequenceDiagram
@@ -181,7 +156,7 @@ sequenceDiagram
             AuthJs->>Filter: PUT /api/account/store-applications/{id}/withdrawal
             Filter->>Ctrl: 要求を通す (chain.doFilter)
             Ctrl->>Svc: 申請を取り下げるよう頼む (withdraw)
-            Svc->>Db: 申請をロックして読み、取り下げ済みにして<br/>コミットする (上の図の 35〜51)
+            Svc->>Db: 申請をロックして読み、取り下げ済みにして<br/>コミットする (上の図の 21〜25)
             alt *a MySQL との通信に失敗
                 Db--xSvc: 失敗 (DataAccessException)。<br/>トランザクションの変更はすべて取り消す
                 Svc--xCtrl: 例外
@@ -196,7 +171,7 @@ sequenceDiagram
                 Ctrl-->>Http: 200 取り下げた申請
                 Http-->>Hook: 取り下げた申請
                 Hook-->>Page: 申請を取り直して成功を返す (reload、run が true)
-                Page-->>User: 「申請を取り下げました。」と「審査状況：取り下げ済み」(上の図の 54〜59)
+                Page-->>User: 「申請を取り下げました。」と「審査状況：取り下げ済み」(上の図の 29〜32)
             end
         end
     end
@@ -209,6 +184,8 @@ sequenceDiagram
         end
     end
 ```
+
+![EC-B18 共通代替フローを直接書いた図](<images/EC-B18_出店申請状況を確認する-2.png>)
 
 ## ユースケース記述との差
 

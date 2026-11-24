@@ -8,6 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 EC の画面は 1 つの React アプリで、「管理者画面」をクリックしても読み込み直しません。「メイン」画面から移ると `Workspace` が新しく作られるので、その `useAuth` がログイン状態を `GET /api/auth/me` で読み直します。共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
+代替フローのうち、画面の中だけで終わるもの（3 の「会員管理」以外のメニュー、サイドバーの折りたたみ）は、クリックの矢印 1 本だけを描き、結果と画面は Note に文で書いています。
 
 ```mermaid
 sequenceDiagram
@@ -40,8 +41,7 @@ sequenceDiagram
     UseAuth->>AuthJs: 作られたときに自動で読む (refreshSession → readSession)
     AuthJs->>AuthCtrl: GET /api/auth/me
     AuthCtrl->>AuthSvc: ログイン状態を作るよう頼む (me → session)
-    AuthSvc->>Db: ログイン中の会員と所属を読む<br/>(current、organizationIdOf、organizationRoleOf、storeIdsOf)
-    Db-->>AuthSvc: 会員と所属の行
+    AuthSvc->>Db: ログイン中の会員と所属を読む<br/>(current、organizationIdOf、organizationRoleOf、storeIdsOf、SELECT members ほか)
     AuthSvc-->>AuthCtrl: ログイン状態
     AuthCtrl-->>AuthJs: 200 ログイン状態 (authenticated=true、accountType は ADMIN)
     AuthJs-->>UseAuth: ログイン状態
@@ -54,15 +54,15 @@ sequenceDiagram
 
     opt 3 指定のメニューが「会員管理」以外
         User->>Side: サイドバーの対象のメニュー (「商品管理」など) をクリック
-        Side->>Work: URL を対象の path に変え、Workspace を描き直す<br/>(MenuLink の PageLink → navigate)。ログイン状態は読み直さない
-        Work-->>User: そのメニューの見出しと画面 (ReviewPage、CategoriesPage、<br/>OrderPage など。内容は呼び出し元のユースケース)
+        Note over User,Side: 結果: URL を対象の path に変え、Workspace を描き直す (MenuLink の PageLink → navigate)。ログイン状態は読み直さない。<br/>画面: そのメニューの見出しと画面 (ReviewPage、CategoriesPage、OrderPage など。内容は呼び出し元のユースケース)
     end
     opt サイドバーを折りたたむ
         User->>Side: 「メニューを閉じる」をクリック
-        Side->>Work: 折りたたむよう伝える (onToggle)
-        Work-->>User: アイコンだけのサイドバー (setSidebarClosed)。<br/>ボタンは「メニューを開く」になる
+        Note over User,Side: 結果: Workspace に折りたたむよう伝える (onToggle → setSidebarClosed)。<br/>画面: アイコンだけのサイドバー。ボタンは「メニューを開く」になる
     end
 ```
+
+![EC-C02 シーケンス図](<images/EC-C02_管理者画面のメニューを開く-1.png>)
 
 ## 共通代替フローを直接書いた図
 
@@ -131,9 +131,11 @@ sequenceDiagram
         AuthCtrl-->>AuthJs: 200 authenticated=true、accountType は ADMIN
         AuthJs-->>UseAuth: ログイン中の会員
         UseAuth-->>Work: ログイン中の会員
-        Work-->>User: 運営者メニューと「会員管理」画面 (上の図の 16〜20)
+        Work-->>User: 運営者メニューと「会員管理」画面 (上の図の 15〜19)
     end
 ```
+
+![EC-C02 共通代替フローを直接書いた図](<images/EC-C02_管理者画面のメニューを開く-2.png>)
 
 ## ユースケース記述との差
 

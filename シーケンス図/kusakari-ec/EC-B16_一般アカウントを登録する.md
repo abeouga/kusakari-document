@@ -8,6 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 新規登録は、ログイン画面（`/account/login`）のカードの中で入力欄を切り替えて行います。EC API が Amazon Cognito の `SignUp`、`ConfirmSignUp`、`ResendConfirmationCode` を呼び、確認コードが通ったら EC-B01 と同じ `POST /api/auth/login` でログインします。会員（`members` の行）を作る時点は、通常の登録では確認のあとのログイン、企業様向け（6a）と招待キー（3a）では確認コードの送信のときです。共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
+代替フローのうち、エラーで終わるもの（8a・8b・11a）は分かれる所だけを描き、結果と画面は Note に文で書いています。6a-2 の出店申請用アカウントの作成と、11a-2 の確認コードの再送は、頼む矢印 1 本と Note に寄せています。3a の招待キーでの登録は、そこでしか起きないやり取り（招待キーのロックと担当者の会員などの保存）を矢印で描いています。確認のあとのログインの Cognito とのやり取りは EC-B01 の図と同じなので、矢印 1 本にまとめています。
 
 ```mermaid
 sequenceDiagram
@@ -37,7 +38,7 @@ sequenceDiagram
         participant Cog as Amazon Cognito
     end
 
-    Note over User,Cog: 共通代替フロー<br/>*a 通信に失敗した場合: 8、28、30、89、91、101、103、117、119、147 に適用
+    Note over User,Cog: 共通代替フロー<br/>*a 通信に失敗した場合: 8、20、22、46、50、56、71 に適用<br/>*b 未ログインの場合: ログインの前なので適用しない
 
     alt 基本フロー 1 共通ヘッダーから開く
         User->>Header: 「メイン」画面の共通ヘッダーの「ログイン」をクリック
@@ -50,191 +51,111 @@ sequenceDiagram
     Login->>Panel: ログインのカードを表示 (AuthPanel)
     Panel->>AuthJs: ログイン状態を読む (useAuth → readSession)<br/>LoginPage の useAuth も同じ GET を送る
     AuthJs->>AuthCtrl: GET /api/auth/me
-    AuthCtrl->>Auth: ログイン状態を作るよう頼む (session)
-    Auth-->>AuthCtrl: ログインしていない (current の 401 を session が受け止める)
-    AuthCtrl-->>AuthJs: 200 authenticated=false
-    AuthJs-->>Panel: ログインしていない
+    AuthCtrl-->>AuthJs: 200 authenticated=false<br/>(session が current の 401 を受け止める)
+    Panel-->>User: 2「ログイン」画面 (メールアドレス、パスワード、「ログイン」、<br/>「新規登録」「招待キーで登録（店舗の担当者）」)。<br/>登録用の URL から開いたときは、すぐに招待キーの登録の入力欄を出す
 
     alt 3a 招待キーで登録する
-        opt 3a-1 共通ヘッダーから開いたとき
-            Panel-->>User: 2 「ログイン」画面 (メールアドレス、パスワード、「ログイン」、<br/>「新規登録」「招待キーで登録（店舗の担当者）」)
-            User->>Panel: 「招待キーで登録（店舗の担当者）」をクリック
-            Panel->>Login: 招待キーでの登録に切り替えたことを伝える<br/>(switchMode('invite') → onModeChange)。見出しは「招待キーで登録」
-        end
-        Panel->>Form: 登録の入力欄を表示 (SignupForm、<br/>招待キーは URL のキーか空文字)
-        Form-->>User: 3a-2 「メールアドレス」「パスワード（8文字以上）」「パスワード（確認）」<br/>「招待キー」(URL を開いたときはキーが入っている)、「確認コードを送信」
+        User->>Panel: 3a-1「招待キーで登録（店舗の担当者）」をクリック<br/>(登録用の URL から開いたときは押さない)
+        Panel->>Form: 3a-2 登録の入力欄を表示 (switchMode('invite') → onModeChange、SignupForm)。<br/>見出しは「招待キーで登録」。「招待キー」の欄 (URL を開いたときはキーが入っている)
     else 新規登録
-        Panel-->>User: 2 「ログイン」画面 (メールアドレス、パスワード、「ログイン」、<br/>「新規登録」「招待キーで登録（店舗の担当者）」)
-        User->>Panel: 3 「新規登録」をクリック
-        Panel->>Login: 新規登録に切り替えたことを伝える<br/>(switchMode('signup') → onModeChange)。見出しは「新規登録」
-        Panel->>Form: 登録の入力欄を表示 (SignupForm、招待キーなし)
-        Form-->>User: 4 「メールアドレス」「パスワード（8文字以上）」「パスワード（確認）」<br/>「企業様向け：出店を申請するアカウントとして登録する」、「確認コードを送信」
+        User->>Panel: 3「新規登録」をクリック
+        Panel->>Form: 4 登録の入力欄を表示 (switchMode('signup') → onModeChange、SignupForm)。<br/>見出しは「新規登録」。「企業様向け：出店を申請するアカウントとして登録する」
     end
+    Form-->>User: 「メールアドレス」「パスワード（8文字以上）」「パスワード（確認）」、<br/>「企業様向け：…」か「招待キー」、「確認コードを送信」
 
-    User->>Form: 5・6 メールアドレス、パスワード、確認用のパスワードを入力<br/>(3a-3 なら招待キーも)
-    opt 6a 企業様向けの登録をする
-        User->>Form: 6a-1「企業様向け：出店を申請するアカウントとして登録する」にチェック
+    User->>Form: 5・6 メールアドレス、パスワード、確認用のパスワードを入力<br/>(3a-3 なら招待キーも。6a-1 企業様向けならチェックを付ける)
+    User->>Form: 7「確認コードを送信」をクリック
+    break 8a 未入力、メールアドレスの形式違い、8 文字未満、招待キーが 43 文字でない
+        Form-->>User: ブラウザーが入力を求める (required、type=email、minLength、pattern)。<br/>通信しない。8a-2 基本フロー 5 へ戻る
     end
-    User->>Form: 7 「確認コードを送信」をクリック
-    alt 8a 未入力、メールアドレスの形式違い、8 文字未満、招待キーが 43 文字でない
-        Form-->>User: ブラウザーが入力を求める (required、type=email、minLength、pattern)。<br/>通信しない。基本フロー 5 へ戻る
-    else ブラウザーの検査を通る
-        Form->>AuthJs: 登録を頼む (register → run → signUp)<br/>ボタンは「登録中…」
-        AuthJs->>AuthCtrl: 書き込みの前に CSRF トークンを取る<br/>(postAuth → authFetch、GET /api/auth/csrf)
-        AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
-        AuthJs->>SignupCtrl: POST /api/auth/signup<br/>(email、password、confirmPassword、business、invitationKey)
-        alt 8a 入力の形式の違反
-            SignupCtrl--xErrs: 入力の検査で例外を投げる<br/>(SignupRequest の @Valid → MethodArgumentNotValidException)
-            Errs-->>AuthJs: 400 INVALID_INPUT「入力内容・文字数・数値の範囲を<br/>確認してください。」(invalid)
-            AuthJs--xForm: エラーを投げる (AuthError)
-            Form-->>User: 8a-1 エラーの文 (run の catch → setFailure)。<br/>入力は残る。8a-2 基本フロー 5 へ戻る
-        else 8a 確認用のパスワードと一致しない
-            SignupCtrl--xErrs: 400 PASSWORD_MISMATCH の例外を投げる (ApiException)
-            Errs-->>AuthJs: 400「パスワードと確認用パスワードが一致しません。」(business)
-            AuthJs--xForm: エラーを投げる (AuthError)
-            Form-->>User: 8a-1「パスワードと確認用パスワードが一致しません。」(setFailure)。<br/>入力は残る。8a-2 基本フロー 5 へ戻る
-        else 招待キーなし
-            SignupCtrl->>CogS: Cognito に登録するよう頼む (signUp)
-            CogS->>Cog: 8 SignUp (Username と email にメールアドレス)
-            alt 8a Cognito が受け付けない
-                Cog-->>CogS: UsernameExistsException、InvalidPasswordException など
-                CogS--xErrs: 409 EMAIL_IN_USE、400 PASSWORD_REJECTED などの<br/>例外を投げる (call → translate)
-                Errs-->>AuthJs: 409「このメールアドレスは既に登録されています。ログインしてください。」<br/>か 400「パスワードが条件を満たしていません。…」など (business)
-                AuthJs--xForm: エラーを投げる (AuthError)
-                Form-->>User: 8a-1 応答の文 (setFailure)。入力は残る。8a-2 基本フロー 5 へ戻る
-            else 登録できた
-                Cog-->>CogS: 未確認のユーザーの UserSub。<br/>9 Cognito が確認コードのメールを送る
-                CogS-->>SignupCtrl: subject
-                opt 6a-2 企業様向けの登録 (business が真)
-                    SignupCtrl->>Auth: 出店申請用アカウントを作るよう頼む (registerApplicant)
-                    Auth->>Repo: 同じ利用者の会員がいるかを読む (findByIssuerAndSubject)
-                    Repo->>Db: SELECT members
-                    Db-->>Repo: なし
-                    Repo-->>Auth: なし (あれば作らずに終わる)
-                    Auth->>Repo: 出店申請用 (SHOP_OWNER_APPLICANT) の会員を保存する (saveAndFlush)
-                    Repo->>Db: INSERT members
-                    Db-->>Repo: 完了
-                    Repo-->>Auth: 会員
-                    Auth-->>SignupCtrl: 終わった (コミット)
-                end
-                SignupCtrl-->>AuthJs: 200 { codeSent: true }
-                AuthJs-->>Form: 送った
-                Form->>Panel: メールアドレスとパスワードを覚え (setEmail、setPassword)、<br/>確認の段階に切り替える (onStep('confirm') → switchMode)
-                Panel->>Login: 確認の段階に切り替えたことを伝える (onModeChange)。<br/>見出しは「メールアドレスの確認」
-                Form-->>User: 9 「{メールアドレス} に送信した6桁の確認コードを入力してください。」、<br/>「確認コード」「確認して登録を完了」「確認コードを再送する」「ログインに戻る」
-            end
-        else 3a-3 招待キーがある
-            SignupCtrl->>Inv: 招待キーで登録するよう頼む (register)<br/>register 全体が 1 つのトランザクション
-            Inv->>Db: 招待キーの行をロックして読み、使用回数・店舗・組織を読む<br/>(lockByKeyHash、countForInvitation、findById。SELECT ... FOR UPDATE store_invitations ほか)
-            Db-->>Inv: 招待キー、使用回数、店舗、組織
-            alt 8b 招待キーが使えない (キーが無い、取り消し済み、期限切れ、使用済み、<br/>店舗の閉鎖・停止、組織の停止)
-                Inv--xErrs: 400 INVITATION_INVALID の例外を投げる (invalid)。<br/>Cognito には登録しない
-                Errs-->>AuthJs: 400「招待キーが無効です。期限切れ・取り消し済み・使用済みのキーは<br/>使えません。店舗の管理者に新しいキーを依頼してください。」(business)
-                AuthJs--xForm: エラーを投げる (AuthError)
-                Form-->>User: 8b-1 応答の文 (setFailure)。入力は残る。8b-2 代替フロー 3a-3 へ戻る
-            else 招待キーが使える
-                Inv->>CogS: Cognito に登録するよう頼む (signUp.get → signUp)
-                CogS->>Cog: 8 SignUp
-                alt 8a Cognito が受け付けない
-                    Cog-->>CogS: UsernameExistsException など
-                    CogS--xErrs: 409 EMAIL_IN_USE などの例外を投げる (translate)。<br/>トランザクションを取り消し、キーのロックを外す
-                    Errs-->>AuthJs: 409「このメールアドレスは既に登録されています。<br/>ログインしてください。」など (business)
-                    AuthJs--xForm: エラーを投げる (AuthError)
-                    Form-->>User: 8a-1 応答の文 (setFailure)。入力は残る。8a-2 基本フロー 5 へ戻る
-                else 登録できた
-                    Cog-->>CogS: 未確認のユーザーの UserSub。<br/>9 Cognito が確認コードのメールを送る
-                    CogS-->>Inv: subject
-                    Inv->>Db: 店舗の担当者 (SHOP_STAFF) の会員、組織への所属、店舗の担当 (ロールなし)、<br/>キーの使用記録を保存してコミットする (saveAndFlush、save、flush。<br/>members、organization_members、store_members、store_invitation_uses)
-                    Db-->>Inv: 完了
-                    Inv-->>SignupCtrl: 終わった
-                    SignupCtrl-->>AuthJs: 200 { codeSent: true }
-                    AuthJs-->>Form: 送った
-                    Form-->>User: 9 確認コードの入力欄 (流れは 60〜62 と同じ)
-                end
-            end
+    Form->>AuthJs: 登録を頼む (register → run → signUp)<br/>ボタンは「登録中…」
+    AuthJs->>AuthCtrl: 書き込みの前に CSRF トークンを取る<br/>(postAuth → authFetch、GET /api/auth/csrf)
+    AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
+    AuthJs->>SignupCtrl: POST /api/auth/signup<br/>(email、password、confirmPassword、business、invitationKey)
+    break 8a 入力の形式の違反か、確認用のパスワードと一致しない
+        SignupCtrl--xErrs: 400 INVALID_INPUT (SignupRequest の @Valid) か<br/>400 PASSWORD_MISMATCH (ApiException) の例外を投げる
+        Note over Errs,Form: 結果: 400 を返し、登録しない。<br/>画面: 8a-1「入力内容・文字数・数値の範囲を確認してください。」か「パスワードと確認用パスワードが一致しません。」。入力は残る (8a-2 基本フロー 5 へ)。
+    end
+    alt 招待キーなし
+        SignupCtrl->>CogS: Cognito に登録するよう頼む (signUp)
+        CogS->>Cog: 8 SignUp (Username と email にメールアドレス)
+        break 8a Cognito が受け付けない (UsernameExistsException、InvalidPasswordException など)
+            CogS--xErrs: 409 EMAIL_IN_USE、400 PASSWORD_REJECTED などの<br/>例外を投げる (call → translate)
+            Note over Errs,Form: 結果: 409 か 400 を返し、登録しない。<br/>画面: 8a-1「このメールアドレスは既に登録されています。ログインしてください。」か「パスワードが条件を満たしていません。…」など。入力は残る (8a-2 基本フロー 5 へ)。
         end
+        Cog-->>CogS: 未確認のユーザーの UserSub。<br/>9 Cognito が確認コードのメールを送る
+        CogS-->>SignupCtrl: subject
+        opt 6a-2 企業様向けの登録 (business が真)
+            SignupCtrl->>Auth: 出店申請用アカウントを作るよう頼む (registerApplicant)
+            Note over SignupCtrl,Db: 結果: 同じ利用者の会員がいなければ (findByIssuerAndSubject、SELECT members)、<br/>出店申請用 (SHOP_OWNER_APPLICANT) の会員を保存してコミットする (saveAndFlush、INSERT members)。
+        end
+    else 3a-3 招待キーがある
+        SignupCtrl->>Inv: 招待キーで登録するよう頼む (register)<br/>register 全体が 1 つのトランザクション
+        Inv->>Db: 招待キーの行をロックして読み、使用回数・店舗・組織を読む<br/>(lockByKeyHash、countForInvitation、findById。SELECT ... FOR UPDATE store_invitations ほか)
+        break 8b 招待キーが使えない (キーが無い、取り消し済み、期限切れ、使用済み、<br/>店舗の閉鎖・停止、組織の停止)
+            Inv--xErrs: 400 INVITATION_INVALID の例外を投げる (invalid)
+            Note over Errs,Form: 結果: 400 を返し、Cognito には登録しない。<br/>画面: 8b-1「招待キーが無効です。期限切れ・取り消し済み・使用済みのキーは使えません。…」。入力は残る (8b-2 代替フロー 3a-3 へ)。
+        end
+        Inv->>CogS: Cognito に登録するよう頼む (signUp.get → signUp)
+        CogS->>Cog: 8 SignUp
+        break 8a Cognito が受け付けない (UsernameExistsException など)
+            CogS--xErrs: 409 EMAIL_IN_USE などの例外を投げる (translate)
+            Note over Errs,Form: 結果: トランザクションを取り消してキーのロックを外し、409 などを返す。<br/>画面: 8a-1 応答の文。入力は残る (8a-2 基本フロー 5 へ)。
+        end
+        Cog-->>CogS: 未確認のユーザーの UserSub。<br/>9 Cognito が確認コードのメールを送る
+        CogS-->>Inv: subject
+        Inv->>Db: 店舗の担当者 (SHOP_STAFF) の会員、組織への所属、店舗の担当 (ロールなし)、<br/>キーの使用記録を保存してコミットする (saveAndFlush、save、flush。<br/>members、organization_members、store_members、store_invitation_uses)
     end
+    SignupCtrl-->>AuthJs: 200 { codeSent: true }
+    AuthJs-->>Form: 送った
+    Form->>Panel: メールアドレスとパスワードを覚え (setEmail、setPassword)、<br/>確認の段階に切り替える (onStep('confirm') → switchMode)。<br/>LoginPage の見出しは「メールアドレスの確認」(onModeChange)
+    Form-->>User: 9「{メールアドレス} に送信した6桁の確認コードを入力してください。」、<br/>「確認コード」「確認して登録を完了」「確認コードを再送する」「ログインに戻る」
 
-    User->>Form: 10 メールに届いた確認コードを入力
-    User->>Form: 11 「確認して登録を完了」をクリック
-    alt 記述なし 6 桁の数字でない
+    User->>Form: 10・11 メールに届いた確認コードを入力し、<br/>「確認して登録を完了」をクリック
+    break 6 桁の数字でない (記述なし)
         Form-->>User: ブラウザーが入力を求める (pattern)。通信しない
-    else ブラウザーの検査を通る
-        Form->>AuthJs: 確認コードを送るよう頼む (confirm → run → confirmSignUp)<br/>ボタンは「確認中…」
-        AuthJs->>AuthCtrl: 書き込みの前に CSRF トークンを取る (GET /api/auth/csrf)
-        AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン
-        AuthJs->>SignupCtrl: POST /api/auth/signup/confirm (email、code)
-        SignupCtrl->>CogS: 確認コードを照合するよう頼む (confirm)
-        CogS->>Cog: 12 ConfirmSignUp
-        alt 11a 確認コードが無効、または有効期限切れ
-            Cog-->>CogS: CodeMismatchException か ExpiredCodeException
-            CogS--xErrs: 400 CODE_MISMATCH か CODE_EXPIRED の例外を投げる (translate)
-            Errs-->>AuthJs: 400「確認コードが正しくありません。」か<br/>「確認コードの有効期限が切れています。コードを再送してください。」(business)
-            AuthJs--xForm: エラーを投げる (AuthError)
-            Form-->>User: 11a-1 応答の文 (setFailure)。確認コードの入力欄のまま
-            opt 11a-2 確認コードを再送する
-                User->>Form: 「確認コードを再送する」をクリック
-                Form->>AuthJs: 確認コードを送り直すよう頼む (run → resendSignUpCode)
-                AuthJs->>AuthCtrl: 書き込みの前に CSRF トークンを取る (GET /api/auth/csrf)
-                AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン
-                AuthJs->>SignupCtrl: POST /api/auth/signup/resend (email)
-                SignupCtrl->>CogS: 確認コードを送り直すよう頼む (resend)
-                CogS->>Cog: ResendConfirmationCode
-                Cog-->>CogS: 受け付けた (確認コードのメールを送る)
-                CogS-->>SignupCtrl: 終わった
-                SignupCtrl-->>AuthJs: 200 { codeSent: true }
-                AuthJs-->>Form: 送った
-                Form-->>User: 「確認コードを再送しました。」(setNotice)
-            end
-            User->>Form: 11a-3 確認コードを入力し直す (基本フロー 10 へ戻る)
-        else 確認できた
-            Cog-->>CogS: 確認済みにした
-            CogS-->>SignupCtrl: 終わった
-            SignupCtrl-->>AuthJs: 200 { confirmed: true }
-            AuthJs-->>Form: 確認できた
-            Form->>AuthJs: 12 覚えていたパスワードでログインするよう頼む (passwordLogin)
-            AuthJs->>AuthCtrl: 書き込みの前に CSRF トークンを取る (GET /api/auth/csrf)
-            AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン
-            AuthJs->>LoginCtrl: POST /api/auth/login (email、password、returnTo)
-            LoginCtrl->>CogP: メールアドレスとパスワードで認証するよう頼む (authenticate)
-            CogP->>Cog: InitiateAuth USER_PASSWORD_AUTH
-            Cog-->>CogP: ID トークン、refresh トークン
-            CogP-->>LoginCtrl: ID トークンを検証した利用者と refresh トークン (toUser)
-            LoginCtrl->>Auth: 会員を用意するよう頼む (provision)
-            Auth->>Repo: 会員を読む (findByIssuerAndSubject)
-            Repo->>Db: SELECT members
-            Db-->>Repo: 会員の行 (なければなし)
-            Repo-->>Auth: 会員 (なければなし)
-            alt 6a・3a で作った会員がいる
-                Auth->>Db: メールの確認日時を入れてコミットする<br/>(markEmailVerified。save は呼ばない。UPDATE members)
-            else 通常の登録 (会員がまだない)
-                Auth->>Repo: 購入者 (USER) の会員を保存する (saveAndFlush)
-                Repo->>Db: INSERT members
-                Db-->>Repo: 完了
-                Repo-->>Auth: 会員
-            end
-            Auth-->>LoginCtrl: 終わった
-            LoginCtrl->>Auth: 会員が使えるかを確かめる (current)
-            Auth->>Repo: 会員を読む (findByIssuerAndSubject)
-            Repo->>Db: SELECT members
-            Db-->>Repo: 会員の行
-            Repo-->>Auth: 会員
-            Auth-->>LoginCtrl: 会員
-            LoginCtrl->>LoginCtrl: セッション ID を変え、refresh トークン、CSRF トークン、<br/>認証情報をセッションに保存する<br/>(changeSessionId、CognitoRefreshSession.store、saveContext)
-            LoginCtrl-->>AuthJs: 200 { returnTo } (safeReturn)
-            AuthJs-->>Form: 戻る先 (kusakari-auth-changed を発火)
-            Form->>Panel: 戻る先を渡す (onSignedIn → complete)
-            Panel->>App: 戻る先の URL を読み込み直す (window.location.replace)<br/>共通ヘッダーから来たなら元の画面、登録用の URL からなら「メイン」画面
-            App->>AuthJs: ログイン状態を読む (useAuth → readSession)
-            AuthJs->>AuthCtrl: GET /api/auth/me
-            AuthCtrl->>Auth: ログイン状態を作るよう頼む (session)
-            Auth-->>AuthCtrl: ログインしている (current で会員を読む)
-            AuthCtrl-->>AuthJs: 200 authenticated=true
-            AuthJs-->>App: ログインしている
-            App-->>User: 12 元の画面 (共通ヘッダーに「アカウント」)
+    end
+    Form->>AuthJs: 確認コードを送るよう頼む (confirm → run → confirmSignUp)<br/>ボタンは「確認中…」
+    AuthJs->>SignupCtrl: POST /api/auth/signup/confirm (email、code)<br/>(先に CSRF トークンを取る。GET /api/auth/csrf)
+    SignupCtrl->>CogS: 確認コードを照合するよう頼む (confirm)
+    CogS->>Cog: 12 ConfirmSignUp
+    break 11a 確認コードが無効、または有効期限切れ
+        CogS--xErrs: 400 CODE_MISMATCH か CODE_EXPIRED の例外を投げる<br/>(CodeMismatchException か ExpiredCodeException を受けて translate)
+        Note over Errs,Form: 結果: 400 を返し、確認しない。<br/>画面: 11a-1「確認コードが正しくありません。」か「確認コードの有効期限が切れています。コードを再送してください。」。確認コードの入力欄のまま (11a-3 基本フロー 10 へ)。
+        opt 11a-2 確認コードを再送する
+            Form->>SignupCtrl: 「確認コードを再送する」のクリックで、確認コードを送り直すよう頼む<br/>POST /api/auth/signup/resend (run → resendSignUpCode。先に CSRF トークンを取る)
+            Note over Form,Cog: 結果: Cognito が確認コードのメールを送り直す (CognitoSignup の resend、ResendConfirmationCode) 。<br/>画面: 200 { codeSent: true } なら「確認コードを再送しました。」(setNotice)。
         end
     end
+    Cog-->>CogS: 確認済みにした
+    CogS-->>SignupCtrl: 終わった
+    SignupCtrl-->>AuthJs: 200 { confirmed: true }
+    AuthJs-->>Form: 確認できた
+    Form->>AuthJs: 12 覚えていたパスワードでログインするよう頼む (passwordLogin)
+    AuthJs->>LoginCtrl: POST /api/auth/login (email、password、returnTo)<br/>(先に CSRF トークンを取る。GET /api/auth/csrf)
+    LoginCtrl->>CogP: メールアドレスとパスワードで認証するよう頼む (authenticate)<br/>Cognito の InitiateAuth USER_PASSWORD_AUTH。中身は EC-B01 の図の 19〜20、36〜37 と同じ
+    CogP-->>LoginCtrl: ID トークンを検証した利用者と refresh トークン (toUser)
+    LoginCtrl->>Auth: 会員を用意するよう頼む (provision)
+    Auth->>Repo: 会員を読む (findByIssuerAndSubject、SELECT members)
+    Repo-->>Auth: 会員 (なければなし)
+    alt 6a・3a で作った会員がいる
+        Auth->>Db: メールの確認日時を入れてコミットする<br/>(markEmailVerified。save は呼ばない。UPDATE members)
+    else 通常の登録 (会員がまだない)
+        Auth->>Repo: 購入者 (USER) の会員を保存する (saveAndFlush、INSERT members)
+    end
+    LoginCtrl->>Auth: 会員が使えるかを確かめる (current、findByIssuerAndSubject、SELECT members)
+    Auth-->>LoginCtrl: 会員
+    LoginCtrl->>LoginCtrl: セッション ID を変え、refresh トークン、CSRF トークン、<br/>認証情報をセッションに保存する<br/>(changeSessionId、CognitoRefreshSession.store、saveContext)
+    LoginCtrl-->>AuthJs: 200 { returnTo } (safeReturn)
+    AuthJs-->>Form: 戻る先 (kusakari-auth-changed を発火)
+    Form->>Panel: 戻る先を渡す (onSignedIn → complete)
+    Panel->>App: 戻る先の URL を読み込み直す (window.location.replace)<br/>共通ヘッダーから来たなら元の画面、登録用の URL からなら「メイン」画面
+    App->>AuthCtrl: ログイン状態を読む (useAuth → readSession)<br/>GET /api/auth/me。session が current で会員を読む
+    AuthCtrl-->>App: 200 authenticated=true
+    App-->>User: 12 元の画面 (共通ヘッダーに「アカウント」)
 ```
+
+![EC-B16 シーケンス図](<images/EC-B16_一般アカウントを登録する-1.png>)
 
 ## 共通代替フローを直接書いた図
 
@@ -277,7 +198,7 @@ sequenceDiagram
         AuthJs->>AuthCtrl: GET /api/auth/me
         AuthCtrl-->>AuthJs: 200 authenticated=false
         AuthJs-->>Panel: ログインしていない
-        Panel-->>User: ログイン画面 (以降は上の図の 13〜22)
+        Panel-->>User: ログイン画面 (以降は上の図の 10〜17)
     end
 
     User->>Form: 入力して「確認コードを送信」をクリック (ブラウザーの検査を通った)
@@ -326,7 +247,7 @@ sequenceDiagram
         AuthJs->>AuthCtrl: GET /api/auth/csrf
         AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン
         AuthJs->>SignupCtrl: POST /api/auth/signup
-        SignupCtrl-->>AuthJs: 200 { codeSent: true } (上の図の 39〜82)
+        SignupCtrl-->>AuthJs: 200 { codeSent: true } (上の図の 24〜39)
         AuthJs-->>Form: 送った
         Form-->>User: 確認コードの入力欄
     end
@@ -334,6 +255,8 @@ sequenceDiagram
         User->>Form: 残った入力のまま、もう一度「確認コードを送信」をクリック<br/>(基本フロー 7 へ戻る。Cognito への登録が済んでいたら 409 EMAIL_IN_USE になる)
     end
 ```
+
+![EC-B16 共通代替フローを直接書いた図](<images/EC-B16_一般アカウントを登録する-2.png>)
 
 ## ユースケース記述との差
 

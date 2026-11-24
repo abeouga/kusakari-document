@@ -8,6 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
+代替フローのうち、エラーで終わるもの（4a・4b）と記述にない分岐（店舗・商品がない 404、商品 ID の重複の 400）は、分かれる所だけを描き、結果と画面は Note に文で書いています。3c（確認ダイアログの「取消」）は、`break` の中の矢印 1 本と Note にしています。サーバーが失敗を返したときの画面の後処理（`readResponse` が `ApiError` を投げる → `write` の `catch` でエラーの文を覚える → 一覧を取り直す → 失敗を返し、確認ダイアログから確定したときはダイアログが開いたまま）は、どれも同じです。
 
 ```mermaid
 sequenceDiagram
@@ -25,38 +26,28 @@ sequenceDiagram
     box rgba(27,127,92,0.12) EC API Spring Boot
         participant AuthCtrl as ログイン状態API<br/>AuthController<br/>(AuthController.java)
         participant Ctrl as 出店者の商品API<br/>SellerProductController<br/>(SellerProductController.java)
-        participant Errs as エラーの応答<br/>ApiErrors<br/>(ApiErrors.java)
         participant Svc as 出店者の商品の処理<br/>SellerProductService<br/>(SellerProductService.java)
         participant Mod as 運営の警告・停止<br/>ProductModerationService<br/>(ProductModerationService.java)
         participant Auth as ログイン中の会員<br/>AuthService<br/>(AuthService.java)
-        participant CatSvc as 商品の読み込み<br/>CatalogService<br/>(CatalogService.java)
         participant Prod as 商品の読み書き<br/>ProductRepository<br/>(ProductRepository.java)
         participant Inv as 在庫の読み書き<br/>InventoryRepository<br/>(InventoryRepository.java)
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、5、13、42、一覧の取り直しの 69・74 に適用<br/>*a 通信に失敗した場合: 5、13、40、42、一覧の取り直しの 69・74・76 に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、4、8、32、一覧の取り直しの 41 に適用<br/>*a 通信に失敗した場合: 4、8、30、32、一覧の取り直しの 41、購入者向けの商品の 43 に適用
 
     User->>Work: 出店者メニューの「商品管理」をクリック
     Work->>Mgr: URL を /seller/products に変え、<br/>ProductManager を表示 (選択中の店舗にロールがあるとき)
     par 商品の一覧
         Mgr->>Cat: 選択中の店舗の商品を取りに行くよう頼む (useSellerCatalog)
-        Cat->>Http: 店舗が決まったら自動で<br/>一覧の通信を始める (useEffect → api.sellerProducts)
-        Http->>Ctrl: GET /api/seller/products?storeId={店舗ID}
-        Ctrl->>Svc: 店舗の商品の一覧を作るよう頼む (list)<br/>中身は EC-S05 の図の 7〜17 と同じ
-        Svc-->>Ctrl: 出店者向けの商品の一覧 (公開状態 publicationStatus を含む)
-        Ctrl-->>Http: 200 商品の配列
-        Http-->>Cat: 商品の一覧
-        Cat-->>Mgr: 商品の一覧 (setProducts)
+        Cat->>Ctrl: 店舗が決まったら自動で一覧の通信を始める (useEffect → api.sellerProducts)<br/>GET /api/seller/products?storeId={店舗ID}
+        Ctrl->>Svc: 店舗の商品の一覧を作るよう頼む (list)<br/>中身は EC-S05 の図と同じ流れ
+        Ctrl-->>Cat: 200 出店者向けの商品の配列 (公開状態 publicationStatus を含む。setProducts)
     and 運営からの警告・停止
         Mgr->>Hook: 運営からの警告・停止を取りに行くよう頼む (useResource)
-        Hook->>Http: 画面を開いたときに自動で<br/>通信を始める (reload → request)
-        Http->>Ctrl: GET /api/seller/products/moderation?storeId={店舗ID}
-        Ctrl->>Mod: 警告中・公開停止中の商品を読むよう頼む (noticesAt)<br/>中身は EC-S05 の図の 25〜26 と同じ
-        Mod-->>Ctrl: 警告・停止の一覧
-        Ctrl-->>Http: 200 警告・停止の配列
-        Http-->>Hook: 警告・停止の一覧
-        Hook-->>Mgr: 警告・停止の一覧
+        Hook->>Ctrl: 画面を開いたときに自動で通信を始める (reload → request)<br/>GET /api/seller/products/moderation?storeId={店舗ID}
+        Ctrl->>Mod: 警告中・公開停止中の商品を読むよう頼む (noticesAt)<br/>中身は EC-S05 の図と同じ流れ
+        Ctrl-->>Hook: 200 警告・停止の配列
     end
     Mgr->>List: 商品の一覧を渡して表示 (SellerProductList)<br/>変更の頼み先は changeStatus (onStatus)
     List->>List: 検索、カテゴリ、公開状態、並び順で絞って並べ、<br/>25 件ずつのページに分ける (はじめは条件なし、登録が新しい順)
@@ -70,23 +61,21 @@ sequenceDiagram
         List->>List: 選んだ商品を覚える (setSelected)。<br/>選べるのは表示中のページの商品だけ
         User->>List: 「選択商品を非表示」か「選択商品を再公開」をクリック
         List-->>User: 3a-2 確認ダイアログを表示 (confirm → setPending)<br/>「商品状態変更の確認」「非表示の確認」か「再公開の確認」、対象店舗：店舗名 / N件、<br/>商品名、変更の内容、「非表示を確定」か「再公開を確定」、「取消」
-        alt 3c 確認ダイアログで「取消」をクリック
+        break 3c 確認ダイアログで「取消」をクリック
             User->>List: 「取消」をクリック<br/>(Esc キー、「閉じる」、ダイアログの外側のクリックも同じ)
-            List-->>User: 3c-1 ダイアログを閉じる (setPending(null))。通信せず、<br/>選択は残る。3c-2 ここで終わり、下の保存は行わない
-        else 確定した
-            User->>List: 3a-3「非表示を確定」か「再公開を確定」をクリック
-            List->>Cat: 変更を頼む (apply → onStatus → changeStatus)
+            Note over User,List: 結果: 通信せず、選択は残る (setPending(null))。<br/>画面: 3c-1 ダイアログを閉じる。3c-2 ここで終わり
         end
+        User->>List: 3a-3「非表示を確定」か「再公開を確定」をクリック
+        List->>Cat: 変更を頼む (apply → onStatus → changeStatus)
     else 3b 取り扱いをやめる商品を削除する
         User->>List: 3b-1 対象商品の行の「削除」をクリック<br/>(複数なら選んで「選択商品を削除」)
         List-->>User: 3b-2 確認ダイアログを表示 (confirm → setPending)<br/>「削除の確認」、対象店舗：店舗名 / N件、商品名、<br/>「この店舗の管理一覧からも削除します。復元はできません。<br/>注文履歴と他店舗の販売には影響しません。」、「削除を確定」、「取消」
-        alt 3c 確認ダイアログで「取消」をクリック
+        break 3c 確認ダイアログで「取消」をクリック
             User->>List: 「取消」をクリック<br/>(Esc キー、「閉じる」、ダイアログの外側のクリックも同じ)
-            List-->>User: 3c-1 ダイアログを閉じる (setPending(null))。通信しない。<br/>3c-2 ここで終わり、下の保存は行わない
-        else 確定した
-            User->>List: 3b-3「削除を確定」をクリック
-            List->>Cat: 削除を頼む (apply → onStatus → changeStatus、status は DELETED)
+            Note over User,List: 結果: 通信しない (setPending(null))。<br/>画面: 3c-1 ダイアログを閉じる。3c-2 ここで終わり
         end
+        User->>List: 3b-3「削除を確定」をクリック
+        List->>Cat: 削除を頼む (apply → onStatus → changeStatus、status は DELETED)
     end
 
     Cat->>Http: 前のお知らせとエラーを消し、販売状態を変える通信を送る<br/>(write → api.setProductStatus、本文は { storeId, productIds, status })
@@ -96,56 +85,34 @@ sequenceDiagram
     AuthJs->>Ctrl: PATCH /api/seller/products/status<br/>(CSRF トークンのヘッダー付き)
     Ctrl->>Svc: 販売状態を変えるよう頼む (update)<br/>update 全体が 1 つのトランザクション
     Svc->>Auth: 削除ならオーナーか MANAGER か (requireManager)、<br/>ほかは STAFF 以上か (requireSeller) を確かめる
-    alt 4b 権限がない (削除は STAFF・ロールなし、公開状態の変更はロールなし)
-        Auth--xErrs: 403 FORBIDDEN の例外を投げる (requireStoreRole → denied)
-        Errs-->>Http: 403「この操作の権限がありません。」(business)
-    else 権限がある
-        Auth-->>Svc: 扱える
-        Svc->>CatSvc: 店舗があるかを確かめるよう頼む (requireStore)
-        CatSvc->>Db: SELECT stores (existsById)
-        Db-->>CatSvc: 店舗の有無
-        CatSvc-->>Svc: ある (なければ 404 STORE_NOT_FOUND)
-        Svc->>Svc: 商品 ID に重複がないかを確かめる<br/>(重複なら 400 DUPLICATE_PRODUCT)
-        Svc->>Prod: 商品がこの店舗のものかを確かめる<br/>(requireAtStore → findStoreReferences)
-        Prod->>Db: SELECT products の id、store_id
-        Db-->>Prod: 商品の店舗
-        Prod-->>Svc: 商品の店舗 (ほかの店舗なら 404 PRODUCT_NOT_FOUND)
-        Svc->>Inv: 在庫の行を商品 ID の順にロックして読む (lockAll)
-        Inv->>Db: SELECT ... ORDER BY product_id FOR UPDATE inventory
-        Db-->>Inv: ロックした在庫の行
-        Inv-->>Svc: 在庫の一覧 (公開状態)
-        alt 4a 保存できない (行の数が違う、削除済みの商品を公開・非表示にする)
-            Svc--xErrs: 404 PRODUCT_NOT_FOUND か 409 PRODUCT_ARCHIVED の例外を投げる
-            Errs-->>Http: 404「選択店舗の商品が見つかりません。」か<br/>409「削除済みの商品は再公開・非表示に変更できません。」(business)
-        else 保存できる
-            Svc->>Svc: 選んだ商品の公開状態を書き換える (setPublicationStatus)<br/>削除は DELETED にするだけで、行は残す
-            Svc->>Db: 書き換えた行を保存してコミットする<br/>(save は呼ばない。UPDATE inventory)
-            Db-->>Svc: 完了
-            Svc-->>Ctrl: 終わった
-            Ctrl-->>Http: 200 { updated: true }
-        end
+    break 4b 権限がない (削除は STAFF・ロールなし、公開状態の変更はロールなし)
+        Note over Auth,Mgr: 結果: 403 FORBIDDEN を返し、何も変えない (requireStoreRole → denied)。<br/>画面: 4b-1「この操作の権限がありません。」
     end
-    alt 失敗の応答 (4a、4b、記述にない 400・404)
-        Http--xCat: エラーを投げる (readResponse → ApiError)
-        Cat->>Http: エラーの文を覚え (setError)、一覧を取り直す<br/>(refresh → api.sellerProducts)。流れは 5〜8 と同じ
-        Http-->>Cat: 最新の商品の一覧
-        Cat-->>List: 失敗を返す (false)
-        Mgr-->>User: 4a-1 エラーの文と最新の販売状態。確認ダイアログから<br/>確定したときは、ダイアログが開いたまま<br/>(4a-2 基本フロー 3 へ戻る。4b-1 は「この操作の権限がありません。」)
-    else 200
-        Http-->>Cat: { updated: true }
-        par 出店者の一覧
-            Cat->>Http: 一覧を取り直す (refresh → api.sellerProducts)<br/>流れは 5〜8 と同じ
-            Http-->>Cat: 最新の商品の一覧
-        and 購入者向けの商品
-            Cat->>Http: カートと購入者向けの商品を取り直す (shop.refreshProducts)<br/>GET /api/cart は出店者には 403 BUYER_REQUIRED、続けて GET /api/products
-            Http-->>Cat: 購入者向けの商品
-        end
-        Cat->>Cat: 結果の文を出す (shop.setNotice)<br/>「N件の商品を非表示に変更しました。」「N件の商品を再公開しました。」<br/>「N件の商品を削除しました。」
-        Cat-->>List: 成功を返す (true)
-        List->>List: ダイアログを閉じ、選択を外す (setPending(null)、setSelected([]))
-        Mgr-->>User: 結果の文と最新の一覧と販売状態。<br/>3b-4 削除した商品は一覧から消える (3b-5 終わり)
+    Svc->>Prod: 店舗があるか (CatalogService.requireStore、SELECT stores)、商品 ID に重複がないか、<br/>商品がこの店舗のものか (requireAtStore → findStoreReferences、SELECT products) を確かめる
+    break 店舗がない、商品 ID の重複、ほかの店舗の商品 (記述なし)
+        Note over Prod,Mgr: 結果: 404 STORE_NOT_FOUND、400 DUPLICATE_PRODUCT か 404 PRODUCT_NOT_FOUND を返し、何も変えない。<br/>画面: エラーの文
     end
+    Svc->>Inv: 在庫の行を商品 ID の順にロックして読む<br/>(lockAll、SELECT ... ORDER BY product_id FOR UPDATE inventory)
+    break 4a 保存できない (行の数が違う、削除済みの商品を公開・非表示にする)
+        Note over Inv,Mgr: 結果: 404 PRODUCT_NOT_FOUND か 409 PRODUCT_ARCHIVED を返し、何も変えない。<br/>画面: 4a-1「選択店舗の商品が見つかりません。」か「削除済みの商品は再公開・非表示に変更できません。」と最新の販売状態 (4a-2 基本フロー 3 へ戻る)
+    end
+    Svc->>Svc: 選んだ商品の公開状態を書き換える (setPublicationStatus)<br/>削除は DELETED にするだけで、行は残す
+    Svc->>Db: 書き換えた行を保存してコミットする<br/>(save は呼ばない。UPDATE inventory)
+    Ctrl-->>Http: 200 { updated: true }
+    Http-->>Cat: { updated: true }
+    par 出店者の一覧
+        Cat->>Ctrl: 一覧を取り直す (refresh → api.sellerProducts)<br/>GET /api/seller/products?storeId={店舗ID}。流れは 4〜6 と同じ
+        Ctrl-->>Cat: 200 最新の商品の一覧
+    and 購入者向けの商品
+        Cat->>Http: カートと購入者向けの商品を取り直す (shop.refreshProducts)<br/>GET /api/cart は出店者には 403 BUYER_REQUIRED、続けて GET /api/products
+        Http-->>Cat: 購入者向けの商品
+    end
+    Cat-->>List: 結果の文を出し (shop.setNotice)、成功を返す (true)<br/>「N件の商品を非表示に変更しました。」「N件の商品を再公開しました。」<br/>「N件の商品を削除しました。」
+    List->>List: ダイアログを閉じ、選択を外す (setPending(null)、setSelected([]))
+    Mgr-->>User: 結果の文と最新の一覧と販売状態。<br/>3b-4 削除した商品は一覧から消える (3b-5 終わり)
 ```
+
+![EC-S06 シーケンス図](<images/EC-S06_商品の販売状態を変更する-1.png>)
 
 ## 共通代替フローを直接書いた図
 
@@ -208,7 +175,7 @@ sequenceDiagram
         AuthJs->>Filter: PATCH /api/seller/products/status
         Filter->>Ctrl: 要求を通す (chain.doFilter)
         Ctrl->>Svc: 販売状態を変えるよう頼む (update)
-        Svc->>Db: 権限と商品を確かめ、在庫の行をロックして読み、<br/>書き換えてコミットする (上の図の 44〜67)
+        Svc->>Db: 権限と商品を確かめ、在庫の行をロックして読み、<br/>書き換えてコミットする (上の図の 34〜38)
         alt *a MySQL との通信に失敗
             Db--xSvc: 失敗 (DataAccessException)。<br/>トランザクションの変更はすべて取り消す
             Svc--xCtrl: 例外
@@ -230,6 +197,8 @@ sequenceDiagram
         User->>List: 開いたままの確認ダイアログの確定のボタンか、<br/>もう一度「公開状態」のボタンをクリック (基本フロー 3 へ戻る)
     end
 ```
+
+![EC-S06 共通代替フローを直接書いた図](<images/EC-S06_商品の販売状態を変更する-2.png>)
 
 ## ユースケース記述との差
 

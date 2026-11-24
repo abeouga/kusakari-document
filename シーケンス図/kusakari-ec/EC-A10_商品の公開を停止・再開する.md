@@ -8,6 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
+代替フローのうち、確認ダイアログを開くだけの 3a〜3c、画面の中だけで終わるもの（6a）、エラーで終わるもの（5a）と記述にない分岐（商品がない）は、分かれる所だけを描き、結果と画面は Note に文で書いています。3b で今の警告を読む処理（opt）も、頼む矢印と Note に寄せています。エラーのときの画面の後処理（`readResponse` が `ApiError` を投げる → 404 なら `reload` で一覧を取り直す → `run` が false → ダイアログを閉じてエラーの文を出す）は、どれも同じです。
 基本フロー（公開の停止）と代替フロー 3a〜3c（警告、警告の解除、公開停止の解除）は、同じ部品と同じ流れを通るので、1 枚の図の中で操作ごとに分けて書いています。
 
 ```mermaid
@@ -26,9 +27,7 @@ sequenceDiagram
     box rgba(27,127,92,0.12) EC API Spring Boot
         participant AuthCtrl as ログイン状態API<br/>AuthController<br/>(AuthController.java)
         participant Ctrl as 商品の警告・停止API<br/>ProductModerationController<br/>(ProductModerationController.java)
-        participant Errs as エラーの応答<br/>ApiErrors<br/>(ApiErrors.java)
         participant Svc as 商品の警告・停止の処理<br/>ProductModerationService<br/>(ProductModerationService.java)
-        participant Auth as ログイン中の会員<br/>AuthService<br/>(AuthService.java)
         participant Hist as 警告・停止の履歴の決まり<br/>ModerationHistory<br/>(ModerationHistory.java)
         participant ProdRepo as 商品の読み書き<br/>ProductRepository<br/>(ProductRepository.java)
         participant EvRepo as 警告・停止の履歴の読み書き<br/>ProductModerationEventRepository<br/>(ProductModerationEventRepository.java)
@@ -36,18 +35,14 @@ sequenceDiagram
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、5、41・43、一覧の取り直しの 54・82 に適用<br/>*a 通信に失敗した場合: 2 (URL を直接開いたときのログインの確認)、5、39、41・43、一覧の取り直しの 54・82 に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、5、29、一覧の取り直しの 43 に適用<br/>*a 通信に失敗した場合: 2 (URL を直接開いたときのログインの確認)、5、27、29、一覧の取り直しの 43 に適用
 
     User->>Work: 運営者メニューの「商品管理」をクリック
     Work->>Page: URL を /operator/products に変え、<br/>ReviewPage (products) を表示
     Page->>Hook: 商品の一覧を取りに行くよう頼む (useResource)
     Hook->>Http: 画面を開いたときに自動で<br/>一覧の通信を始める (reload → request)
     Http->>Ctrl: GET /api/operator/products
-    Ctrl->>Svc: 商品の一覧を作るよう頼む (list)
-    Svc->>Auth: ログイン中の人が運営者かを確かめる (requireAdmin)
-    Auth-->>Svc: 運営者である
-    Svc->>Db: 店舗、在庫、警告の履歴、追加した人、商品を読む<br/>(findAll、findByEventTypeInOrderByIdDesc、findAllCreatorNames。中身は EC-A06)
-    Db-->>Svc: 各表の行
+    Ctrl->>Svc: 商品の一覧を作るよう頼む (list)。運営者かを確かめ (AuthService.requireAdmin)、<br/>店舗、在庫、警告の履歴、追加した人、商品を読む<br/>(findAll、findByEventTypeInOrderByIdDesc、findAllCreatorNames。中身は EC-A06 の図と同じ流れ)
     Svc-->>Ctrl: 商品の一覧 (公開できるか、停止中か、今の警告、追加した人)
     Ctrl-->>Http: 200 商品の配列
     Http-->>Hook: 商品の一覧
@@ -61,96 +56,59 @@ sequenceDiagram
         Dlg-->>User: 4「公開停止の確認」、対象：商品名、購入者向けの画面に表示されず<br/>カートにあっても購入できなくなること、「理由（必須・出店者に通知します）」
     else 3a 停止せずに警告する
         User->>Mod: 3a-1「警告する」(警告中なら「もう一度警告する」) をクリック
-        Mod->>Dlg: 理由を空にして確認ダイアログを表示 (open('warn'))
-        Dlg-->>User: 3a-2「警告の確認」、対象：商品名、公開・利用の状態は変わらないこと、<br/>「理由（必須・出店者に通知します）」
+        Note over User,Dlg: 結果: 理由を空にして確認ダイアログを表示 (open('warn'))。<br/>画面: 3a-2「警告の確認」、対象：商品名、公開・利用の状態は変わらないこと、「理由（必須・出店者に通知します）」
     else 3b 警告を解除する
         User->>Mod: 3b-1「警告を解除」(警告中のときだけ出る) をクリック
-        Mod->>Dlg: 理由を空にして確認ダイアログを表示 (open('clear'))
-        Dlg-->>User: 3b-2「警告の解除の確認」、対象：商品名、<br/>「理由（任意・出店者に通知します）」
+        Note over User,Dlg: 結果: 理由を空にして確認ダイアログを表示 (open('clear'))。<br/>画面: 3b-2「警告の解除の確認」、対象：商品名、「理由（任意・出店者に通知します）」
     else 3c 公開停止を解除する
         User->>Mod: 3c-1「公開停止を解除」(停止中のときだけ出る) をクリック
-        Mod->>Dlg: 理由を空にして確認ダイアログを表示 (open('resume'))
-        Dlg-->>User: 3c-2「公開停止の解除の確認」、対象：商品名、出店者が非表示にしていなければ<br/>再び表示されること、「理由（任意・出店者に通知します）」
+        Note over User,Dlg: 結果: 理由を空にして確認ダイアログを表示 (open('resume'))。<br/>画面: 3c-2「公開停止の解除の確認」、対象：商品名、出店者が非表示にしていなければ再び表示されること、「理由（任意・出店者に通知します）」
     end
     User->>Dlg: 理由を入力する (500 文字まで。任意の操作では空でもよい)
-
-    alt 6a 確定を取り消した
+    break 6a 確定を取り消した
         User->>Dlg: 「取消」をクリック<br/>(Esc キー、「閉じる」、ダイアログの外側のクリックも同じ)
-        Dlg->>Mod: 取り消したことを伝える (onCancel)
-        Mod-->>User: 6a-1 ダイアログを閉じる (setPending(null))。<br/>通信せず、公開状態は変わらない (6a-2 終了)
-    else 確定した
-        User->>Dlg: 6「公開停止を確定」(3a「警告する」、3b「警告を解除する」、<br/>3c「公開停止の解除を確定」) をクリック
-        Dlg->>Mod: 確定したことを伝える (onConfirm → confirm)
-        alt 5a 理由が必須の操作 (停止・警告) で、理由が空 (前後の空白を除いて)
-            Mod-->>User: 5a-1「理由を入力してください。」(setMissing(true))<br/>ダイアログは開いたまま、通信しない (5a-2 基本フロー 5 へ戻る)
-        else 理由がある、または任意の操作
-            Mod->>Hook: 操作を実行し、成功の文を渡す (run)
-            Hook->>Http: 操作の通信を送る (send の write → request)<br/>停止・解除は { suspended, reason }、警告・解除は { warned, reason }
-            Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (authFetch)
-            AuthJs->>AuthCtrl: GET /api/auth/csrf
-            AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
-            alt 停止・公開停止の解除
-                AuthJs->>Ctrl: PUT /api/operator/products/{id}/moderation<br/>(CSRF トークンのヘッダー付き)
-                Ctrl->>Svc: 公開停止の状態を変えるよう頼む (moderate → suspend)<br/>suspend 全体が 1 つのトランザクション
-            else 警告・警告の解除
-                AuthJs->>Ctrl: PUT /api/operator/products/{id}/warning<br/>(CSRF トークンのヘッダー付き)
-                Ctrl->>Svc: 警告を記録するか解除するよう頼む (warning → warn)<br/>warn 全体が 1 つのトランザクション
-            end
-            Svc->>Auth: ログイン中の人が運営者かを確かめる (requireAdmin)
-            Auth-->>Svc: 運営者である
-            Svc->>ProdRepo: 商品の行をロックして読む (lock → findLocked)
-            ProdRepo->>Db: SELECT ... FOR UPDATE products
-            Db-->>ProdRepo: 商品の行 (なければなし)
-            ProdRepo-->>Svc: 商品 (なければなし)
-            alt 商品がない (記述なし)
-                Svc--xErrs: 404 PRODUCT_NOT_FOUND の例外を投げる (notFound)
-                Errs-->>Http: 404「商品が見つかりません。」(business)
-                Http--xHook: エラーを投げる (readResponse → ApiError)
-                Hook->>Http: 404 なので一覧を取り直す (reload)<br/>流れは 5〜12 と同じ
-                Http-->>Hook: 最新の商品の一覧
-                Hook-->>Mod: 失敗を返す (run が false、エラーの文を設定)
-                Mod-->>User: ダイアログを閉じ (setPending(null))、<br/>「商品が見つかりません。」と最新の一覧
-            else 商品がある
-                Svc->>Hist: 理由の前後の空白を除き、必須なら空でないかを確かめる (reasonFor)
-                Hist-->>Svc: 理由 (空の必須の理由は 400 REASON_REQUIRED。<br/>画面の 5a が先に止めるので、画面からは届かない)
-                opt 3b 警告の解除
-                    Svc->>EvRepo: 今の警告を求めるため履歴を読む<br/>(currentWarning → findByProductIdOrderByIdDesc)
-                    EvRepo->>Db: SELECT product_moderation_events
-                    Db-->>EvRepo: 履歴の行 (新しい順)
-                    EvRepo-->>Svc: 履歴
-                    Svc->>Hist: 今の警告を求める (activeWarning)
-                    Hist-->>Svc: 今の警告 (なければなし)
-                end
-                alt 記録する (停止は停止していないとき、解除は停止中のとき、<br/>警告はいつも、警告の解除は警告中のとき)
-                    opt 停止・公開停止の解除
-                        Svc->>Svc: 商品の公開停止の印を書き換える (moderate)
-                    end
-                    Svc->>EvRepo: 操作の履歴を保存する (record → save)<br/>SUSPEND、WARN、CLEAR_WARNING、RESUME のどれか
-                    EvRepo->>Db: INSERT product_moderation_events
-                    Svc->>Notices: 出店者に知らせるよう頼む (toStore)<br/>「商品の公開を停止しました」(3a「商品に運営から警告がありました」、<br/>3b「商品への運営の警告が解除されました」、3c「商品の公開停止を解除しました」)、<br/>本文は商品名 / 理由 (noticeBody)
-                    Notices->>Db: 店舗の組織のオーナーと、店舗でロールのある担当者のうち、<br/>有効な会員ごとに INSERT notifications
-                    Notices-->>Svc: 終わった
-                else すでにその状態 (二重の操作など)
-                    Svc->>Svc: 何も変えない。履歴も通知も足さない
-                end
-                Svc->>EvRepo: 書き換えを送り、今の警告を求めるため履歴を読む<br/>(state → flush、findByProductIdOrderByIdDesc)
-                EvRepo->>Db: UPDATE products (停止・解除のとき)、<br/>SELECT product_moderation_events
-                Db-->>EvRepo: 履歴の行 (新しい順)
-                EvRepo-->>Svc: 履歴
-                Svc->>Hist: 今の警告を求める (activeWarning)
-                Hist-->>Svc: 今の警告 (なければなし)
-                Svc-->>Ctrl: 停止中か、今の警告 (State)。ここでコミット
-                Ctrl-->>Http: 200 { suspended, warning }
-                Http-->>Hook: 操作の結果 (画面では使わない)
-                Hook->>Http: 一覧を取り直す (reload)<br/>流れは 5〜12 と同じ
-                Http-->>Hook: 最新の商品の一覧
-                Hook-->>Mod: 成功を返す (run が true、成功の文を設定)
-                Mod->>Mod: 履歴の表示を取り直す印を変え、<br/>ダイアログを閉じる (setVersion、setPending(null))
-                Mod-->>User: 9「停止しました。出店者に通知しました。」と「公開停止中」、<br/>「公開停止を解除」(3a-5「警告しました。…」と「警告中」と理由、<br/>3b-5「警告を解除しました。…」で「警告中」が消える、<br/>3c-5「再開しました。…」と「公開可能」か「販売終了」、「公開を停止」)
-            end
-        end
+        Note over User,Dlg: 結果: 取り消したことを伝え (onCancel)、ダイアログを閉じる (setPending(null))。通信しない。<br/>画面: 6a-1 公開状態は変わらない (6a-2 終了)。
     end
+    User->>Dlg: 6「公開停止を確定」(3a「警告する」、3b「警告を解除する」、<br/>3c「公開停止の解除を確定」) をクリック
+    Dlg->>Mod: 確定したことを伝える (onConfirm → confirm)
+    break 5a 理由が必須の操作 (停止・警告) で、理由が空 (前後の空白を除いて)
+        Mod-->>User: 5a-1「理由を入力してください。」(setMissing(true))<br/>ダイアログは開いたまま、通信しない (5a-2 基本フロー 5 へ戻る)
+    end
+    Mod->>Hook: 操作を実行し、成功の文を渡す (run)
+    Hook->>Http: 操作の通信を送る (send の write → request)<br/>停止・解除は { suspended, reason }、警告・解除は { warned, reason }
+    Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (authFetch)
+    AuthJs->>AuthCtrl: GET /api/auth/csrf
+    AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
+    AuthJs->>Ctrl: 停止・公開停止の解除は PUT /api/operator/products/{id}/moderation、<br/>警告・警告の解除は PUT /api/operator/products/{id}/warning<br/>(CSRF トークンのヘッダー付き)
+    Ctrl->>Svc: 停止・解除は公開停止の状態を (moderate → suspend)、<br/>警告・解除は警告を (warning → warn) 変えるよう頼む。全体が 1 つのトランザクション<br/>運営者かを確かめる (AuthService.requireAdmin)
+    Svc->>ProdRepo: 商品の行をロックして読む (lock → findLocked、SELECT ... FOR UPDATE products)
+    ProdRepo-->>Svc: 商品 (なければなし)
+    break 商品がない (記述なし)
+        Note over Svc,Mod: 結果: 404 PRODUCT_NOT_FOUND を返し (notFound)、何も変えない。<br/>画面: ダイアログを閉じ、一覧を取り直して「商品が見つかりません。」
+    end
+    Svc->>Hist: 理由の前後の空白を除き、必須なら空でないかを確かめる (reasonFor)<br/>(空の必須の理由は 400 REASON_REQUIRED。画面の 5a が先に止めるので、画面からは届かない)
+    opt 3b 警告の解除
+        Svc->>EvRepo: 今の警告を求めるため履歴を読むよう頼む (currentWarning → findByProductIdOrderByIdDesc)
+        Note over Svc,Db: 結果: 履歴を新しい順に読み (SELECT product_moderation_events)、<br/>今の警告を求める (ModerationHistory.activeWarning)。
+    end
+    alt 記録する (停止は停止していないとき、解除は停止中のとき、<br/>警告はいつも、警告の解除は警告中のとき)
+        Svc->>EvRepo: 停止・解除のときは商品の公開停止の印を書き換え (moderate)、<br/>操作の履歴を保存する (record → save、INSERT product_moderation_events)<br/>SUSPEND、WARN、CLEAR_WARNING、RESUME のどれか
+        Svc->>Notices: 出店者に知らせるよう頼む (toStore)<br/>「商品の公開を停止しました」(3a「商品に運営から警告がありました」、<br/>3b「商品への運営の警告が解除されました」、3c「商品の公開停止を解除しました」)、<br/>本文は商品名 / 理由 (noticeBody)。店舗の組織のオーナーと、<br/>店舗でロールのある担当者のうち、有効な会員ごとに INSERT notifications
+    else すでにその状態 (二重の操作など)
+        Svc->>Svc: 何も変えない。履歴も通知も足さない
+    end
+    Svc->>EvRepo: 書き換えを送り、今の警告を求めるため履歴を読む<br/>(state → flush、findByProductIdOrderByIdDesc)<br/>UPDATE products (停止・解除のとき)、SELECT product_moderation_events
+    EvRepo-->>Svc: 履歴の行 (新しい順)
+    Svc-->>Ctrl: 今の警告を求め (ModerationHistory.activeWarning)、<br/>停止中か、今の警告 (State) を返す。ここでコミット
+    Ctrl-->>Http: 200 { suspended, warning }
+    Http-->>Hook: 操作の結果 (画面では使わない)
+    Hook->>Http: 一覧を取り直す (reload)<br/>流れは 5〜9 と同じ
+    Http-->>Hook: 最新の商品の一覧
+    Hook-->>Mod: 成功を返す (run が true、成功の文を設定)
+    Mod-->>User: 履歴の表示を取り直す印を変え、ダイアログを閉じ (setVersion、setPending(null))、<br/>9「停止しました。出店者に通知しました。」と「公開停止中」、<br/>「公開停止を解除」(3a-5「警告しました。…」と「警告中」と理由、<br/>3b-5「警告を解除しました。…」で「警告中」が消える、<br/>3c-5「再開しました。…」と「公開可能」か「販売終了」、「公開を停止」)
 ```
+
+![EC-A10 シーケンス図](<images/EC-A10_商品の公開を停止・再開する-1.png>)
 
 ## 共通代替フローを直接書いた図
 
@@ -209,7 +167,7 @@ sequenceDiagram
         Http->>Filter: GET /api/operator/products
         Filter->>Ctrl: 要求を通す (chain.doFilter)
         Ctrl->>Svc: 商品の一覧を作るよう頼む (list)
-        Svc->>Db: 運営者かを確かめ、店舗・在庫・警告の履歴・<br/>追加した人・商品を読む (上の図の 7〜10)
+        Svc->>Db: 運営者かを確かめ、店舗・在庫・警告の履歴・<br/>追加した人・商品を読む (上の図の 6)
         alt *a MySQL との通信に失敗
             Db--xSvc: 失敗 (DataAccessException)
             Svc--xCtrl: 例外
@@ -231,6 +189,8 @@ sequenceDiagram
         Status->>Hook: 一覧を取り直す (reload)。流れはこの図の 2 からと同じ
     end
 ```
+
+![EC-A10 共通代替フローを直接書いた図](<images/EC-A10_商品の公開を停止・再開する-2.png>)
 
 ### 確認ダイアログで確定したとき
 
@@ -308,7 +268,7 @@ sequenceDiagram
             AuthJs->>Filter: PUT /api/operator/products/{id}/moderation か .../warning
             Filter->>Ctrl: 要求を通す (chain.doFilter)
             Ctrl->>Svc: 公開停止の状態を変えるか、警告を記録・解除するよう頼む (suspend、warn)
-            Svc->>Db: 運営者かを確かめ、商品をロックして読み、履歴と通知を保存して<br/>コミットする (上の図の 45〜79)
+            Svc->>Db: 運営者かを確かめ、商品をロックして読み、履歴と通知を保存して<br/>コミットする (上の図の 30〜40)
             alt *a MySQL との通信に失敗
                 Db--xSvc: 失敗 (DataAccessException)。<br/>トランザクションの変更 (公開停止の印、履歴、通知) はすべて取り消す
                 Svc--xCtrl: 例外
@@ -338,6 +298,8 @@ sequenceDiagram
         end
     end
 ```
+
+![EC-A10 共通代替フローを直接書いた図](<images/EC-A10_商品の公開を停止・再開する-3.png>)
 
 ## ユースケース記述との差
 

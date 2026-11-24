@@ -9,6 +9,7 @@
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 「店舗紹介」画面（パス `/store/{店舗 ID}`）は、ログインしていなくても開ける `Workspace` の画面です。`Workspace` は、ログイン状態を `GET /api/auth/me` で確かめてから、店舗の情報を `GET /api/stores/{id}` で取得します。
 ログインは不要なので、共通代替フロー \*b は適用しません。
+代替フロー 2a はエラーで終わるので、分かれる所だけを描き、結果と画面は Note に文で書いています。条件つきの処理（店舗の組織の確認、運営者の警告の読み込み）は、opt の中を頼む矢印 1 本と Note にしています。
 
 ```mermaid
 sequenceDiagram
@@ -36,7 +37,7 @@ sequenceDiagram
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*a 通信に失敗した場合: 7、19、再取得の 60 に適用
+    Note over User,Db: 共通代替フロー<br/>*a 通信に失敗した場合: 7、17 (「再取得」で送り直したときも) に適用
 
     User->>StoreLink: 「植物について」ダイアログの「販売店舗の紹介を見る」をクリック<br/>(ProductDetail.jsx が href に /store/{商品の店舗 ID} を渡す)
     StoreLink->>App: URL を /store/{店舗 ID} に変え (follow → navigate)、<br/>新しいパスを渡す (usePath)
@@ -45,12 +46,10 @@ sequenceDiagram
     Work-->>User: 読み終わるまで「ログイン状態を確認しています。」
     UseAuth->>AuthJs: 画面を開いたときに自動で読む<br/>(useEffect → refreshSession → readSession)
     AuthJs->>AuthCtrl: GET /api/auth/me
-    AuthCtrl->>AuthSvc: ログイン状態を作るよう頼む (session)
-    AuthSvc->>AuthSvc: ログイン中の会員を確かめる (current)。<br/>未ログインなら 401 を受け止めて authenticated が false、<br/>ログイン中なら会員と組織・店舗の所属を読む
+    AuthCtrl->>AuthSvc: ログイン状態を作るよう頼む (session)。ログイン中の会員を確かめ (current)、<br/>未ログインなら 401 を受け止めて authenticated が false、<br/>ログイン中なら会員と組織・店舗の所属を読む
     AuthSvc-->>AuthCtrl: ログイン状態 (SessionView)
     AuthCtrl-->>AuthJs: 200 ログイン状態
-    AuthJs-->>UseAuth: ログイン状態
-    UseAuth-->>Work: ログイン状態 (setSession)
+    AuthJs-->>Work: ログイン状態 (useAuth の setSession)
     Work->>Work: パスが /store/ で始まるので、未ログインでもログイン欄を出さない (publicStore)。<br/>見出しは「店舗紹介」、サイドバーは「マイページ」「アカウント設定」
     Work->>Profile: 店舗 ID を渡して読み取り専用で表示する<br/>(ProfilePage storeId readOnly)
     Profile->>Res: 店舗の情報を取りに行くよう頼む (useResource('/stores/{店舗 ID}'))
@@ -58,59 +57,37 @@ sequenceDiagram
     Profile-->>User: 「読み込んでいます。」(ResourceStatus)
     Http->>Ctrl: GET /api/stores/{id} (ログインしていなくてもよい)
     Ctrl->>Svc: 店舗の公開ページの情報を作るよう頼む (get)<br/>読み取り専用のトランザクション
-    Svc->>StoreRepo: 店舗を読む (require → findById)
-    StoreRepo->>Db: SELECT stores
-    Db-->>StoreRepo: 店舗の行 (なければなし)
+    Svc->>StoreRepo: 店舗を読む (require → findById、SELECT stores)
     StoreRepo-->>Svc: 店舗 (なければなし)
-    alt 2a 店舗の行がない
+    break 2a 店舗の行がない
         Svc--xErrs: 404 STORE_NOT_FOUND の例外を投げる (notFound → ApiException)
-        Errs-->>Http: 404「店舗が見つかりません。」(business)
-        Http--xRes: エラーを投げる (readResponse → ApiError 404)
-        Res->>Res: エラーの文を覚える (reload の catch → setError)
-        Res-->>Profile: エラーの文
-        Profile-->>User: 2a-1「店舗が見つかりません。」と「再取得」(ResourceStatus)
-    else 店舗の行がある
-        Svc->>AuthSvc: 店舗側の立場で見られるかを確かめる (canViewAsStaff)
-        AuthSvc->>AuthSvc: 運営者なら見られる。運営者が利用停止した店舗は運営者だけ。<br/>オーナーは自分の組織の店舗、担当者は所属する店舗なら見られる (canManageView)。<br/>未ログイン (current の 401) と利用できないアカウント (403) は見られない
-        AuthSvc-->>Svc: 店舗側の立場で見られるか (staff)
-        Svc->>Svc: 購入者に見せる店舗かを確かめる (publiclyVisible)<br/>公開中で、運営者の利用停止も閉鎖済みもないか
-        opt 公開中で、運営者の利用停止も閉鎖済みもない
-            Svc->>OrgRepo: 店舗の組織を読む (findById)
-            OrgRepo->>Db: SELECT organizations
-            Db-->>OrgRepo: 組織の行
-            OrgRepo-->>Svc: 組織 (停止 (suspended) でなければ購入者に見せる)
-        end
-        alt 2a 購入者に見せない店舗で、店舗側の立場でもない
-            Svc--xErrs: 404 STORE_NOT_FOUND の例外を投げる (notFound → ApiException)
-            Errs-->>Http: 404「店舗が見つかりません。」(business)
-            Http--xRes: エラーを投げる (readResponse → ApiError 404)
-            Res->>Res: エラーの文を覚える (reload の catch → setError)
-            Res-->>Profile: エラーの文
-            Profile-->>User: 2a-1「店舗が見つかりません。」と「再取得」(ResourceStatus)
-        else 購入者に見せる店舗か、店舗側の立場で見られる
-            Svc->>OrgRepo: 会社名のために組織を読む (view → findById)
-            OrgRepo->>Db: SELECT organizations<br/>(35〜38 で読んでいれば、同じトランザクションの中ではもう読まない)
-            Db-->>OrgRepo: 組織の行
-            OrgRepo-->>Svc: 組織
-            opt 店舗側の立場で見られる (staff が true)
-                Svc->>Mod: 運営者の今出ている警告を読む (warnings)
-                Mod->>Db: SELECT store_moderation_events<br/>(findByStoreIdInAndEventTypeInOrderByIdDesc)
-                Db-->>Mod: 警告の行
-                Mod-->>Svc: 警告
-            end
-            Svc-->>Ctrl: 店舗の情報 (Profile。購入者・未ログインには警告なし)
-            Ctrl-->>Http: 200 店舗の情報
-            Http-->>Res: 店舗の情報 (setData)
-            Res-->>Profile: 店舗の情報
-            Profile-->>User: 店舗名、「所在地 / 営業時間」、店舗紹介、<br/>closingStartedAt があれば「閉店予定」、なければ enabled で「営業中」か「受付休止」
-        end
+        Note over Errs,Profile: 結果: 404「店舗が見つかりません。」を返す (business)。<br/>画面: 2a-1「店舗が見つかりません。」と「再取得」(ResourceStatus。押すと 17 から取り直す)。2a-2 ここで終わる。
     end
-    opt 2a-1 の後に「再取得」をクリックした
-        User->>Profile: 「再取得」をクリック
-        Profile->>Res: 店舗の情報を取り直すよう頼む (resource.reload)
-        Res->>Http: GET /api/stores/{id} をもう一度送る (request)。<br/>以降は 20〜57 と同じ (2a-2 店舗がなければ、ここで終わる)
+    Svc->>AuthSvc: 店舗側の立場で見られるかを確かめる (canViewAsStaff → canManageView)<br/>運営者なら見られる。運営者が利用停止した店舗は運営者だけ。<br/>オーナーは自分の組織の店舗、担当者は所属する店舗なら見られる。<br/>未ログイン (current の 401) と利用できないアカウント (403) は見られない
+    AuthSvc-->>Svc: 店舗側の立場で見られるか (staff)
+    Svc->>Svc: 購入者に見せる店舗かを確かめる (publiclyVisible)<br/>公開中で、運営者の利用停止も閉鎖済みもないか
+    opt 公開中で、運営者の利用停止も閉鎖済みもない (組織の確認は記述なし)
+        Svc->>OrgRepo: 店舗の組織を読む (findById)
+        Note over Svc,OrgRepo: 結果: SELECT organizations。組織が停止 (suspended) でなければ購入者に見せる。
     end
+    break 2a 購入者に見せない店舗で、店舗側の立場でもない
+        Svc--xErrs: 404 STORE_NOT_FOUND の例外を投げる (notFound → ApiException)
+        Note over Errs,Profile: 結果: 404「店舗が見つかりません。」を返す (business)。<br/>画面: 2a-1「店舗が見つかりません。」と「再取得」。2a-2 ここで終わる。
+    end
+    Svc->>OrgRepo: 会社名のために組織を読む (view → findById、SELECT organizations)<br/>(読んでいれば、同じトランザクションの中ではもう読まない)
+    OrgRepo-->>Svc: 組織
+    opt 店舗側の立場で見られる (staff が true。記述なし)
+        Svc->>Mod: 運営者の今出ている警告を読む (warnings)
+        Note over Svc,Mod: 結果: SELECT store_moderation_events (findByStoreIdInAndEventTypeInOrderByIdDesc) で読み、応答に入れる。<br/>購入者・未ログインには警告を入れない。
+    end
+    Svc-->>Ctrl: 店舗の情報 (Profile)
+    Ctrl-->>Http: 200 店舗の情報
+    Http-->>Res: 店舗の情報 (setData)
+    Res-->>Profile: 店舗の情報
+    Profile-->>User: 店舗名、「所在地 / 営業時間」、店舗紹介、<br/>closingStartedAt があれば「閉店予定」、なければ enabled で「営業中」か「受付休止」
 ```
+
+![EC-B05 シーケンス図](<images/EC-B05_販売店舗の情報を確認する-1.png>)
 
 ## 共通代替フローを直接書いた図
 
@@ -164,7 +141,7 @@ sequenceDiagram
             UseAuth-->>Work: エラーの文 (setError)
             Work-->>User: *a-1「ログイン状態を確認できません。」だけ。「再取得」はない
         else ログイン状態を読めた
-            AuthCtrl-->>AuthJs: 200 ログイン状態 (上の図の 8〜11)
+            AuthCtrl-->>AuthJs: 200 ログイン状態 (上の図の 8〜10)
             AuthJs-->>UseAuth: ログイン状態
             UseAuth-->>Work: ログイン状態 (setSession)
             Work->>Profile: 読み取り専用で表示する (ProfilePage storeId readOnly)
@@ -179,7 +156,7 @@ sequenceDiagram
                 Http->>Filter: GET /api/stores/{id}
                 Filter->>Ctrl: 要求を通す (chain.doFilter)
                 Ctrl->>Svc: 店舗の公開ページの情報を作るよう頼む (get)
-                Svc->>Db: 店舗、組織、警告を読む (上の図の 21〜52)
+                Svc->>Db: 店舗、組織、警告を読む (上の図の 19〜29)
                 alt *a MySQL との通信に失敗
                     Db--xSvc: 失敗 (DataAccessException)
                     Svc--xCtrl: 例外
@@ -189,7 +166,7 @@ sequenceDiagram
                     Status-->>User: *a-1「保存処理を完了できませんでした。時間をおいて<br/>再試行してください。」と「再取得」
                 else 読めた
                     Db-->>Svc: 行
-                    Svc-->>Ctrl: 店舗の情報、または 404 (上の図の 25〜56)
+                    Svc-->>Ctrl: 店舗の情報、または 404 (上の図の 21〜30)
                     Ctrl-->>Http: 200 店舗の情報、または 404
                     Http-->>Res: 店舗の情報、またはエラー
                     Res-->>Profile: 店舗の情報、またはエラーの文
@@ -207,6 +184,8 @@ sequenceDiagram
         end
     end
 ```
+
+![EC-B05 共通代替フローを直接書いた図](<images/EC-B05_販売店舗の情報を確認する-2.png>)
 
 ## ユースケース記述との差
 

@@ -8,6 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 出店者が扱える店舗の一覧（`GET /api/seller/stores`）は、「出店者」をクリックする前、EC の画面を開いたときに `useShop` が読み込みます。「出店者」をクリックしても画面は読み込み直さず、`Workspace` がログイン状態だけを `GET /api/auth/me` で読み直します。代替フロー 3a〜3c は、読み込み済みの店舗の一覧と、店舗ごとの立場（`memberRole`）で画面が決めます。共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
+代替フローのうち、エラーで終わるもの（3b・3c）と記述にない分岐（店舗に所属していない担当者）は、分かれる所だけを描き、画面は矢印か Note に文で書いています。3a（管理する店舗を選ぶ）とサイドバーの折りたたみは、操作の矢印 1 本と Note にまとめています。
 
 ```mermaid
 sequenceDiagram
@@ -34,7 +35,7 @@ sequenceDiagram
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 15、46 (URL を直接開いたときも同じ) に適用<br/>*a 通信に失敗した場合: 15、46 に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 14、36 (URL を直接開いたときも同じ) に適用<br/>*a 通信に失敗した場合: 14、36 に適用
 
     User->>App: EC の「メイン」画面を開く
     App->>Shop: 店舗とカートの状態を用意する (useShop)
@@ -42,8 +43,7 @@ sequenceDiagram
     UseAuth->>AuthJs: 作られたときに自動で読む (refreshSession → readSession)
     AuthJs->>AuthCtrl: GET /api/auth/me (App 用と useShop 用の 2 回)
     AuthCtrl->>AuthSvc: ログイン状態を作るよう頼む (me → session)
-    AuthSvc->>Db: ログイン中の会員と所属を読む<br/>(current、organizationIdOf、organizationRoleOf、storeIdsOf)
-    Db-->>AuthSvc: 会員と所属の行
+    AuthSvc->>Db: ログイン中の会員と所属を読む<br/>(current、organizationIdOf、organizationRoleOf、storeIdsOf、SELECT members ほか)
     AuthSvc-->>AuthCtrl: ログイン状態
     AuthCtrl-->>AuthJs: 200 ログイン状態 (accountType、organizationRole)
     AuthJs-->>UseAuth: ログイン状態
@@ -52,25 +52,14 @@ sequenceDiagram
     Shop->>Http: 扱える店舗の一覧を取りに行く<br/>(reloadSellerStores → request)
     Http->>StCtrl: GET /api/seller/stores
     StCtrl->>StSvc: 扱える店舗の一覧を作るよう頼む (mine)<br/>読み取り専用のトランザクション
-    StSvc->>AuthSvc: 店舗側のアカウントか運営者かを確かめる (requireSellerRole)
-    AuthSvc-->>StSvc: 確かめた
-    StSvc->>AuthSvc: ログイン中の会員を読む (current)
-    AuthSvc-->>StSvc: ログイン中の会員
+    StSvc->>AuthSvc: 店舗側のアカウントか運営者かを確かめ (requireSellerRole)、<br/>ログイン中の会員を読む (current)
     alt 運営者 (isAdmin)
-        StSvc->>Db: 全店舗を読む (findAllByOrderByIdAsc)
-        Db-->>StSvc: 店舗の行
+        StSvc->>Db: 全店舗を読む (findAllByOrderByIdAsc、SELECT stores)
         StSvc->>StSvc: 未完了の注文の件数と運営の警告を付ける (managedList)<br/>店舗ごとの立場は付けない
     else オーナー、担当者
-        StSvc->>AuthSvc: 店舗の候補を調べる (candidateStoreIdsOf)<br/>オーナーと ORG_ADMIN は組織の全店舗、ほかの担当者は所属の店舗
-        AuthSvc->>Db: SELECT organizations、organization_members、<br/>stores、store_members
-        Db-->>AuthSvc: 行
-        AuthSvc-->>StSvc: 店舗 ID のリスト
-        StSvc->>Db: 店舗を読む (findAllById)
-        Db-->>StSvc: 店舗の行
-        loop 店舗ごと
-            StSvc->>AuthSvc: その店舗での立場を調べる (memberRoleAt)<br/>担当者は store_members を読む
-            AuthSvc-->>StSvc: OWNER、MANAGER、STAFF、NONE (所属でロールなし)、<br/>担当でなければ null
-        end
+        StSvc->>AuthSvc: 店舗の候補を調べる (candidateStoreIdsOf)<br/>オーナーと ORG_ADMIN は組織の全店舗、ほかの担当者は所属の店舗<br/>(SELECT organizations、organization_members、stores、store_members)
+        StSvc->>Db: 店舗を読む (findAllById、SELECT stores)
+        StSvc->>AuthSvc: 店舗ごとの立場を調べる (memberRoleAt。担当者は store_members を読む)<br/>OWNER、MANAGER、STAFF、NONE (所属でロールなし)、担当でなければ null
         StSvc->>StSvc: 未完了の注文の件数と運営の警告、立場を付ける<br/>(withOpenOrders、withWarning、withRole)
     end
     StSvc-->>StCtrl: 店舗のリスト
@@ -92,59 +81,54 @@ sequenceDiagram
     AuthJs-->>UseAuth: ログイン状態
     UseAuth-->>Work: ログイン状態 (accountType、organizationRole)
     Work->>Shop: 読み込み済みの店舗と選んでいる店舗を使う<br/>(sellerStores、sellerStoreId、sellerStoresLoading)
-    Shop-->>Work: 14〜36 で読んだ店舗と、選んでいる店舗
-    alt 店舗に所属していない担当者 (unassigned。ORG_ADMIN でない SHOP_STAFF で店舗が 0)
+    Shop-->>Work: 13〜25 で読んだ店舗と、選んでいる店舗
+    break 店舗に所属していない担当者 (unassigned。ORG_ADMIN でない SHOP_STAFF で店舗が 0)
         Work->>Side: メニューは「出店者通知」だけ (noticeItem)
-        Side-->>User: 「出店者メニュー」と「メニューを閉じる」、「商品一覧へ戻る」、「出店者通知」
-        Work-->>User: 見出し「所属している店舗がありません」、「どの店舗にも所属していないため、<br/>この画面は使えません。自分あての通知だけを見られます。」、「通知の画面へ戻る」
-    else 出店者、運営者
-        Work->>Work: 人事のメニューを出すかを決める (personnel)<br/>オーナー、ORG_ADMIN、いずれかの店舗の MANAGER
-        Work->>Side: 出店者メニューを渡す (sellerMenu、personnel なら personnelMenu、<br/>オーナーと ORG_ADMIN なら historyItem)
-        Side-->>User: 「出店者メニュー」と「メニューを閉じる」、「商品一覧へ戻る」、<br/>「商品管理」「店舗受け取り」「注文実績」「店舗一覧」「店舗プロフィール」「出店者通知」<br/>(personnel なら「アカウント」「招待キー」、オーナーと ORG_ADMIN なら「履歴」も)
-        alt 3c 選んだ店舗で担当のロールがない (personnelOnly。ORG_ADMIN)
-            Work-->>User: 3c-1 見出し「商品管理」と「(店舗名)では担当のロールがないため、<br/>人事（アカウント・招待キー）の画面だけを使えます。」<br/>(店舗が 2 つ以上なら上に「管理する店舗」の選択欄)
-        else ロールがある、または店舗がない
-            Work->>PM: 商品管理を表示 (ProductManager、embedded)
-            PM->>Sel: 店舗の選択欄を出す (SellerStoreSelect。店舗が 1 つでも出す)
-            alt 3b 管理できる店舗がない (sellerStoreId が 0)
-                Sel-->>User: 見出し「商品管理」と 3b-1「管理できる店舗がありません。」
-            else 店舗がある
-                Sel-->>User: 見出し「商品管理」と「管理する店舗」の選択欄
-                PM-->>User: 「商品管理」画面 (商品の取得と中身は EC-S03 など)
-            end
-        end
+        Note over User,Side: 画面: 「出店者メニュー」と「メニューを閉じる」、「商品一覧へ戻る」、「出店者通知」。<br/>見出し「所属している店舗がありません」、「どの店舗にも所属していないため、この画面は使えません。自分あての通知だけを見られます。」、「通知の画面へ戻る」
     end
+    Work->>Work: 人事のメニューを出すかを決める (personnel)<br/>オーナー、ORG_ADMIN、いずれかの店舗の MANAGER
+    Work->>Side: 出店者メニューを渡す (sellerMenu、personnel なら personnelMenu、<br/>オーナーと ORG_ADMIN なら historyItem)
+    Side-->>User: 「出店者メニュー」と「メニューを閉じる」、「商品一覧へ戻る」、<br/>「商品管理」「店舗受け取り」「注文実績」「店舗一覧」「店舗プロフィール」「出店者通知」<br/>(personnel なら「アカウント」「招待キー」、オーナーと ORG_ADMIN なら「履歴」も)
+    break 3c 選んだ店舗で担当のロールがない (personnelOnly。ORG_ADMIN)
+        Work-->>User: 3c-1 見出し「商品管理」と「(店舗名)では担当のロールがないため、<br/>人事（アカウント・招待キー）の画面だけを使えます。」
+        Note over User,Work: 画面: 店舗が 2 つ以上なら上に「管理する店舗」の選択欄も出す
+    end
+    Work->>PM: 商品管理を表示 (ProductManager、embedded)
+    PM->>Sel: 店舗の選択欄を出す (SellerStoreSelect。店舗が 1 つでも出す)
+    break 3b 管理できる店舗がない (sellerStoreId が 0)
+        Sel-->>User: 見出し「商品管理」と 3b-1「管理できる店舗がありません。」
+    end
+    Sel-->>User: 見出し「商品管理」と「管理する店舗」の選択欄
+    PM-->>User: 「商品管理」画面 (商品の取得と中身は EC-S03 など)
 
     User->>Side: 3 サイドバーの対象のメニューをクリック
     Side->>Work: URL を対象の path に変え、Workspace を描き直す<br/>(MenuLink の PageLink → navigate)。ログイン状態と店舗は読み直さない
-    alt 3c ロールのない店舗で、商品管理・商品登録・店舗受け取り・店舗プロフィール (rolePaths)
+    break 3c ロールのない店舗で、商品管理・商品登録・店舗受け取り・店舗プロフィール (rolePaths)
         Work-->>User: 3c-1「(店舗名)では担当のロールがないため、<br/>人事（アカウント・招待キー）の画面だけを使えます。」(3c-2 ユースケースを終了する)
-    else 3b 店舗受け取り・店舗プロフィール・招待キー・履歴で、店舗がない (storePaths)
-        Work-->>User: 3b-1「管理できる店舗がまだありません。」と<br/>「店舗一覧を開く」(3b-2 ユースケースを終了する)
-    else 開ける
-        opt 3a-1 店舗ごとの画面 (storePaths) で、店舗が 2 つ以上
-            Work->>Sel: 画面の上に選択欄を出す (SellerStoreSelect)
-            Sel-->>User: 「管理する店舗」の選択欄
-        end
-        Work-->>User: そのメニューの見出しと画面 (内容は呼び出し元のユースケース)
     end
+    break 3b 店舗受け取り・店舗プロフィール・招待キー・履歴で、店舗がない (storePaths)
+        Work-->>User: 3b-1「管理できる店舗がまだありません。」と<br/>「店舗一覧を開く」(3b-2 ユースケースを終了する)
+    end
+    opt 3a-1 店舗ごとの画面 (storePaths) で、店舗が 2 つ以上
+        Work->>Sel: 画面の上に選択欄を出す (SellerStoreSelect)
+        Note over User,Sel: 画面: 「管理する店舗」の選択欄
+    end
+    Work-->>User: そのメニューの見出しと画面 (内容は呼び出し元のユースケース)
     opt 3a 管理する店舗を選ぶ
         User->>Sel: 3a-2「管理する店舗」で店舗を選ぶ
-        Sel->>Shop: 選んだ店舗を覚えるよう頼む (setSellerStoreId)
-        Shop->>Shop: localStorage の kusakari.sellerStoreId に保存する
-        Shop-->>Work: 選んでいる店舗が変わる (sellerStoreId)
-        Work-->>User: 3a-3 選んだ店舗の内容で画面を描き直す<br/>(内容の取得は呼び出し元のユースケース)
+        Note over User,Sel: 結果: 選んだ店舗を useShop が覚え、localStorage の kusakari.sellerStoreId に保存する (setSellerStoreId)。<br/>画面: 3a-3 選んだ店舗の内容で画面を描き直す (内容の取得は呼び出し元のユースケース)
     end
     opt サイドバーを折りたたむ
         User->>Side: 「メニューを閉じる」をクリック
-        Side->>Work: 折りたたむよう伝える (onToggle)
-        Work-->>User: アイコンだけのサイドバー (setSidebarClosed)。<br/>ボタンは「メニューを開く」になる
+        Note over User,Side: 結果: Workspace に折りたたむよう伝える (onToggle → setSidebarClosed)。<br/>画面: アイコンだけのサイドバー。ボタンは「メニューを開く」になる
     end
 ```
 
+![EC-C03 シーケンス図](<images/EC-C03_出店者画面のメニューを開く-1.png>)
+
 ## 共通代替フローを直接書いた図
 
-上の図の `GET /api/seller/stores`（上の図の 15）に、この画面で起こる共通代替フロー（\*a、\*b）を書き込んだ図です。「出店者」をクリックした後の `GET /api/auth/me`（上の図の 46）の \*a・\*b は、[EC-C02](<EC-C02_管理者画面のメニューを開く.md>) の「共通代替フローを直接書いた図」と同じなので省いています（`/operator/members` を `/seller/products` に読み替え）。サイドバーのメニューのクリック、店舗の選択、折りたたみは通信しないので、共通代替フローは起こりません。
+上の図の `GET /api/seller/stores`（上の図の 14）に、この画面で起こる共通代替フロー（\*a、\*b）を書き込んだ図です。「出店者」をクリックした後の `GET /api/auth/me`（上の図の 36）の \*a・\*b は、[EC-C02](<EC-C02_管理者画面のメニューを開く.md>) の「共通代替フローを直接書いた図」と同じなので省いています（`/operator/members` を `/seller/products` に読み替え）。サイドバーのメニューのクリック、店舗の選択、折りたたみは通信しないので、共通代替フローは起こりません。
 
 `GET /api/seller/stores` が失敗しても、画面は通信のエラーを出さず、店舗の一覧を空として扱います。
 
@@ -172,7 +156,7 @@ sequenceDiagram
     end
 
     User->>App: EC の「メイン」画面を開く
-    App->>Shop: ログイン状態を読み、店舗側のアカウントか運営者かを決める<br/>(useShop。上の図の 2〜13)
+    App->>Shop: ログイン状態を読み、店舗側のアカウントか運営者かを決める<br/>(useShop。上の図の 2〜12)
     Shop->>Http: 扱える店舗の一覧を取りに行く (reloadSellerStores → request)
     alt *a 届かない、または応答が JSON でない
         Http-xFilter: GET /api/seller/stores
@@ -199,7 +183,7 @@ sequenceDiagram
         Http->>Filter: GET /api/seller/stores
         Filter->>StCtrl: 要求を通す (chain.doFilter)
         StCtrl->>StSvc: 扱える店舗の一覧を作るよう頼む (mine)
-        StSvc->>Db: 会員、店舗の候補、店舗、立場を読む (上の図の 17〜32)
+        StSvc->>Db: 会員、店舗の候補、店舗、立場を読む (上の図の 16〜22)
         alt *a MySQL との通信に失敗
             Db--xStSvc: 失敗 (DataAccessException)
             StSvc--xStCtrl: 例外
@@ -218,15 +202,17 @@ sequenceDiagram
     Head-->>User: 共通ヘッダーに「出店者」
     User->>Head: 「出店者」をクリック
     Head->>App: クリックした URL を渡す (follow → onNavigate)
-    App->>Work: URL を /seller/products に変え、Workspace を表示<br/>(上の図の 41〜51)
+    App->>Work: URL を /seller/products に変え、Workspace を表示<br/>(上の図の 30〜39)
     alt 店舗の一覧が空になった担当者 (ORG_ADMIN を除く)
         Work-->>User: 「どの店舗にも所属していないため、この画面は使えません。<br/>自分あての通知だけを見られます。」とメニューは「出店者通知」だけ
     else 店舗の一覧が空になったオーナー、ORG_ADMIN、運営者
         Work-->>User: 「商品管理」と「管理できる店舗がありません。」(3b と同じ表示)
     else 店舗を読めた
-        Work-->>User: 「商品管理」画面 (上の図の 52〜63)
+        Work-->>User: 「商品管理」画面 (上の図の 40〜51)
     end
 ```
+
+![EC-C03 共通代替フローを直接書いた図](<images/EC-C03_出店者画面のメニューを開く-2.png>)
 
 ## ユースケース記述との差
 

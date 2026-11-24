@@ -9,6 +9,7 @@
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 商品は、EC のページを読み込んだとき（URL を直接開いた、再読み込み）に 1 回だけまとめて取得します。「商品を探す」のクリックと、検索・絞り込み・並べ替えは、取得済みの商品をブラウザーの中で絞り込むだけで、サーバーには問い合わせません。ページを読み込んだときの `GET /api/auth/me`（`App.jsx` と `useShop.js` の `useAuth()`）と、出店者の店舗の取得（`GET /api/seller/stores`）は、商品の検索に使わないので図に書いていません。
 ログインは不要なので、共通代替フロー \*b は適用しません（ログインしていないときのカートの 401 は、未ログインとして扱う基本の流れです）。
+代替フロー 6a は画面の中だけで終わるので、「条件をリセット」のクリックまでを描き、結果と画面は Note に文で書いています。カートを読めたときだけ行う注文の一覧の取得（opt）も、頼む矢印 1 本と Note にしています。
 
 ```mermaid
 sequenceDiagram
@@ -35,104 +36,70 @@ sequenceDiagram
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*a 通信に失敗した場合: 7、11、17、23、49、54 に適用
+    Note over User,Db: 共通代替フロー<br/>*a 通信に失敗した場合: 6、13、28、31 に適用
 
-    opt 事前条件 EC のページを読み込んだとき (URL を直接開いた、再読み込み)
-        User->>App: ブラウザーで EC のページを開く
-        App->>Shop: 商品とカートの状態を用意するよう頼む (useShop)
-        Shop->>Shop: 画面を開いたときに自動で読み込みを始める<br/>(useEffect → initialize → run → refresh)
-        App->>Catalog: パスが / なら商品一覧を表示する (Catalog)
-        Catalog-->>User: 取得中は「植物を読み込んでいます…」
-        Shop->>Http: カートを読む (api.cart → request)
-        alt ログインしていない
-            Http->>Sec: GET /api/cart
-            Sec-->>Http: 401 LOGIN_REQUIRED「ログインしてください。」<br/>(authenticationEntryPoint)
-            Http--xShop: エラーを投げる (readResponse → ApiError 401)
-            Shop->>Shop: 未ログインとして扱う (setSignedOut(true)、setCart(null))
-        else 店舗側か出店申請用のアカウント
-            Http->>Sec: GET /api/cart
-            Sec->>CartCtrl: 要求を通す
-            CartCtrl->>CartCtrl: 購入者か運営者かを確かめる<br/>(resolve → AuthService.requireBuyer)
-            CartCtrl-->>Http: 403 BUYER_REQUIRED
-            Http--xShop: エラーを投げる (readResponse → ApiError 403)
-            Shop->>Shop: 購入できない会員として扱う (setRefusedBuyer(true)、setCart(null))
-        else 購入者か運営者としてログインしている
-            Http->>Sec: GET /api/cart
-            Sec->>CartCtrl: 要求を通す
-            CartCtrl->>CartCtrl: 購入者か運営者かを確かめ、カートを読む<br/>(resolve → AuthService.requireBuyer、CartService.read)
-            CartCtrl-->>Http: 200 カート
-            Http-->>Shop: カート (setCart)
-        end
-        Shop->>Http: 購入できる商品を読む (api.products → request)
-        Http->>CatCtrl: GET /api/products (ログインしていなくてもよい)
-        CatCtrl->>Svc: 全店舗の商品の一覧を作るよう頼む (products(null))<br/>読み取り専用のトランザクション
-        Svc->>ProdRepo: 削除されていない商品を読む (findAllNotDeleted)
-        ProdRepo->>Db: SELECT products<br/>(在庫の公開状態が DELETED の商品を除く)
-        Db-->>ProdRepo: 商品の行
-        ProdRepo-->>Svc: 商品のリスト
-        Svc->>InvRepo: 商品の在庫を読む (findAllById)
-        InvRepo->>Db: SELECT inventory
-        Db-->>InvRepo: 在庫の行
-        InvRepo-->>Svc: 在庫のリスト
-        Svc->>StoreRepo: 商品の店舗を読む (storeStates → findAllById)
-        StoreRepo->>Db: SELECT stores
-        Db-->>StoreRepo: 店舗の行
-        StoreRepo-->>Svc: 店舗のリスト
-        Svc->>OrgRepo: 店舗の組織を読む (findAllById)
-        OrgRepo->>Db: SELECT organizations
-        Db-->>OrgRepo: 組織の行
-        OrgRepo-->>Svc: 組織のリスト
-        Svc->>Svc: 店舗と組織の側で買えない理由を決める (storeReason)<br/>閉鎖済み、利用停止、組織の停止、閉鎖中、非公開、組織の受付停止中
-        Svc->>Svc: おすすめの順に並べる (displayOrder)<br/>olive、lavender、rosemary、monstera を先にし、残りは商品 ID の順
-        Svc->>Svc: 商品ごとに買えない理由を決め、応答の形にする<br/>(unavailableReason、ProductMapper.toView。商品の画像もここで読む)
-        Svc->>Svc: 買える商品だけを残す (filter(Listing::purchasable))<br/>在庫が 0 の商品は残す
-        Svc-->>CatCtrl: 商品のリスト
-        CatCtrl-->>Http: 200 商品の配列
-        Http-->>Shop: 商品の一覧
-        opt カートを読めた (購入者か運営者)
-            Shop->>Http: 注文の一覧を読む (api.orders → request)
-            Http->>OrderCtrl: GET /api/orders
-            OrderCtrl-->>Http: 200 注文の配列 (list)
-            Http-->>Shop: 注文の一覧 (setOrders)
-        end
-        Shop->>Shop: 商品の一覧を覚える (setProducts)
-        Shop->>Http: 店舗の一覧を読む (api.stores → request)
-        Http->>CatCtrl: GET /api/stores?latitude=35.6812&longitude=139.7671
-        CatCtrl-->>Http: 200 店舗の配列 (stores)
-        Http-->>Shop: 店舗の一覧 (setStores)
-        Shop-->>Catalog: 商品の一覧 (shop.products)
+    User->>App: ブラウザーで EC のページを開く<br/>(事前条件。URL を直接開いた、再読み込み)
+    App->>Shop: 商品とカートの状態を用意するよう頼む (useShop)。画面を開いたときに<br/>自動で読み込みを始める (useEffect → initialize → run → refresh)
+    App->>Catalog: パスが / なら商品一覧を表示する (Catalog)
+    Catalog-->>User: 取得中は「植物を読み込んでいます…」
+    Shop->>Http: カートを読む (api.cart → request)
+    Http->>Sec: GET /api/cart
+    alt ログインしていない
+        Sec-->>Http: 401 LOGIN_REQUIRED「ログインしてください。」<br/>(authenticationEntryPoint)
+        Http--xShop: エラーを投げる (readResponse → ApiError 401)。<br/>未ログインとして扱う (setSignedOut(true)、setCart(null))
+    else ログインしている
+        Sec->>CartCtrl: 要求を通す。購入者か運営者かを確かめ、カートを読む<br/>(resolve → AuthService.requireBuyer、CartService.read)
+        CartCtrl-->>Http: 200 カート<br/>(店舗側か出店申請用のアカウントなら 403 BUYER_REQUIRED)
+        Http-->>Shop: カート (setCart)。403 なら購入できない会員として扱う<br/>(setRefusedBuyer(true)、setCart(null))
     end
+    Shop->>Http: 購入できる商品を読む (api.products → request)
+    Http->>CatCtrl: GET /api/products (ログインしていなくてもよい)
+    CatCtrl->>Svc: 全店舗の商品の一覧を作るよう頼む (products(null))<br/>読み取り専用のトランザクション
+    Svc->>ProdRepo: 削除されていない商品を読む (findAllNotDeleted、SELECT products)<br/>在庫の公開状態が DELETED の商品を除く
+    ProdRepo-->>Svc: 商品のリスト
+    Svc->>InvRepo: 商品の在庫を読む (findAllById、SELECT inventory)
+    InvRepo-->>Svc: 在庫のリスト
+    Svc->>StoreRepo: 商品の店舗を読む (storeStates → findAllById、SELECT stores)
+    StoreRepo-->>Svc: 店舗のリスト
+    Svc->>OrgRepo: 店舗の組織を読む (findAllById、SELECT organizations)
+    OrgRepo-->>Svc: 組織のリスト
+    Svc->>Svc: 店舗・組織の側と商品ごとに買えない理由を決め、応答の形にする<br/>(storeReason、unavailableReason、ProductMapper.toView。商品の画像もここで読む)<br/>閉鎖済み、利用停止、組織の停止、閉鎖中、非公開、組織の受付停止中
+    Svc->>Svc: おすすめの順に並べ (displayOrder。olive、lavender、rosemary、monstera を先に、<br/>残りは商品 ID の順)、買える商品だけを残す (filter(Listing::purchasable))<br/>在庫が 0 の商品は残す
+    Svc-->>CatCtrl: 商品のリスト
+    CatCtrl-->>Http: 200 商品の配列
+    Http-->>Shop: 商品の一覧
+    opt カートを読めた (購入者か運営者)
+        Shop->>OrderCtrl: 注文の一覧を読む (api.orders → request)<br/>GET /api/orders
+        Note over Shop,OrderCtrl: 結果: 200 注文の配列を受け取り、覚える (list、setOrders)。<br/>画面: 商品の検索には使わない。
+    end
+    Shop->>Shop: 商品の一覧を覚える (setProducts)
+    Shop->>Http: 店舗の一覧を読む (api.stores → request)
+    Http->>CatCtrl: GET /api/stores?latitude=35.6812&longitude=139.7671
+    CatCtrl-->>Http: 200 店舗の配列 (stores)
+    Http-->>Shop: 店舗の一覧 (setStores)
+    Shop-->>Catalog: 商品の一覧 (shop.products)
 
     User->>Header: 共通ヘッダーの「商品を探す」をクリック
     Header->>App: 移動先の URL を渡す (follow → onNavigate → navigateFromHeader)
-    App->>App: URL を /#plants に変え (navigate)、パスが / なので<br/>「メイン」画面を表示し、商品一覧 (id plants) までスクロールする (scrollIntoView)
-    App->>Catalog: 取得済みの商品で商品一覧を表示する (Catalog)
-    Catalog->>Catalog: 取得済みの商品から、カテゴリーのボタンと<br/>「出店者・ナーセリー」の選択肢を作る
-    Catalog->>List: 条件に合う商品を渡す<br/>(開いた直後は「すべて」「おすすめ順」なので全件)
+    App->>Catalog: URL を /#35;plants に変え (navigate)、パスが / なので「メイン」画面を表示し、<br/>商品一覧 (id plants) までスクロールする (scrollIntoView)
+    Catalog->>List: 取得済みの商品から、カテゴリーのボタンと「出店者・ナーセリー」の<br/>選択肢を作り、条件に合う商品を渡す (開いた直後は「すべて」「おすすめ順」なので全件)
     List-->>User: 1 ページ 12 件の商品カード、「n–m件 / 全N件」、ページの切り替え
 
     loop 条件を変えるたび (基本フロー 3〜5)
-        alt 検索する
-            User->>Catalog: 「名前・品番・生産者で検索」欄に入力 (setSearch)
-        else 絞り込む
-            User->>Catalog: カテゴリーのボタン、「日照条件」「用途・植栽場所」「手入れレベル」<br/>「出店者・ナーセリー」、「価格上限（円）」、「在庫ありのみ」を変える<br/>(setCategory、setSunlight、setUseCase、setCareLevel、setNursery、setMaxPrice、setInStockOnly)
-        else 並べ替える
-            User->>Catalog: 並び順の一覧から「価格が安い順」などを選ぶ (setSort)
-        end
-        Catalog->>Catalog: 取得済みの商品を、すべての条件で絞り込む (for と continue)<br/>検索語は前後の空白を除いて小文字にし、name、latinName、sku、<br/>description、nurseryName、useCase をつないだ文字列に含まれるか (includes)
-        Catalog->>Catalog: 並び順のとおりに並べる (sort)<br/>「おすすめ順」はサーバーの順のまま
+        User->>Catalog: 「名前・品番・生産者で検索」欄に入力する (setSearch)、<br/>カテゴリーのボタン、「日照条件」「用途・植栽場所」「手入れレベル」「出店者・ナーセリー」、<br/>「価格上限（円）」、「在庫ありのみ」を変える (setCategory、setSunlight、setUseCase、<br/>setCareLevel、setNursery、setMaxPrice、setInStockOnly)、<br/>または並び順の一覧から「価格が安い順」などを選ぶ (setSort)
+        Catalog->>Catalog: 取得済みの商品を、すべての条件で絞り込み (for と continue)、並び順のとおりに並べる (sort)<br/>検索語は前後の空白を除いて小文字にし、name、latinName、sku、<br/>description、nurseryName、useCase をつないだ文字列に含まれるか (includes)<br/>「おすすめ順」はサーバーの順のまま
         Catalog->>List: 条件が変わったので作り直し、1 ページ目に戻す (key=paginationKey)
         alt 条件に合う商品がある
             List-->>User: 6 条件に合う商品の一覧 (1 ページ目) と件数
         else 6a 該当商品がない
             Catalog-->>User: 6a-1「条件に合う植物が見つかりません。」と「条件をリセット」
             User->>Catalog: 「条件をリセット」をクリック
-            Catalog->>Catalog: 検索語、カテゴリー、絞り込み条件、「在庫ありのみ」を<br/>初期値に戻す (reset)。並び順は戻さない
-            Catalog->>List: 作り直す (key=paginationKey)
-            List-->>User: 条件を戻した商品一覧 (6a-2 基本フロー 3 へ戻る)
+            Note over User,Catalog: 結果: 検索語、カテゴリー、絞り込み条件、「在庫ありのみ」を初期値に戻す (reset)。並び順は戻さない。<br/>画面: 条件を戻した商品一覧。6a-2 基本フロー 3 へ戻る。
         end
     end
 ```
+
+![EC-B03 シーケンス図](<images/EC-B03_商品を検索する-1.png>)
 
 ## 共通代替フローを直接書いた図
 
@@ -179,7 +146,7 @@ sequenceDiagram
     else カートの応答が来た (200、401、403)
         Http->>Filter: GET /api/cart
         Filter->>CartCtrl: 要求を通す (未ログインは手前の Spring Security が 401)
-        CartCtrl-->>Http: 200 カート、または 403 (上の図の 6〜21)
+        CartCtrl-->>Http: 200 カート、または 403 (上の図の 6〜11)
         Http-->>Shop: カート、または未ログイン・購入できない会員として扱う
         Shop->>Http: 購入できる商品を読む (api.products → request)
         alt *a GET /api/products が届かない、または応答が JSON でない
@@ -191,7 +158,7 @@ sequenceDiagram
             Http->>Filter: GET /api/products
             Filter->>CatCtrl: 要求を通す
             CatCtrl->>Svc: 全店舗の商品の一覧を作るよう頼む (products(null))
-            Svc->>Db: 商品、在庫、店舗、組織を読み、買える商品を決める (上の図の 24〜45)
+            Svc->>Db: 商品、在庫、店舗、組織を読み、買える商品を決める (上の図の 14〜25)
             alt *a MySQL との通信に失敗
                 Db--xSvc: 失敗 (DataAccessException)
                 Svc--xCatCtrl: 例外
@@ -211,7 +178,7 @@ sequenceDiagram
                     Shop->>Shop: 商品の一覧は覚えた後 (setProducts)。<br/>エラーの文を覚える (run の catch → setError)
                     Catalog-->>User: *a-1 失敗の文と「再読み込み」、商品の一覧
                 else すべて読めた
-                    Catalog-->>User: 商品の一覧 (注文と店舗の取得は上の図の 48〜56)
+                    Catalog-->>User: 商品の一覧 (注文と店舗の取得は上の図の 28〜33)
                 end
             end
         end
@@ -221,6 +188,8 @@ sequenceDiagram
         Catalog->>Shop: 最初から読み直す (shop.initialize)。<br/>カートの取得 (4) からやり直す
     end
 ```
+
+![EC-B03 共通代替フローを直接書いた図](<images/EC-B03_商品を検索する-2.png>)
 
 ## ユースケース記述との差
 

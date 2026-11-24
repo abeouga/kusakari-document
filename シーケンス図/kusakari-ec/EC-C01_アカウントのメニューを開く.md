@@ -9,6 +9,7 @@
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 EC の画面は 1 つの React アプリです。共通ヘッダーの「アカウント」をクリックしても画面は読み込み直さず、URL を `/account` に変えて `Workspace` に切り替えます。`useAuth()` を使うコンポーネントは、作られるたびに `GET /api/auth/me` を送ります。そのため、「メイン」画面などから移ったときは `Workspace` と `AuthPanel` の 2 か所が送り、アカウント・出店者などの画面（`Workspace` の画面）から移ったときは `AuthPanel` だけが送ります。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
+代替フローのうち、記述にない分岐（利用できないアカウント）は分かれる所だけを描き、結果と画面は Note に文で書いています。出店申請用のアカウントの申請の取得と、3（「アカウント情報」以外のメニュー）は、頼む矢印 1 本と Note にまとめています。
 
 ```mermaid
 sequenceDiagram
@@ -30,12 +31,11 @@ sequenceDiagram
         participant Filter as セッションの確認<br/>SessionValidityFilter<br/>(SessionValidityFilter.java)
         participant AuthCtrl as ログイン状態API<br/>AuthController<br/>(AuthController.java)
         participant AppCtrl as 出店申請API<br/>StoreApplicationController<br/>(StoreApplicationController.java)
-        participant AppSvc as 出店申請の処理<br/>StoreApplicationService<br/>(StoreApplicationService.java)
         participant AuthSvc as ログイン中の会員<br/>AuthService<br/>(AuthService.java)
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 7、29、49 に適用<br/>*a 通信に失敗した場合: 7、29、49 に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 7、18、31 に適用<br/>*a 通信に失敗した場合: 7、18、31 に適用
 
     User->>Header: 共通ヘッダーの「アカウント」をクリック<br/>(ログインしているときだけ出る)
     Header->>App: 移動先の URL を渡す (follow → onNavigate → navigateFromHeader)
@@ -45,42 +45,25 @@ sequenceDiagram
         Work-->>User: 読み終わるまで「ログイン状態を確認しています。」
         UseAuth->>AuthJs: 画面を開いたときに自動で読む<br/>(useEffect → refreshSession → readSession)
         AuthJs->>Filter: GET /api/auth/me
-        Filter->>AuthSvc: ログイン中の会員が使えるかを確かめる (current)
-        AuthSvc->>Db: 会員を読む (findByIssuerAndSubject、SELECT members)。<br/>担当者なら組織の所属も読む (findForMember、SELECT organization_members)
-        Db-->>AuthSvc: 会員と所属の行
-        alt 利用できないアカウント (利用停止、組織から除名) (記述なし)
+        Filter->>AuthSvc: ログイン中の会員が使えるかを確かめる (current)<br/>会員を読み (findByIssuerAndSubject、SELECT members)、<br/>担当者なら組織の所属も読む (findForMember、SELECT organization_members)
+        break 利用できないアカウント (利用停止、組織から除名) (記述なし)
             AuthSvc--xFilter: 403 ACCOUNT_DISABLED か ACCOUNT_EXPELLED の例外を投げる
-            Filter-->>AuthJs: セッションを消し、403 と文を JSON で返す
-            AuthJs--xUseAuth: 本文の文でエラーを投げる (readSession)
-            UseAuth-->>Work: エラーの文 (setError)
-            Work-->>User: 「このアカウントは利用できません。」か<br/>「このアカウントは無効化されています。組織の管理者にお問い合わせください。」だけ
-        else 利用できる
-            AuthSvc-->>Filter: 会員 (AuthMember)
-            Filter->>AuthCtrl: 要求を通す (chain.doFilter)
-            AuthCtrl->>AuthSvc: ログイン状態を作るよう頼む (session)
-            AuthSvc->>Db: 会員、組織、組織の所属、店舗、店舗の担当を読む<br/>(current、organizationIdOf、organizationRoleOf、storeIdsOf)
-            Db-->>AuthSvc: 行
-            AuthSvc-->>AuthCtrl: ログイン状態 (SessionView。id、email、name、accountType、<br/>organizationId、organizationRole、storeIds)
-            AuthCtrl-->>AuthJs: 200 ログイン状態 (authenticated が true)
-            AuthJs-->>UseAuth: ログイン状態 (ログインを確かめたことを覚える。signedIn)
-            UseAuth-->>Work: ログイン状態 (setSession)
+            Note over Work,AuthSvc: 結果: セッションを消し、403 と文を JSON で返す。<br/>画面: 「このアカウントは利用できません。」か「このアカウントは無効化されています。組織の管理者にお問い合わせください。」だけ
         end
+        Filter->>AuthCtrl: 要求を通す (chain.doFilter)
+        AuthCtrl->>AuthSvc: ログイン状態を作るよう頼む (session)<br/>会員、組織、組織の所属、店舗、店舗の担当を読む<br/>(current、organizationIdOf、organizationRoleOf、storeIdsOf)
+        AuthSvc-->>AuthCtrl: ログイン状態 (SessionView。id、email、name、accountType、<br/>organizationId、organizationRole、storeIds)
+        AuthCtrl-->>AuthJs: 200 ログイン状態 (authenticated が true)
+        AuthJs-->>UseAuth: ログイン状態 (ログインを確かめたことを覚える。signedIn)
+        UseAuth-->>Work: ログイン状態 (setSession)
     else アカウント・出店者などの画面から開いた (Workspace はそのまま)
         Work->>Work: 前に読んだログイン状態をそのまま使う (読み直さない)
     end
 
     Work->>Work: 出店申請用のアカウントかを確かめる<br/>(applicant は accountType が SHOP_OWNER_APPLICANT か)
     opt 出店申請用のアカウント
-        Work->>Res: 自分の出店申請を取りに行くよう頼む<br/>(useResource('/account/store-applications'))
-        Res->>Http: 自動で通信を始める (useEffect → reload → request)
-        Http->>AppCtrl: GET /api/account/store-applications
-        AppCtrl->>AppSvc: 自分の出店申請の一覧を作るよう頼む (list(false))
-        AppSvc->>Db: ログイン中の会員の申請を新しい順に読む<br/>(auth.current、findByMemberIdOrderByCreatedAtDesc、SELECT organization_applications)
-        Db-->>AppSvc: 申請の行
-        AppSvc-->>AppCtrl: 申請のリスト
-        AppCtrl-->>Http: 200 申請の配列
-        Http-->>Res: 申請の一覧
-        Res-->>Work: 申請の一覧 (applications.data)
+        Work->>AppCtrl: 自分の出店申請を取りに行く<br/>(useResource('/account/store-applications') → reload → request)<br/>GET /api/account/store-applications
+        Note over Work,Db: 結果: ログイン中の会員の申請を新しい順に読み (list(false)、findByMemberIdOrderByCreatedAtDesc、SELECT organization_applications)、200 申請の配列を返す。<br/>画面: 申請があればメニューを「出店申請状況」、なければ「出店申請」にする (applications.data)
     end
     Work->>Work: サイドバーのメニューを作る。「マイページ」(buyerMenu)、「アカウント設定」(accountSettings)、<br/>出店申請用は「出店をご検討の方」(申請があれば「出店申請状況」、なければ「出店申請」)
     Work->>Side: 今のパスとメニューを渡す (WorkspaceSidebar path groups)
@@ -89,23 +72,24 @@ sequenceDiagram
     Acc->>Res: ログイン状態も取りに行くよう頼む (useResource('/auth/me'))
     Res->>Http: 自動で通信を始める (useEffect → reload → request)
     Http->>AuthCtrl: GET /api/auth/me
-    AuthCtrl-->>Http: 200 ログイン状態 (流れは 8〜22 と同じ)
+    AuthCtrl-->>Http: 200 ログイン状態 (流れは 8〜13 と同じ)
     Http-->>Res: ログイン状態 (この画面では使わない)
     Acc->>Panel: アカウントの表示を出す (AuthPanel)
     Panel->>UseAuth: ログイン状態を読むよう頼む (useAuth)
     UseAuth->>AuthJs: 自動で読む (useEffect → refreshSession → readSession)
     AuthJs->>AuthCtrl: GET /api/auth/me
-    AuthCtrl-->>AuthJs: 200 ログイン状態 (流れは 8〜22 と同じ)
+    AuthCtrl-->>AuthJs: 200 ログイン状態 (流れは 8〜13 と同じ)
     AuthJs-->>UseAuth: ログイン状態
     UseAuth-->>Panel: ログイン状態 (読み終わるまでは「ログイン状態を確認しています。」)
     Panel-->>User: 名前 (なければメールアドレス)、アカウントの種類 (accountLabels。<br/>「管理者」「出店者（オーナー）」「出店者（スタッフ）」「出店申請用アカウント」、ほかは「利用者」)、「ログアウト」
 
     opt 3 指定のメニューが「アカウント情報」以外
         User->>Side: サイドバーの対象のメニューをクリック<br/>(「通知一覧」「パスワード変更」「退会」「出店申請」「出店申請状況」など)
-        Side->>Work: URL をメニューの URL に変え (MenuLink の PageLink → follow → navigate)、<br/>新しいパスを渡す (usePath)。Workspace は作り直さず、ログイン状態は読み直さない
-        Work-->>User: パスに合う画面 (Notices、BuyerOrders、AccountPage の別の tab など。<br/>中身は呼び出し元のユースケースの次のステップ)
+        Note over User,Side: 結果: URL をメニューの URL に変え (MenuLink の PageLink → follow → navigate)、Workspace に新しいパスを渡す (usePath)。作り直さず、ログイン状態は読み直さない。<br/>画面: パスに合う画面 (Notices、BuyerOrders、AccountPage の別の tab など。中身は呼び出し元のユースケースの次のステップ)
     end
 ```
+
+![EC-C01 シーケンス図](<images/EC-C01_アカウントのメニューを開く-1.png>)
 
 ## 共通代替フローを直接書いた図
 
@@ -160,7 +144,7 @@ sequenceDiagram
         else ログイン状態を読めた
             AuthJs->>Filter: GET /api/auth/me
             Filter->>AuthCtrl: 要求を通す (chain.doFilter)
-            AuthCtrl-->>AuthJs: 200 authenticated が true (上の図の 8〜22)
+            AuthCtrl-->>AuthJs: 200 authenticated が true (上の図の 8〜13)
             AuthJs-->>UseAuth: ログイン状態
             UseAuth-->>Work: ログイン状態 (setSession)
         end
@@ -223,6 +207,8 @@ sequenceDiagram
         User->>Work: ブラウザーでページを再読み込みする (「再取得」のボタンはない)
     end
 ```
+
+![EC-C01 共通代替フローを直接書いた図](<images/EC-C01_アカウントのメニューを開く-2.png>)
 
 ## ユースケース記述との差
 
