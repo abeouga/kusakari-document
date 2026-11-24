@@ -1,135 +1,160 @@
 # EC-A01 会員を検索・確認する
 
 - ユースケース記述: [EC-A01_会員を検索・確認する](<../../アーカイブ/ユースケース/kusakari-ec/EC-A01_会員を検索・確認する.md>)
-- 対象のコード: kusakari-ec の main（19a2be3、2026-11-20 時点）
+- 共通代替フロー: [00_全ユースケース共通の代替フロー](<00_全ユースケース共通の代替フロー.md>)
+- 対象のコード: kusakari-ec の main（6bad7e3、2026-11-24 時点）
 
-## 概要図
+## シーケンス図
+
+`ref` の行は、そこで共通代替フローが起こりうることを示します。中身は 00 の図か、下の「共通代替フローを直接書いた図」を見てください。
 
 ```mermaid
 sequenceDiagram
+    autonumber
     actor User as 運営者
-    participant Page as 会員管理画面<br/>React
-    participant Api as EC API<br/>Spring Boot
-    participant Db as MySQL
+    participant Page as 会員管理画面<br/>(MembersPage)
+    participant Ctrl as 会員管理CTRL<br/>(MemberController)
+    participant Svc as 会員管理サービス<br/>(MemberService)
+    participant Mem as 会員テーブル<br/>(members)
+    participant Store as 組織・店舗テーブル<br/>(organizations ほか)
 
-    Note over User,Db: 共通代替フロー *b を適用 (未ログインならログインの画面を表示する)
-
-    Note over User,Db: 基本フロー 1〜2 画面を開いて会員の一覧を表示する
-    User->>Page: 運営者メニューの「会員管理」をクリック
-    Page->>Api: GET /api/operator/members
-    Api->>Api: ログイン中の会員が運営者かを検査
-    Api->>Db: 会員をすべて読む
-    Db-->>Api: members の行
-    Api->>Db: オーナーと担当者の会員ごとに、<br/>操作できる店舗を読む
-    Db-->>Api: 組織・店舗・担当の行
-    Api-->>Page: 200 会員の配列
-    alt 2a 会員が 1 人もいない
-        Page-->>User: 「対象の会員はありません。」
-    else 会員がいる
-        Page-->>User: 「名前・メール検索」欄と会員の一覧<br/>氏名、メールアドレス、アカウントの種類、利用状態
+    Note over User,Store: 会員一覧の表示
+    User->>Page: /operator/members へ
+    Note over User,Store: ref 共通代替フロー *b 未ログインの場合
+    Page->>Ctrl: GET /api/operator/members
+    Ctrl->>Svc: list()
+    Svc->>Svc: 運営者か確認 (requireAdmin)
+    Svc->>Mem: 会員を全件取得
+    Mem-->>Svc: 会員の一覧
+    loop 会員ごと (読むのはオーナーと担当者だけ)
+        Svc->>Store: 操作できる店舗を取得
+        Store-->>Svc: 店舗 ID
     end
+    Svc-->>Ctrl: 会員の一覧
+    Ctrl-->>Page: JSON (会員の配列)
+    Note over User,Store: ref 共通代替フロー *a 通信に失敗した場合、*b 未ログインの場合 (ログインの期限切れ)
+    Page-->>User: 検索欄と会員の一覧を表示
 
-    Note over User,Db: 基本フロー 3〜4 検索する (取得済みの一覧を画面で絞り込み、通信しない)
-    User->>Page: 「名前・メール検索」欄に<br/>氏名かメールアドレスの一部を入力
-    Page->>Page: 氏名とメールアドレスに<br/>入力した文字を含む会員だけ残す
-    alt 3a 入力欄が空になった
-        Page-->>User: 全会員の一覧
-    else 該当する会員がいる
-        Page-->>User: 部分一致した会員だけの一覧
+    Note over User,Store: 会員の検索 (通信しない)
+    User->>Page: 「名前・メール検索」に入力
+    Page->>Page: 氏名とメールの部分一致で絞り込み
+    alt 該当する会員がいる (空欄なら全員)
+        Page-->>User: 該当する会員の一覧
     else 4a 該当する会員がいない
         Page-->>User: 「検索条件に一致する会員はありません。」
-        Note right of User: 4a-2 検索条件を変えて<br/>基本フロー 3 へ戻る
     end
 ```
 
-## 詳細図
+## 共通代替フローを直接書いた図
+
+上の図の `ref` の行に、この画面で起こる共通代替フロー（\*a、\*b）を書き込んだ図です。会員の検索は通信しないので、共通代替フローは起こりません。
 
 ```mermaid
 sequenceDiagram
+    autonumber
     actor User as 運営者
-    box rgba(47,111,219,0.10) ブラウザー React
-        participant Work as Workspace.jsx
-        participant Page as MembersPage<br/>OperatorPages.jsx
-        participant Hook as useResource.js
-        participant Http as api.js
-    end
-    box rgba(27,127,92,0.12) EC API Spring Boot
-        participant Ctrl as MemberController
-        participant Svc as MemberService
-        participant Auth as AuthService
-        participant Repo as AuthMember<br/>Repository
-    end
-    participant Db as MySQL
+    participant Page as 会員管理画面<br/>(MembersPage)
+    participant Notice as 期限切れのお知らせ<br/>(SessionNotice)
+    participant Login as ログイン欄<br/>(AuthPanel)
+    participant AuthCtrl as 認証CTRL<br/>(AuthController ほか)
+    participant Ctrl as 会員管理CTRL<br/>(MemberController)
+    participant Svc as 会員管理サービス<br/>(MemberService)
+    participant Mem as 会員テーブル<br/>(members)
+    participant Store as 組織・店舗テーブル<br/>(organizations ほか)
+    participant Cog as Amazon Cognito
 
-    Note over User,Db: 共通代替フロー *b を適用。Workspace は未ログインなら AuthPanel を出し、<br/>API は未ログインの要求に 401 LOGIN_REQUIRED を返す (AuthConfiguration)
-
-    Note over User,Db: 基本フロー 1〜2 画面を開いて会員の一覧を表示する
-    User->>Work: 運営者メニューの「会員管理」をクリック
-    Note right of Work: WorkspaceSidebar.jsx の PageLink が<br/>navigate('/operator/members') を呼ぶ。<br/>session.accountType が ADMIN でなければ<br/>「この画面を利用する権限がありません。」を出す
-    Work->>Page: path が /operator/members なので<br/>MembersPage を表示
-    Page->>Hook: useResource('/operator/members')
-    Note right of Hook: useEffect が reload() を自動で実行する。<br/>取得中は ResourceStatus が「読み込んでいます。」を出す
-    Hook->>Http: request('/operator/members')
-    Http->>Ctrl: GET /api/operator/members
-    Ctrl->>Svc: list()
-    Note right of Svc: @Transactional(readOnly = true)
-    Svc->>Auth: requireAdmin()
-    Note right of Auth: current() でログイン中の会員を読み、<br/>ADMIN でなければ ApiException(403, FORBIDDEN)。<br/>画面が ADMIN 以外にこの画面を出さないので、<br/>図では枝を省略
-    Auth-->>Svc: 戻る
-    Svc->>Repo: findAll()
-    Repo->>Db: SELECT members
-    Db-->>Repo: 全会員の行
-    Repo-->>Svc: AuthMember のリスト
-    loop 会員ごと
-        Svc->>Auth: storeIdsOf(m)
-        Note right of Auth: オーナーは組織の全店舗、担当者はロールのある<br/>店舗を読む。読む Repository は図では省略
-        Auth-->>Svc: 店舗 ID のリスト
-    end
-    Svc-->>Ctrl: Member のリスト<br/>(id、name、email、accountType、storeIds、enabled、withdrawnAt)
-    Ctrl-->>Http: 200 Member の配列
-    Http-->>Hook: data
-    Hook-->>Page: resource.data
-    Note right of Page: 取得に失敗すると ResourceStatus が<br/>message と「再取得」ボタンを出す (共通代替フロー *a)
-    Page->>Page: all.filter で絞り込む<br/>(query は空なので全員が残る)
-    alt 2a all が空
-        Page-->>User: 「対象の会員はありません。」
-    else 会員がいる
-        Note right of Page: withdrawnAt があれば「退会済み」、<br/>enabled が真なら「利用中」、偽なら「利用停止」
-        Page-->>User: 検索欄と会員の一覧<br/>name、email、accountType、利用状態
+    Note over User,Cog: ログインの確認
+    User->>Page: /operator/members へ
+    Page->>AuthCtrl: GET /api/auth/me
+    alt *b ログインしていない
+        AuthCtrl-->>Page: authenticated=false
+        Page->>Login: 画面の代わりにログイン欄を表示
+        Login-->>User: *b-1 メールアドレスとパスワードの入力欄
+        User->>Login: 入力して「ログイン」
+        Login->>AuthCtrl: POST /api/auth/login
+        AuthCtrl->>Cog: InitiateAuth (USER_PASSWORD_AUTH)
+        Cog-->>AuthCtrl: ID トークン
+        AuthCtrl->>Mem: 会員を取得 (初めてなら追加)
+        Mem-->>AuthCtrl: 会員
+        AuthCtrl-->>Login: 戻り先 (returnTo)
+        Login->>Page: *b-2 /operator/members を読み込み直す
+        Page->>AuthCtrl: GET /api/auth/me
+        AuthCtrl-->>Page: authenticated=true
+    else ログイン済み
+        AuthCtrl-->>Page: authenticated=true
     end
 
-    Note over User,Db: 基本フロー 3〜4 検索する (サーバーには問い合わせない)
-    User->>Page: 「名前・メール検索」欄に入力
-    Page->>Page: onChange で setQuery(入力値)
-    Page->>Page: all.filter で、name と email を空白でつないだ<br/>文字列が query を含む会員だけ残す (includes)
-    alt 3a 入力欄が空になった
-        Page-->>User: 全会員の一覧 (空文字はすべてに含まれる)
-    else 該当する会員がいる
-        Page-->>User: 部分一致した会員だけの一覧
+    Note over User,Cog: 会員一覧の表示
+    Page->>Ctrl: GET /api/operator/members
+    alt *a ブラウザーから届かない、または応答が JSON でない
+        Page-->>User: *a-1「サーバーに接続できません。<br/>接続を確認して再試行してください。」と「再取得」
+    else *b ログインの期限切れ (セッションがない、refresh トークンが失効)
+        Ctrl-->>Page: 401 LOGIN_REQUIRED
+        Page->>Notice: 期限切れを知らせる
+        Notice-->>User: *b-1「ログインの有効期限が切れました。<br/>もう一度ログインしてください。」「ログインする」「閉じる」
+        Note over User,Cog: 「ログインする」を押すとログイン画面へ移り、ログインの後 *b-2 で /operator/members に戻る
+    else *a ID トークンの更新で Cognito に届かない
+        Ctrl-xCog: ID トークンの更新
+        Ctrl-->>Page: 503 AUTH_UNAVAILABLE
+        Page-->>User: *a-1「認証を確認できません。<br/>時間をおいて再試行してください。」と「再取得」
+    else 要求が届いた
+        Ctrl->>Svc: list()
+        Svc->>Svc: 運営者か確認 (requireAdmin)
+        Svc->>Mem: 会員を全件取得
+        alt *a MySQL との通信に失敗
+            Mem--xSvc: 失敗
+            Svc-->>Ctrl: DataAccessException
+            Ctrl-->>Page: 503 DATABASE_UNAVAILABLE
+            Page-->>User: *a-1「保存処理を完了できませんでした。<br/>時間をおいて再試行してください。」と「再取得」
+        else 読めた
+            Mem-->>Svc: 会員の一覧
+            loop 会員ごと (読むのはオーナーと担当者だけ)
+                Svc->>Store: 操作できる店舗を取得
+                Store-->>Svc: 店舗 ID
+            end
+            Svc-->>Ctrl: 会員の一覧
+            Ctrl-->>Page: JSON (会員の配列)
+            Page-->>User: 検索欄と会員の一覧を表示
+        end
+    end
+    opt *a-3 「再取得」を押した
+        User->>Page: 「再取得」
+        Page->>Ctrl: GET /api/operator/members (同じ要求をもう一度)
+    end
+
+    Note over User,Cog: 会員の検索 (通信しない)
+    User->>Page: 「名前・メール検索」に入力
+    Page->>Page: 氏名とメールの部分一致で絞り込み
+    alt 該当する会員がいる (空欄なら全員)
+        Page-->>User: 該当する会員の一覧
     else 4a 該当する会員がいない
         Page-->>User: 「検索条件に一致する会員はありません。」
-        Note right of User: 4a-2 検索条件を変えて<br/>基本フロー 3 へ戻る
     end
 ```
 
 ## ユースケース記述との差
 
-- 2a: 一覧は `members.findAll()` で運営者自身も含む全会員を返します。運営者がログインしている間は一覧が空にならないため、2a の「対象の会員はありません。」は通常の操作では出ません。
+- 2a（会員が 1 人もいない）は図に書いていません。一覧は `members.findAll()` で、ログイン中の運営者本人も含む全会員を返します。運営者がログインしている間は一覧が空にならないので、2a は起こりません。コードには `all.length === 0` のときの「対象の会員はありません。」の表示が残っています。
+- 3a（入力欄が空になった）は、分岐ではなく基本フロー 4 の中に書いています。空の入力に別の処理はなく、`includes('')` がすべての会員で真になるので、同じ絞り込みで全員が残ります。
 - 基本フロー 4: 絞り込みは JavaScript の `includes` です。大文字と小文字を区別し、入力の前後の空白も取り除きません。記述にはこの決まりが書かれていません。
 - 基本フロー 2: サーバーは会員ごとに `AuthService.storeIdsOf()` を呼び、操作できる店舗の ID（`storeIds`）を応答に入れます。会員管理画面はこの値を使いません。記述にない処理です。
+- 運営者でない会員がこの画面を開くと、`Workspace.jsx` が「この画面を利用する権限がありません。」を出し、一覧を取りに行きません。API も `requireAdmin()` で 403 を返します。事前条件が運営者のログインなので、図には書いていません。
 
 ## 参照したコード
 
-- [frontend/src/workspace/Workspace.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/Workspace.jsx): `operatorMenu`、`Workspace`（未ログインと ADMIN の確認、path と画面の対応）
-- [frontend/src/workspace/WorkspaceSidebar.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/WorkspaceSidebar.jsx): `WorkspaceSidebar`、`MenuLink`
-- [frontend/src/workspace/Common.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/Common.jsx): `PageLink`
-- [frontend/src/workspace/navigation.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/navigation.js): `navigate`、`usePath`
-- [frontend/src/workspace/OperatorPages.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/OperatorPages.jsx): `MembersPage`（`query`、`all.filter`、空の一覧の文言）
-- [frontend/src/workspace/useResource.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/useResource.js): `useResource`、`reload`
-- [frontend/src/workspace/ResourceView.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/ResourceView.jsx): `ResourceStatus`
-- [frontend/src/api.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/api.js): `request`、`send`、`readResponse`
-- [backend/src/main/java/jp/kusakari/ec/member/controller/MemberController.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/member/controller/MemberController.java): `list`
-- [backend/src/main/java/jp/kusakari/ec/member/service/MemberService.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/member/service/MemberService.java): `list`、`Member`
-- [backend/src/main/java/jp/kusakari/ec/auth/AuthService.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/AuthService.java): `requireAdmin`、`current`、`storeIdsOf`
-- [backend/src/main/java/jp/kusakari/ec/auth/AuthMemberRepository.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/AuthMemberRepository.java): `findAll`（JpaRepository）
-- [backend/src/main/java/jp/kusakari/ec/auth/AuthConfiguration.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/AuthConfiguration.java): `authenticationEntryPoint`（401 LOGIN_REQUIRED）
+- [frontend/src/workspace/Workspace.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/Workspace.jsx): `Workspace`（未ログインのときの `AuthPanel`、運営者の確認、path と画面の対応）
+- [frontend/src/workspace/OperatorPages.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/OperatorPages.jsx): `MembersPage`（`query`、`all.filter`、一覧が空のときの文言）
+- [frontend/src/workspace/useResource.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/useResource.js): `useResource`、`reload`
+- [frontend/src/workspace/ResourceView.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/ResourceView.jsx): `ResourceStatus`（エラーの文と「再取得」）
+- [frontend/src/api.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/api.js): `networkErrorMessage`、`sessionExpiredMessage`、`readResponse`、`send`
+- [frontend/src/auth.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/auth.js): `readSession`、`passwordLogin`、`wasSignedIn`
+- [frontend/src/components/AuthPanel.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/components/AuthPanel.jsx): ログイン欄
+- [frontend/src/components/SessionNotice.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/components/SessionNotice.jsx): 期限切れのお知らせ
+- [backend/src/main/java/jp/kusakari/ec/member/controller/MemberController.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/member/controller/MemberController.java): `list`
+- [backend/src/main/java/jp/kusakari/ec/member/service/MemberService.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/member/service/MemberService.java): `list`、`Member`
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthService.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthService.java): `requireAdmin`、`storeIdsOf`、`session`
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthController.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthController.java): `GET /api/auth/me`
+- [backend/src/main/java/jp/kusakari/ec/auth/PasswordLoginController.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/PasswordLoginController.java): `POST /api/auth/login`
+- [backend/src/main/java/jp/kusakari/ec/auth/SessionValidityFilter.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/SessionValidityFilter.java): ID トークンの更新、401 `LOGIN_REQUIRED`
+- [backend/src/main/java/jp/kusakari/ec/auth/CognitoPasswordLogin.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/CognitoPasswordLogin.java): 503 `AUTH_UNAVAILABLE`
+- [backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java): `database`（503 `DATABASE_UNAVAILABLE`）
