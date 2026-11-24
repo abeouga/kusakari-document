@@ -29,22 +29,17 @@ sequenceDiagram
         participant Svc as 会員の処理<br/>MemberService<br/>(MemberService.java)
         participant Auth as ログイン中の会員<br/>AuthService<br/>(AuthService.java)
         participant Pend as オーナーの譲渡の申し出<br/>PendingOwnerSuccession<br/>(PendingOwnerSuccession.java)
-        participant Notices as 譲渡の通知<br/>OwnerSuccessionNotices<br/>(OwnerSuccessionNotices.java)
         participant Repo as 会員の読み書き<br/>AuthMemberRepository<br/>(AuthMemberRepository.java)
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、5、24、一覧の取り直しの 48 に適用<br/>*a 通信に失敗した場合: 5、22、24、一覧の取り直しの 48 に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、4、20、一覧の取り直しの 37 に適用<br/>*a 通信に失敗した場合: 4、18、20、一覧の取り直しの 37 に適用
 
     User->>Work: 運営者メニューの「会員管理」をクリック
     Work->>Page: アカウント管理者画面を表示
     Page->>Hook: 会員の一覧を取りに行くよう頼む (useResource)
-    Hook->>Http: 画面の表示時に自動でアカウント一覧の取得を開始
-    Http->>Ctrl: GET /api/operator/members
-    Ctrl->>Svc: 会員の一覧を作るよう頼む (list)<br/>中身は EC-A01 の図の 6〜17 と同じ
-    Svc-->>Ctrl: 会員の一覧
-    Ctrl-->>Http: 200 会員の配列
-    Http-->>Hook: 会員の一覧
+    Hook->>Ctrl: 画面の表示時に自動でアカウント一覧の取得を開始<br/>GET /api/operator/members (reload → request)
+    Ctrl-->>Hook: 200 会員の配列<br/>流れは EC-A01 の図の 3〜18 と同じ
     Hook-->>Page: 会員の一覧
     Page-->>User: 会員の一覧と利用状態 (「利用中」「利用停止」「退会済み」)、<br/>利用中なら「利用を停止」、そうでなければ「利用を再開」
 
@@ -68,11 +63,9 @@ sequenceDiagram
         Ctrl->>Svc: 会員の利用状態を変えるよう頼む (enable)<br/>enable 全体が 1 つのトランザクション
         Svc->>Auth: ログイン中の人が運営者かを確かめる (requireAdmin)
         Auth-->>Svc: 認証成功
-        opt 停止するとき
-            Svc->>Pend: 対象の会員が属する組織を<br>ロックする処理を呼ぶ
-            Pend->>Db: オーナーか担当者として属する組織を探し、<br/>あればロックして読み直す (SELECT ... FOR UPDATE organizations)
-            Db-->>Pend: ロックした組織の行
-            Pend-->>Svc: 組織 (購入者などは組織なし)
+        opt 停止するとき (記述なし)
+            Svc->>Pend: 対象の会員が属する組織を<br>ロックする処理を呼ぶ (lockOrganizationOf)
+            Note over Svc,Db: 結果: オーナーか担当者として属する組織の行を SELECT ... FOR UPDATE でロックする (組織 → 会員の順)。<br/>購入者などは組織がないのでロックしない。
         end
         Svc->>Repo: 対象の会員を読む (findById、SELECT members)
         Repo-->>Svc: 会員 (なければなし)
@@ -86,20 +79,17 @@ sequenceDiagram
             Note over Errs,Page: 結果: 409 を返し、利用状態は変えない。<br/>画面: 6a-1 一覧を取り直し、ダイアログを閉じて「管理者または退会済み会員の状態は変更できません。」
         end
         Svc->>Svc: 会員の利用状態を書き換える (changeEnabled)
-        opt 停止で、組織をロックした
-            Svc->>Pend: 停止する会員が譲渡の申し出の当事者かを調べ、当事者なら無効にするよう頼む<br/>(invalidateFor は譲渡先、invalidateForOwner は申し出たオーナー本人かを見る)
-            Pend->>Db: 当事者なら、承認待ちを空にし、履歴を保存する<br/>(共通の invalidate。clearOwnerSuccession、organization_member_events)
-            Pend->>Notices: 当事者なら、理由を付けてオーナーと譲渡先に知らせるよう頼む (invalidated)<br/>理由は譲渡先なら SUCCESSOR_DISABLED、オーナーなら OWNER_DISABLED、期限切れなら EXPIRED
-            Notices->>Db: 「オーナーの譲渡の申し出が無効になりました」の<br/>通知を 2 件保存する (文面の理由だけが違う)
-            Pend-->>Svc: 終わった
+        opt 停止で、組織をロックした (記述なし)
+            Svc->>Pend: 停止する会員が譲渡の申し出の当事者なら無効にするよう頼む<br/>(invalidateFor は譲渡先、invalidateForOwner は申し出たオーナー本人かを見る)
+            Note over Svc,Db: 結果: 当事者なら承認待ちを空にし、履歴と、オーナーと譲渡先への通知 2 件を保存する<br/>(共通の invalidate と OwnerSuccessionNotices)。当事者でなければ何もしない。
         end
         Svc->>Db: 書き換えた行を保存してコミットする<br/>(save は呼ばない。UPDATE members ほか)
         Db-->>Svc: 完了
         Svc-->>Ctrl: 終わった
         Ctrl-->>Http: 200 変更後の値 ({ enabled })
         Http-->>Hook: 変更後の値
-        Hook->>Http: 一覧を取り直す (reload)<br/>流れは 5〜9 と同じ
-        Http-->>Hook: 最新の会員の一覧
+        Hook->>Ctrl: 一覧を取り直す (reload)<br/>GET /api/operator/members。流れは 4〜5 と同じ
+        Ctrl-->>Hook: 最新の会員の一覧
         Hook-->>Page: 成功を返す (run が true、成功の文を設定)
         Page-->>User: ダイアログを閉じ (setTarget(null))、「利用を停止しました。」<br/>または「利用を再開しました。」と更新後の利用状態
     end
@@ -182,7 +172,7 @@ sequenceDiagram
             AuthJs->>Filter: PUT /api/operator/members/{id}/enabled
             Filter->>Ctrl: 要求を通す (chain.doFilter)
             Ctrl->>Svc: 会員の利用状態を変えるよう頼む (enable)
-            Svc->>Db: 運営者かを確かめ、組織と会員をロックして読み、<br/>書き換えてコミットする (上の図の 26〜44)
+            Svc->>Db: 運営者かを確かめ、組織と会員をロックして読み、<br/>書き換えてコミットする (上の図の 22〜32)
             alt *a MySQL との通信に失敗
                 Db--xSvc: 失敗 (DataAccessException)。<br/>トランザクションの変更はすべて取り消す
                 Svc--xCtrl: 例外
