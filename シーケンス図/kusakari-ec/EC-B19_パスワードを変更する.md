@@ -1,322 +1,275 @@
 # EC-B19 パスワードを変更する
 
 - ユースケース記述: [EC-B19_パスワードを変更する](<../../アーカイブ/ユースケース/kusakari-ec/EC-B19_パスワードを変更する.md>)
-- 対象のコード: kusakari-ec の main（19a2be3、2026-11-20 時点）
+- 共通代替フロー: [00_全ユースケース共通の代替フロー](<00_全ユースケース共通の代替フロー.md>)
+- 対象のコード: kusakari-ec の main（6bad7e3、2026-11-24 時点）
 
-パスワードの変更は、EC API が Amazon Cognito を 2 回呼んで行います。1 回目の `InitiateAuth`（`USER_PASSWORD_AUTH`）で現在のパスワードを確かめ、2 回目の `ChangePassword` で新しいパスワードに変えます。ブラウザーは Cognito と直接通信しません。変更できたら EC API がセッションを無効にし、画面は `/account/login?notice=password-changed` を読み込み直します。
+## シーケンス図
 
-## 概要図
+参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
+EC API が Amazon Cognito を 2 回呼び（現在のパスワードでのログインと、パスワードの変更）、ブラウザーは Cognito と直接通信しません。共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
 
 ```mermaid
 sequenceDiagram
+    autonumber
     actor User as 利用者
     box rgba(47,111,219,0.10) ブラウザー React
-        participant Page as 「パスワード変更」画面
+        participant App as 画面の切り替え<br/>App<br/>(App.jsx)
+        participant Work as アカウントの画面の枠<br/>Workspace<br/>(Workspace.jsx)
+        participant Acct as アカウント画面<br/>AccountPage<br/>(AccountPage.jsx)
+        participant Form as パスワード変更の入力欄<br/>PasswordForm<br/>(AccountSecurity.jsx)
+        participant Hook as 取得と書き込み<br/>useResource・write<br/>(useResource.js)
+        participant Http as 通信<br/>request<br/>(api.js)
+        participant AuthJs as 認証の通信<br/>authFetch・readSession<br/>(auth.js)
+        participant Login as ログイン画面<br/>LoginPage<br/>(LoginPage.jsx)
+        participant Flash as 完了のお知らせ<br/>flashNotice<br/>(SessionNotice.jsx)
+        participant Panel as ログインのカード<br/>AuthPanel<br/>(AuthPanel.jsx)
     end
     box rgba(27,127,92,0.12) EC API Spring Boot
-        participant Api as EC API
+        participant AuthCtrl as ログイン状態API<br/>AuthController<br/>(AuthController.java)
+        participant PwCtrl as パスワードAPI<br/>PasswordLoginController<br/>(PasswordLoginController.java)
+        participant Errs as エラーの応答<br/>ApiErrors<br/>(ApiErrors.java)
+        participant Auth as ログイン中の会員<br/>AuthService<br/>(AuthService.java)
+        participant Repo as 会員の読み書き<br/>AuthMemberRepository<br/>(AuthMemberRepository.java)
+        participant CogP as Cognito との通信<br/>CognitoPasswordLogin<br/>(CognitoPasswordLogin.java)
     end
     participant Db as MySQL
     box rgba(180,120,20,0.12) 外部サービス
         participant Cog as Amazon Cognito
     end
 
-    Note over User,Cog: 基本フロー 1〜2 「パスワード変更」画面を開く
-    User->>Page: サイドバーの「パスワード変更」をクリック（EC-C01）
-    Page-->>User: 「現在のパスワード」「新しいパスワード（8文字以上）」<br/>「確認用パスワード」の欄と「パスワードを変更」ボタン
-    Page->>Api: GET /api/auth/me（この画面では結果を使わない）
-    Api->>Db: 会員を読む
-    Db-->>Api: 会員の行
-    Api-->>Page: 200 ログイン状態
-    Note over User,Cog: 共通代替フロー *b を適用（未ログインなら、その場にログインの入力欄を出す）
+    Note over User,Cog: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認) と 20 に適用<br/>*a 通信に失敗した場合: 18、20、66 に適用
 
-    Note over User,Cog: 基本フロー 3〜7 入力し、画面で確かめる（通信しない）
-    User->>Page: 3 つの欄に入力し、「パスワードを変更」をクリック
+    User->>Work: アカウント画面のサイドバー「アカウント設定」の<br/>「パスワード変更」をクリック (EC-C01)
+    Work->>Acct: URL を /account/password に変え、AccountPage を表示<br/>(PageLink → navigate、tab は「パスワード変更」)
+    Acct->>Hook: ログイン状態を取りに行くよう頼む (useResource('/auth/me'))
+    Acct->>Form: パスワード変更の入力欄を表示 (PasswordForm)
+    Form-->>User: 「現在のパスワード」「新しいパスワード（8文字以上）」「確認用パスワード」、<br/>「変更後はログアウトします。新しいパスワードでログインしてください。」、<br/>「パスワードを変更」
+    Hook->>Http: 画面を開いたときに自動で通信を始める (reload → request)
+    Http->>AuthCtrl: GET /api/auth/me
+    AuthCtrl->>Auth: ログイン状態を作るよう頼む (session)
+    Auth-->>AuthCtrl: ログイン状態 (SessionView)
+    AuthCtrl-->>Http: 200 ログイン状態
+    Http-->>Hook: ログイン状態 (この画面では使わない)
+
+    User->>Form: 3 つの欄に入力し (基本フロー 3〜5)、<br/>「パスワードを変更」をクリック
+    Form->>Form: 入力を読み、新しいパスワードを確かめる (submit)<br/>form は noValidate なので、ブラウザーの検査はしない
     alt 7a 新しいパスワードが 8 文字未満
-        Page-->>User: 「新しいパスワードは8文字以上で入力してください。」<br/>入力は残る。基本フロー 3 へ戻る
+        Form-->>User: 7a-1「新しいパスワードは8文字以上で入力してください。」(setError)。<br/>通信しない。入力は残る。7a-2 基本フロー 3 へ戻る
     else 7a 確認用パスワードと一致しない
-        Page-->>User: 「新しいパスワードと確認用パスワードが一致しません。」<br/>入力は残る。基本フロー 3 へ戻る
+        Form-->>User: 7a-1「新しいパスワードと確認用パスワードが一致しません。」(setError)。<br/>通信しない。入力は残る。7a-2 基本フロー 3 へ戻る
     else 検査を通る
-        Note over Page: 基本フロー 8 へ進む
-    end
-
-    Note over User,Cog: 基本フロー 8〜9 現在のパスワードを確かめて変更する
-    Page->>Api: GET /api/auth/csrf
-    Api-->>Page: 200 headerName と token
-    Page->>Api: PUT /api/account/password<br/>currentPassword、newPassword、confirmPassword
-    Note over Page,Api: 共通代替フロー *a・*b を適用
-    Note over User,Cog: 以下、エラーの枝に当たったらそこで終わる。当たらなければ次へ進む
-    alt 記述にない 現在のパスワードが空、または新しいパスワードが空白だけ
-        Api-->>Page: 400 INVALID_INPUT
-        Page-->>User: 「入力内容・文字数・数値の範囲を確認してください。」
-    end
-    Api->>Db: 会員を読む
-    Db-->>Api: 会員の行（メールアドレス、subject）
-    Api->>Cog: InitiateAuth USER_PASSWORD_AUTH<br/>メールアドレスと現在のパスワード
-    alt 8a 現在のパスワードが正しくない
-        Cog-->>Api: NotAuthorizedException
-        Api-->>Page: 400 CURRENT_PASSWORD_INVALID
-        Page-->>User: 「現在のパスワードが正しくありません。」<br/>入力は残る。基本フロー 3 へ戻る
-    else 記述にない 試行が多すぎる、追加の確認が要る、Cognito に届かない
-        Cog-->>Api: TooManyRequestsException、ChallengeName など
-        Api-->>Page: 429 AUTH_RATE_LIMITED、409 AUTH_CHALLENGE_REQUIRED、<br/>503 AUTH_UNAVAILABLE など
-        Page-->>User: 応答の message
-    else 現在のパスワードが正しい
-        Cog-->>Api: ID トークンとアクセストークン
-    end
-    alt 記述にない ID トークンの subject がログイン中の会員と違う
-        Api-->>Page: 403 FORBIDDEN
-        Page-->>User: 「本人確認に失敗しました。」
-    end
-    Api->>Cog: ChangePassword<br/>アクセストークン、現在と新しいパスワード
-    alt 記述にない Cognito が新しいパスワードを受け付けない
-        Cog-->>Api: エラーの応答
-        Api-->>Page: 400 PASSWORD_REJECTED
-        Page-->>User: 「パスワードを変更できません。パスワードの条件<br/>または試行間隔を確認してください。」
-    else 記述にない Cognito に届かない
-        Cog--xApi: 応答が無い
-        Api-->>Page: 503 AUTH_UNAVAILABLE
-        Page-->>User: 「認証サービスに接続できません。」
-    else 変更できた
-        Cog-->>Api: 200
-        Api->>Api: セッションを無効にする（ログアウト状態）
-        Api-->>Page: 200 changed=true
-    end
-
-    Note over User,Cog: 基本フロー 10 「ログイン」画面を読み込み直す
-    Page->>Page: /account/login?notice=password-changed を読み込む
-    Page->>Api: GET /api/auth/me
-    Note right of Page: 読み込み直しで、ほかの取得（商品、カートなど）も走る（図では省略）
-    Api-->>Page: 200 authenticated=false
-    Page-->>User: 「ログイン」画面と「パスワードを変更しました。<br/>新しいパスワードでログインしてください。」
-```
-
-## 詳細図
-
-### 詳細図 1 基本フロー 1〜7 画面を開いて入力を確かめる
-
-```mermaid
-sequenceDiagram
-    actor User as 利用者
-    box rgba(47,111,219,0.10) ブラウザー React
-        participant Work as Workspace.jsx
-        participant Acct as AccountPage.jsx
-        participant Form as PasswordForm<br/>AccountSecurity.jsx
-        participant Hook as useResource.js
-        participant Http as api.js
-        participant AuthJs as auth.js
-    end
-    box rgba(27,127,92,0.12) EC API Spring Boot
-        participant AuthCtl as AuthController
-        participant AuthSvc as AuthService
-    end
-    participant Db as MySQL
-
-    Note over User,Db: 基本フロー 1〜2 「パスワード変更」画面を開く
-    User->>Work: サイドバーの「パスワード変更」をクリック（EC-C01）
-    Note right of Work: WorkspaceSidebar の PageLink が navigate() し、<br/>App.jsx の usePath() が新しい path を渡す<br/>（Common.jsx・navigation.js・App.jsx は図では省略）
-    Work->>Work: session.authenticated を確かめ、<br/>accountActions から tab を決める
-    Note right of Work: 共通代替フロー *b を適用。未ログインなら<br/>その場に AuthPanel のログインの入力欄を出す
-    Work->>Acct: AccountPage（key は path、tab は「パスワード変更」）
-    Acct->>Hook: useResource('/auth/me')
-    Acct->>Form: PasswordForm を表示
-    Form-->>User: 「現在のパスワード」「新しいパスワード（8文字以上）」<br/>「確認用パスワード」の欄と「パスワードを変更」
-    Note right of Hook: 描画の後、useEffect が reload() を自動で実行する。<br/>このタブでは結果を使わない
-    Hook->>Http: request('/auth/me')
-    Http->>AuthJs: send() が authFetch() を呼ぶ<br/>GET なので CSRF の確認情報は取らない
-    AuthJs->>AuthCtl: GET /api/auth/me
-    AuthCtl->>AuthSvc: me() が session()
-    AuthSvc->>Db: current() などが SELECT members ほか
-    Db-->>AuthSvc: 行
-    AuthSvc-->>AuthCtl: SessionView
-    AuthCtl-->>AuthJs: 200 ログイン状態
-    AuthJs-->>Http: Response
-    Http-->>Hook: data（setData するが画面は使わない）
-
-    Note over User,Db: 基本フロー 3〜7 入力し、ボタンを押して画面で確かめる
-    User->>Form: 3 つの欄に入力する（入力のたびの通信はない）
-    User->>Form: 「パスワードを変更」をクリック
-    Form->>Form: onSubmit の submit(event)<br/>FormData から input を作る
-    Note right of Form: form は noValidate なので、<br/>ブラウザーの required の検査は働かない
-    alt 7a 新しいパスワードが 8 文字未満
-        Form->>Form: setError('新しいパスワードは8文字以上で…')
-        Form-->>User: 「新しいパスワードは8文字以上で入力してください。」<br/>入力は残る。基本フロー 3 へ戻る
-    else 7a 確認用パスワードと一致しない
-        Form->>Form: setError('新しいパスワードと確認用…')
-        Form-->>User: 「新しいパスワードと確認用パスワードが一致しません。」<br/>入力は残る。基本フロー 3 へ戻る
-    else 検査を通る
-        Note over Form: 基本フロー 8 へ（詳細図 2）
+        Form->>Http: パスワードを変える通信を送る (write → request)<br/>ボタンは「変更しています…」
+        Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (send → authFetch)
+        AuthJs->>AuthCtrl: GET /api/auth/csrf
+        AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
+        AuthJs->>PwCtrl: PUT /api/account/password<br/>(currentPassword、newPassword、confirmPassword、CSRF トークンのヘッダー付き)
+        alt 記述なし 現在のパスワードが空、または新しいパスワードが空白だけ
+            PwCtrl--xErrs: 入力の検査で例外を投げる<br/>(PasswordRequest の @NotBlank → MethodArgumentNotValidException)
+            Errs-->>Http: 400 INVALID_INPUT「入力内容・文字数・数値の範囲を<br/>確認してください。」(invalid)
+            Http--xForm: エラーを投げる (readResponse → ApiError)
+            Form-->>User: エラーの文 (catch → setError)。入力は残る
+        else 入力の検査を通る
+            PwCtrl->>Auth: ログイン中の会員を読む (current)
+            Auth->>Repo: 会員を読む (findByIssuerAndSubject)
+            Repo->>Db: SELECT members
+            Db-->>Repo: 会員の行
+            Repo-->>Auth: 会員
+            Auth-->>PwCtrl: 会員 (メールアドレスと subject)
+            PwCtrl->>CogP: パスワードを変えるよう頼む (changePassword)<br/>新しいパスワードと確認用が違えば 400 PASSWORD_MISMATCH だが、<br/>画面の 7a が先に止めるので届かない
+            CogP->>Cog: 8 現在のパスワードでログインし直して確かめる<br/>(authenticateTokens → initiateAuth、InitiateAuth USER_PASSWORD_AUTH)
+            alt 8a 現在のパスワードが正しくない
+                Cog-->>CogP: NotAuthorizedException
+                CogP--xErrs: 400 CURRENT_PASSWORD_INVALID の例外を投げる<br/>(INVALID_CREDENTIALS を言い換える)
+                Errs-->>Http: 400「現在のパスワードが正しくありません。」(business)
+                Http--xForm: エラーを投げる (readResponse → ApiError)
+                Form-->>User: 8a-1「現在のパスワードが正しくありません。」(setError)。<br/>入力は残る。8a-2 基本フロー 3 へ戻る
+            else 記述なし 試行が多すぎる、または追加の本人確認が要る
+                Cog-->>CogP: TooManyRequestsException、または ChallengeName
+                CogP--xErrs: 429 AUTH_RATE_LIMITED か<br/>409 AUTH_CHALLENGE_REQUIRED の例外を投げる (initiateAuth)
+                Errs-->>Http: 429「試行回数が多すぎます。時間をおいて再試行してください。」<br/>か 409「追加の本人確認またはパスワード変更が必要です。…」(business)
+                Http--xForm: エラーを投げる (readResponse → ApiError)
+                Form-->>User: 応答の文 (setError)。入力は残る
+            else 現在のパスワードが正しい
+                Cog-->>CogP: ID トークンとアクセストークン
+                CogP->>CogP: ID トークンを検証し、subject がログイン中の会員と<br/>同じかを確かめる (toUser)
+                alt 記述なし subject がログイン中の会員と違う
+                    CogP--xErrs: 403 FORBIDDEN の例外を投げる
+                    Errs-->>Http: 403「本人確認に失敗しました。」(business)
+                    Http--xForm: エラーを投げる (readResponse → ApiError)
+                    Form-->>User: 「本人確認に失敗しました。」(setError)
+                else 同じ
+                    CogP->>Cog: 9 パスワードを変える (ChangePassword、<br/>AccessToken・PreviousPassword・ProposedPassword)
+                    alt 記述なし Cognito が新しいパスワードを受け付けない
+                        Cog-->>CogP: エラーの応答 (RestClientResponseException)
+                        CogP--xErrs: 400 PASSWORD_REJECTED の例外を投げる
+                        Errs-->>Http: 400「パスワードを変更できません。パスワードの条件<br/>または試行間隔を確認してください。」(business)
+                        Http--xForm: エラーを投げる (readResponse → ApiError)
+                        Form-->>User: 応答の文 (setError)。入力は残る
+                    else 変えた
+                        Cog-->>CogP: 200
+                        CogP-->>PwCtrl: 終わった
+                        PwCtrl->>PwCtrl: 9 セッションを無効にし、認証情報を消す<br/>(getSession().invalidate、SecurityContextHolder.clearContext)
+                        PwCtrl-->>Http: 200 { changed: true }
+                        Http-->>Form: 変えた
+                        Form->>App: 10 /account/login?notice=password-changed を<br/>読み込み直す (window.location.assign)
+                        App->>Login: path が /account/login なので LoginPage を表示
+                        Login->>Flash: 完了のお知らせを読む (flashNotice)<br/>読み込んだときに URL の notice を読み、URL から外してある
+                        Flash-->>Login: 「パスワードを変更しました。新しいパスワードでログインしてください。」
+                        Login->>Panel: ログインのカードを表示 (AuthPanel)
+                        Panel->>AuthJs: ログイン状態を読む (useAuth → readSession)<br/>LoginPage の useAuth も同じ GET を送る
+                        AuthJs->>AuthCtrl: GET /api/auth/me
+                        AuthCtrl->>Auth: ログイン状態を作るよう頼む (session)
+                        Auth-->>AuthCtrl: ログインしていない<br/>(セッションが無いので current の 401 を session が受け止める)
+                        AuthCtrl-->>AuthJs: 200 authenticated=false
+                        AuthJs-->>Panel: ログインしていない
+                        Panel-->>User: 「ログイン」画面と「パスワードを変更しました。新しいパスワードで<br/>ログインしてください。」、メールアドレス・パスワードの欄と「ログイン」
+                    end
+                end
+            end
+        end
     end
 ```
 
-### 詳細図 2 基本フロー 8〜9 現在のパスワードを確かめて変更する
+## 共通代替フローを直接書いた図
+
+上の図の変更の通信（CSRF トークンの取得と `PUT /api/account/password`）に、この画面で起こる共通代替フロー（\*a、\*b）を書き込んだ図です。URL を直接開いたときのログインの確認（\*b）は、[EC-A01](<EC-A01_会員を検索・確認する.md>) の図と同じく `Workspace` がその場に `AuthPanel` のログインの入力欄を出すので省いています。画面を開いたときの `GET /api/auth/me`（上の図の 7）は、失敗しても画面に何も出ないので書いていません（「ユースケース記述との差」を見てください）。
 
 ```mermaid
 sequenceDiagram
+    autonumber
     actor User as 利用者
     box rgba(47,111,219,0.10) ブラウザー React
-        participant Form as PasswordForm<br/>AccountSecurity.jsx
-        participant Hook as useResource.js
-        participant Http as api.js
-        participant AuthJs as auth.js
+        participant Form as パスワード変更の入力欄<br/>PasswordForm<br/>(AccountSecurity.jsx)
+        participant Http as 通信<br/>request<br/>(api.js)
+        participant AuthJs as 認証の通信<br/>authFetch<br/>(auth.js)
+        participant Notice as 期限切れのお知らせ<br/>SessionNotice<br/>(SessionNotice.jsx)
     end
     box rgba(27,127,92,0.12) EC API Spring Boot
-        participant AuthCtl as AuthController
-        participant Ctrl as PasswordLogin<br/>Controller
-        participant Errs as ApiErrors
-        participant AuthSvc as AuthService
-        participant CogSvc as CognitoPassword<br/>Login
+        participant AuthCtrl as ログイン状態API<br/>AuthController<br/>(AuthController.java)
+        participant Filter as セッションの確認<br/>SessionValidityFilter<br/>(SessionValidityFilter.java)
+        participant PwCtrl as パスワードAPI<br/>PasswordLoginController<br/>(PasswordLoginController.java)
+        participant CogP as Cognito との通信<br/>CognitoPasswordLogin<br/>(CognitoPasswordLogin.java)
     end
     participant Db as MySQL
     box rgba(180,120,20,0.12) 外部サービス
         participant Cog as Amazon Cognito
     end
 
-    Note over User,Cog: 基本フロー 8〜9 現在のパスワードを確かめて変更する
-    Form->>Form: setBusy(true) と setError('')<br/>ボタンは「変更しています…」
-    Form->>Hook: write('/account/password', 'PUT', input)
-    Hook->>Http: request('/account/password', 'PUT', JSON)
-    Http->>AuthJs: send() が authFetch(url, init) を呼ぶ
-    AuthJs->>AuthCtl: GET /api/auth/csrf
-    AuthCtl-->>AuthJs: csrf() が 200 headerName と token
-    AuthJs->>Ctrl: PUT /api/account/password<br/>CSRF のヘッダー付き
-    Note over AuthJs,Ctrl: 共通代替フロー *a・*b を適用。SessionValidityFilter が<br/>ログイン状態を確かめる（図では省略）
-    Ctrl->>Ctrl: @Valid が PasswordRequest を検査
-    Note over User,Cog: 以下、エラーの枝に当たったらそこで終わる。当たらなければ次へ進む
-    alt 記述にない 現在のパスワードが空、または新しいパスワードが空白だけ
-        Ctrl--xErrs: MethodArgumentNotValidException
-        Errs-->>AuthJs: invalid() が 400 INVALID_INPUT
-        AuthJs-->>Http: Response
-        Http--xForm: readResponse() が throw ApiError(400)<br/>write() はそのまま投げ返す
-        Form->>Form: catch で setError(message) と setBusy(false)
-        Form-->>User: 「入力内容・文字数・数値の範囲を確認してください。」
+    User->>Form: 3 つの欄に入力し、「パスワードを変更」をクリック<br/>(7a の検査を通った)
+    Form->>Http: パスワードを変える通信を送る (write → request)
+    Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (send → authFetch)
+    alt *a CSRF トークンを取れない (届かない、200 以外、<br/>ID トークンを更新できないときの 401)
+        AuthJs-xAuthCtrl: GET /api/auth/csrf
+        AuthJs--xHttp: エラーを投げる
+        Http->>Http: 通信の失敗にまとめる<br/>(send の catch → ApiError(networkErrorMessage, 0))
+        Http--xForm: エラーを投げる
+        Form-->>User: *a-1「サーバーに接続できません。<br/>接続を確認して再試行してください。」(setError)。*a-2 入力は残る
+    else CSRF トークンを取れた
+        AuthJs->>AuthCtrl: GET /api/auth/csrf
+        AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン
+        alt *a PUT が届かない、または応答が JSON でない (変わったかは分からない)
+            AuthJs-xFilter: PUT /api/account/password
+            Http->>Http: 通信の失敗にまとめる<br/>(send か readResponse → ApiError(networkErrorMessage, 0))
+            Http--xForm: エラーを投げる
+            Form-->>User: *a-1「サーバーに接続できません。<br/>接続を確認して再試行してください。」(setError)。*a-2 入力は残る
+        else *b サーバーのセッションがない (期限の 30 日を過ぎた、EC を再起動したなど)
+            AuthJs->>Filter: PUT /api/account/password
+            Filter-->>Http: 401 LOGIN_REQUIRED<br/>(認証が無いので AuthConfiguration.java の authenticationEntryPoint が返す)
+            Http->>Notice: 期限切れを知らせる<br/>(wasSignedIn が真なので kusakari-session-expired)
+            Http--xForm: エラーを投げる (ApiError(sessionExpiredMessage, 401))
+            Form-->>User: 入力欄の上に「ログインの有効期限が切れました。<br/>もう一度ログインしてください。」(setError)
+            Notice-->>User: *b-1「ログインの有効期限が切れました。もう一度ログインしてください。」<br/>「ログインすると、この画面に戻ります。」「ログインする」「閉じる」
+            User->>Notice: 「ログインする」をクリック
+            Notice->>AuthJs: ログイン画面へ移る (login)
+            AuthJs-->>User: /account/login?returnTo=…/account/password のログイン画面<br/>(*b-2 ログインの後はパスワード変更の画面に戻る。入力は残らない)
+        else *a ID トークンの更新で Cognito に届かない
+            AuthJs->>Filter: PUT /api/account/password
+            Filter-xCog: ID トークンを更新する<br/>(renewIdToken → refresh、InitiateAuth REFRESH_TOKEN_AUTH)
+            Filter-->>Http: 503 AUTH_UNAVAILABLE (セッションは残す)
+            Http--xForm: エラーを投げる (readResponse → ApiError 503)
+            Form-->>User: *a-1「認証を確認できません。<br/>時間をおいて再試行してください。」(setError)。*a-2 入力は残る
+        else 要求が Controller まで届いた
+            AuthJs->>Filter: PUT /api/account/password
+            Filter->>PwCtrl: 要求を通す (chain.doFilter)
+            PwCtrl->>Db: ログイン中の会員を読む<br/>(AuthService の current、上の図の 25〜30)
+            alt *a MySQL との通信に失敗
+                Db--xPwCtrl: 失敗 (DataAccessException)
+                PwCtrl-->>Http: 503 DATABASE_UNAVAILABLE (ApiErrors.java の database)
+                Http--xForm: エラーを投げる (readResponse → ApiError 503)
+                Form-->>User: *a-1「保存処理を完了できませんでした。<br/>時間をおいて再試行してください。」(setError)。*a-2 入力は残る
+            else 読めた
+                Db-->>PwCtrl: 会員
+                PwCtrl->>CogP: パスワードを変えるよう頼む (changePassword)
+                alt *a 現在のパスワードの確認で Cognito に届かない
+                    CogP-xCog: InitiateAuth USER_PASSWORD_AUTH
+                    CogP-->>Http: 503 AUTH_UNAVAILABLE (initiateAuth の RestClientException、<br/>ApiErrors.java の business)
+                    Http--xForm: エラーを投げる (readResponse → ApiError 503)
+                    Form-->>User: *a-1「認証を確認できません。<br/>時間をおいて再試行してください。」(setError)。*a-2 入力は残る
+                else *a パスワードの変更で Cognito に届かない
+                    CogP->>Cog: InitiateAuth USER_PASSWORD_AUTH
+                    Cog-->>CogP: ID トークンとアクセストークン
+                    CogP-xCog: ChangePassword
+                    CogP-->>Http: 503 AUTH_UNAVAILABLE (changePassword の RestClientException、<br/>ApiErrors.java の business)
+                    Http--xForm: エラーを投げる (readResponse → ApiError 503)
+                    Form-->>User: *a-1「認証サービスに接続できません。」(setError)。*a-2 入力は残る
+                else 変えた
+                    CogP->>Cog: InitiateAuth と ChangePassword (上の図の 32〜56)
+                    Cog-->>CogP: 200
+                    CogP-->>PwCtrl: 終わった
+                    PwCtrl-->>Http: 200 { changed: true }。セッションは無効にした
+                    Http-->>Form: 変えた
+                    Form-->>User: 「ログイン」画面と「パスワードを変更しました。…」<br/>(上の図の 60〜71)
+                end
+            end
+        end
     end
-    Ctrl->>AuthSvc: members.current()
-    AuthSvc->>Db: SELECT members（issuer、subject）
-    Db-->>AuthSvc: 会員の行
-    AuthSvc-->>Ctrl: AuthMember
-    Note right of Ctrl: newPassword と confirmPassword が違えば<br/>400 PASSWORD_MISMATCH。画面の 7a が<br/>先に止めるので、画面からは届かない
-    Ctrl->>CogSvc: changePassword(email, subject, 現在, 新しい)
-    CogSvc->>CogSvc: authenticateTokens(email, previous)
-    CogSvc->>Cog: initiateAuth() が POST /<br/>InitiateAuth USER_PASSWORD_AUTH
-    Note over Errs,Form: 以下の枝の、ブラウザーでの戻りは INVALID_INPUT の枝と同じ。<br/>PasswordForm は応答の message を setError() で出し、入力は残る
-    alt 8a 現在のパスワードが正しくない
-        Cog-->>CogSvc: NotAuthorizedException
-        CogSvc->>CogSvc: initiateAuth() が ApiException(401, INVALID_CREDENTIALS)<br/>changePassword() の catch が言い換える
-        CogSvc--xErrs: throw ApiException(400, CURRENT_PASSWORD_INVALID)
-        Errs-->>AuthJs: business() が 400 と message
-        Form-->>User: 「現在のパスワードが正しくありません。」<br/>基本フロー 3 へ戻る
-    else 記述にない 試行が多すぎる、追加の確認が要る、Cognito に届かない
-        Cog-->>CogSvc: TooManyRequestsException、ChallengeName など
-        CogSvc--xErrs: throw ApiException（429 AUTH_RATE_LIMITED、<br/>409 AUTH_CHALLENGE_REQUIRED、503 AUTH_UNAVAILABLE など）
-        Errs-->>AuthJs: business() が status と message
-        Form-->>User: 応答の message
-    else 現在のパスワードが正しい
-        Cog-->>CogSvc: AuthenticationResult（IdToken、AccessToken）
-        CogSvc->>CogSvc: toUser() が ID トークンを検証する<br/>（JWKS の取得は図では省略）
+    opt *a-3 やり直す
+        User->>Form: 残った入力のまま、もう一度「パスワードを変更」をクリック<br/>(基本フロー 6 へ戻る)
     end
-    alt 記述にない subject がログイン中の会員と違う
-        CogSvc--xErrs: throw ApiException(403, FORBIDDEN)
-        Errs-->>AuthJs: business() が 403 と message
-        Form-->>User: 「本人確認に失敗しました。」
-    end
-    CogSvc->>Cog: POST / ChangePassword<br/>AccessToken、PreviousPassword、ProposedPassword
-    alt 記述にない Cognito が新しいパスワードを受け付けない
-        Cog-->>CogSvc: エラーの応答（RestClientResponseException）
-        CogSvc--xErrs: throw ApiException(400, PASSWORD_REJECTED)
-        Errs-->>AuthJs: business() が 400 と message
-        Form-->>User: 「パスワードを変更できません。パスワードの条件<br/>または試行間隔を確認してください。」
-    else 記述にない Cognito に届かない
-        Cog--xCogSvc: 応答が無い（RestClientException）
-        CogSvc--xErrs: throw ApiException(503, AUTH_UNAVAILABLE)
-        Errs-->>AuthJs: business() が 503 と message
-        Form-->>User: 「認証サービスに接続できません。」
-    else 変更できた
-        Cog-->>CogSvc: 200
-        CogSvc-->>Ctrl: 戻る（void）
-        Ctrl->>Ctrl: request.getSession().invalidate()<br/>SecurityContextHolder.clearContext()
-        Ctrl-->>AuthJs: 200 changed=true
-        AuthJs-->>Http: Response
-        Http-->>Hook: data
-        Hook-->>Form: data
-        Form->>Form: window.location.assign<br/>('/account/login?notice=password-changed')
-        Note over Form: 基本フロー 10 へ（詳細図 3）
-    end
-```
-
-### 詳細図 3 基本フロー 10 「ログイン」画面と完了メッセージを表示する
-
-```mermaid
-sequenceDiagram
-    actor User as 利用者
-    box rgba(47,111,219,0.10) ブラウザー React
-        participant Form as PasswordForm<br/>AccountSecurity.jsx
-        participant App as App.jsx
-        participant Notice as SessionNotice.jsx
-        participant Login as LoginPage.jsx
-        participant Panel as AuthPanel.jsx
-        participant UseAuth as useAuth.js
-        participant AuthJs as auth.js
-    end
-    box rgba(27,127,92,0.12) EC API Spring Boot
-        participant AuthCtl as AuthController
-        participant AuthSvc as AuthService
-    end
-
-    Note over User,AuthSvc: 基本フロー 10 「ログイン」画面と完了メッセージを表示する
-    Form->>App: window.location.assign で<br/>/account/login?notice=password-changed を読み込み直す
-    Note over Notice: モジュールを読み込んだときに flashNotice を 1 回だけ作る。<br/>URL の notice を読み、history.replaceState で URL から外す
-    Note right of App: 読み込み直しで App.jsx の useShop() と useAuth() も<br/>通信する（図では省略）
-    App->>Login: path が /account/login なので LoginPage を返す
-    Login->>Notice: flashNotice を読む（import）
-    Notice-->>Login: 「パスワードを変更しました。…」
-    Login->>Panel: AuthPanel を表示
-    Panel->>UseAuth: useAuth()
-    Note right of UseAuth: useEffect が readSession() を自動で実行する。<br/>LoginPage の useAuth() も同じ GET を送る
-    UseAuth->>AuthJs: readSession()
-    AuthJs->>AuthCtl: GET /api/auth/me
-    AuthCtl->>AuthSvc: me() が session()
-    AuthSvc->>AuthSvc: current() が 401 を投げ、session() が受け止める<br/>（セッションは無効にしたので DB は読まない）
-    AuthSvc-->>AuthCtl: SessionView（authenticated=false）
-    AuthCtl-->>AuthJs: 200 authenticated=false
-    AuthJs-->>UseAuth: session
-    UseAuth-->>Panel: session
-    Panel-->>User: メールアドレス・パスワードの欄と「ログイン」
-    Login-->>User: 「ログイン」の見出しと「パスワードを変更しました。<br/>新しいパスワードでログインしてください。」
 ```
 
 ## ユースケース記述との差
 
 - 7: 検証は、サーバーへ送る前にブラウザーの `PasswordForm` の `submit()` が行います。8 文字未満を先に確かめ、次に一致を確かめます。サーバーも `PasswordRequest` の `@Size(min = 8)` と 400 `PASSWORD_MISMATCH` の確かめを持ちますが、画面から送る値はブラウザーで止まるため、これらには届きません。
-- 記述にない入力の誤りがあります。`form` は `noValidate` で、`submit()` は「現在のパスワード」を確かめません。「現在のパスワード」が空のとき、または新しいパスワードが空白だけのときは、サーバーの `@NotBlank` が 400 `INVALID_INPUT` を返し、「入力内容・文字数・数値の範囲を確認してください。」と出ます。
-- 8: 「現在のパスワードが正しいか確認する」は、Cognito の `InitiateAuth`（`USER_PASSWORD_AUTH`）でログインし直して確かめます。記述にない応答として、試行が多すぎるとき 429 `AUTH_RATE_LIMITED`「試行回数が多すぎます。時間をおいて再試行してください。」、追加の確認が要るとき 409 `AUTH_CHALLENGE_REQUIRED`、Cognito に届かないとき 503 `AUTH_UNAVAILABLE` があります。得た ID トークンの `subject` がログイン中の会員と違うときは 403 `FORBIDDEN`「本人確認に失敗しました。」です。
-- 9: 記述にない応答として、Cognito の `ChangePassword` が新しいパスワードを受け付けないとき 400 `PASSWORD_REJECTED`「パスワードを変更できません。パスワードの条件または試行間隔を確認してください。」、Cognito に届かないとき 503 `AUTH_UNAVAILABLE`「認証サービスに接続できません。」があります。画面は 8 文字以上だけを確かめるので、Cognito のパスワードの条件に合わない値はここで止まります。
-- 共通代替フロー *b: ID トークンを更新できないとき（更新トークンの失効など）は、最初の `GET /api/auth/csrf` が `SessionValidityFilter` で 401 になり、セッションも無効になります。`auth.js` の `authFetch()` が例外を投げ、`api.js` の `send()` が status 0 の通信エラーに言い換えるため、画面には「サーバーに接続できません。接続を確認して再試行してください。」が出て、`SessionNotice` のログインの案内は出ません。もう一度押すと `PUT` が 401 になり、*b の案内が出ます。サーバーのセッションそのものが無いとき（EC の再起動など）は、1 回目から `PUT` が 401 になり、*b の案内が出ます。
-- コードにあって記述にない処理として、画面を開いたときに `AccountPage` の `useResource('/auth/me')` が `GET /api/auth/me` を送ります。「パスワード変更」の画面はこの結果を使いません。
+- 記述にない入力の誤りがあります。`form` は `noValidate` で、`submit()` は「現在のパスワード」を確かめません。「現在のパスワード」が空のとき、または新しいパスワードが空白だけのときは、サーバーの `@NotBlank` が 400 `INVALID_INPUT`「入力内容・文字数・数値の範囲を確認してください。」を返します。
+- 8: 「現在のパスワードが正しいか確認する」は、Cognito の `InitiateAuth`（`USER_PASSWORD_AUTH`）でログインし直して確かめます。記述にない応答として、試行が多すぎるとき 429 `AUTH_RATE_LIMITED`、追加の確認が要るとき 409 `AUTH_CHALLENGE_REQUIRED` があります。得た ID トークンの `subject` がログイン中の会員と違うときは 403 `FORBIDDEN`「本人確認に失敗しました。」です。
+- 9: Cognito の `ChangePassword` が新しいパスワードを受け付けないときは 400 `PASSWORD_REJECTED`「パスワードを変更できません。パスワードの条件または試行間隔を確認してください。」です。記述にない枝です。画面は 8 文字以上だけを確かめるので、Cognito のパスワードの条件に合わない値はここで止まります。
+- 9: 「ログアウト状態にする」は、EC API が変更を送ったブラウザーのセッションを `invalidate()` することです。Cognito の `GlobalSignOut` などは呼びません。
+- 共通代替フロー \*a: Cognito に届かないときの文は、呼ぶ所で違います。ID トークンの更新と現在のパスワードの確認では「認証を確認できません。時間をおいて再試行してください。」、パスワードの変更（`ChangePassword`）では「認証サービスに接続できません。」です。`ChangePassword` が読み取りの時間切れになったときは、Cognito でパスワードが変わったかは分かりません。
+- 共通代替フロー \*b: ID トークンの期限が切れていて、更新もできないとき（refresh トークンの失効など）は、`PUT` より先の `GET /api/auth/csrf` が `SessionValidityFilter` で 401 になり、セッションも無効になります。`auth.js` の `authFetch()` が例外を投げ、`api.js` の `send()` が status 0 の通信の失敗に言い換えるので、画面には \*a の「サーバーに接続できません。…」が出て、`SessionNotice` のお知らせは出ません。もう一度押すと、`GET /api/auth/csrf` は新しいセッションで通り、`PUT` が 401 になって \*b のお知らせが出ます。図の \*b はこの 2 回目と、サーバーのセッションそのものが無いときです。
+- 共通代替フロー \*b: 期限切れのときは、`PasswordForm` の入力欄の上と、ヘッダーの `SessionNotice` の 2 か所に「ログインの有効期限が切れました。もう一度ログインしてください。」が出ます。「ログインする」で `/account/login` へ移るので、入力は残りません。
+- コードにあって記述にない処理として、画面を開いたときに `AccountPage` の `useResource('/auth/me')` が `GET /api/auth/me` を送ります。「パスワード変更」の画面はこの結果を使わず、`ResourceStatus` も出さないので、この通信が失敗しても画面には何も出ません。
+- 利用停止・除名された会員が押したときは、`GET /api/auth/csrf` が `SessionValidityFilter` で 403 になり、画面には「サーバーに接続できません。…」が出ます。事前条件がログイン状態なので、図には書いていません。
 
 ## 確かめられなかったこと
 
-- Cognito が `ChangePassword` を拒む条件（パスワードの長さ・文字の種類の決まり、試行の間隔）と、`ChallengeName` を返す条件は、User Pool の設定で決まります。EC の `infra/cognito/kusakari-ec-terraform/main.tf` のパスワードの条件は 8 文字以上で文字の種類を問いませんが、実際の User Pool は kusakari-terraform で管理しており、その設定は確かめていません。
-- パスワードを変えたあと、ほかのブラウザーで続いている EC のセッションと、その更新トークンを Cognito がどう扱うかは、EC のコードでは確かめられません。EC のコードが無効にするのは、変更を送ったブラウザーのセッションだけです。
+- Cognito が `ChangePassword` を拒む条件（パスワードの長さ・文字の種類の決まり、試行の間隔）と、`ChallengeName` を返す条件は、User Pool の設定で決まります。実際の User Pool は kusakari-terraform で管理しており、その設定は確かめていません。
+- パスワードを変えたあと、ほかのブラウザーで続いている EC のセッションと、その refresh トークンを Cognito がどう扱うかは、EC のコードでは確かめられません。EC のコードが無効にするのは、変更を送ったブラウザーのセッションだけです。
+- MySQL にまったく接続できないときは、`PasswordLoginController` より先に `SessionValidityFilter` の `members.current()` が DB を読みます。そこでの例外は `@RestControllerAdvice` の外で起きるため、`ApiErrors.database()` の 503 にならない可能性があります（00 の「確かめられなかったこと」と同じ）。図の MySQL の枝は、`ApiErrors.database()` を通ったときの形です。
+- GitHub と Obsidian での図の見た目は確かめていません。
 
 ## 参照したコード
 
-- [frontend/src/workspace/Workspace.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/Workspace.jsx): `Workspace`（未ログインのときの `AuthPanel`、`accountActions` で `AccountPage` を選ぶところ）、`accountSettings`
-- [frontend/src/workspace/AccountPage.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/AccountPage.jsx): `accountActions`、`AccountPage`、`useResource('/auth/me')`
-- [frontend/src/workspace/AccountSecurity.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/AccountSecurity.jsx): `PasswordForm`、`submit()`、`messageOf()`
-- [frontend/src/workspace/useResource.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/useResource.js): `useResource()`、`reload()`、`write()`
-- [frontend/src/api.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/api.js): `request()`、`send()`、`readResponse()`、`networkErrorMessage`、`sessionExpiredEvent`
-- [frontend/src/auth.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/auth.js): `authFetch()`、`readSession()`
-- [frontend/src/useAuth.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/useAuth.js): `useAuth()`
-- [frontend/src/App.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/App.jsx): `/account/login` で `LoginPage` を返す条件
-- [frontend/src/components/LoginPage.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/components/LoginPage.jsx): `LoginPage`（`flashNotice` の表示）
-- [frontend/src/components/AuthPanel.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/components/AuthPanel.jsx): `AuthPanel`
-- [frontend/src/components/SessionNotice.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/components/SessionNotice.jsx): `flashNotice`、`flashMessages`、`SessionNotice`
-- [backend/src/main/java/jp/kusakari/ec/auth/PasswordLoginController.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/PasswordLoginController.java): `changePassword()`、`PasswordRequest`
-- [backend/src/main/java/jp/kusakari/ec/auth/CognitoPasswordLogin.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/CognitoPasswordLogin.java): `changePassword()`、`authenticateTokens()`、`initiateAuth()`、`toUser()`
-- [backend/src/main/java/jp/kusakari/ec/auth/AuthController.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/AuthController.java): `me()`、`csrf()`
-- [backend/src/main/java/jp/kusakari/ec/auth/AuthService.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/AuthService.java): `current()`、`session()`
-- [backend/src/main/java/jp/kusakari/ec/auth/SessionValidityFilter.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/SessionValidityFilter.java): `doFilterInternal()`、`renewIdToken()`
-- [backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java): `business()`、`invalid()`
-- [infra/cognito/kusakari-ec-terraform/main.tf](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/infra/cognito/kusakari-ec-terraform/main.tf): `password_policy`
-- [docs/decisions/2026-10-28-buyer-account-use-cases.md](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/docs/decisions/2026-10-28-buyer-account-use-cases.md): EC-B19 の決定（`confirmPassword`、400 `CURRENT_PASSWORD_INVALID`）
+- [frontend/src/workspace/Workspace.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/Workspace.jsx): `Workspace`（未ログインのときの `AuthPanel`、`accountSettings`、`accountActions` で `AccountPage` を選ぶところ）
+- [frontend/src/workspace/WorkspaceSidebar.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/WorkspaceSidebar.jsx): `WorkspaceSidebar`、`MenuLink`
+- [frontend/src/workspace/Common.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/Common.jsx): `PageLink`
+- [frontend/src/workspace/navigation.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/navigation.js): `navigate`、`usePath`
+- [frontend/src/workspace/AccountPage.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/AccountPage.jsx): `accountActions`、`AccountPage`（`useResource('/auth/me')`）
+- [frontend/src/workspace/AccountSecurity.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/AccountSecurity.jsx): `PasswordForm`、`submit`、`messageOf`
+- [frontend/src/workspace/useResource.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/useResource.js): `useResource`、`reload`、`write`
+- [frontend/src/api.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/api.js): `request`、`send`、`readResponse`、`ApiError`、`networkErrorMessage`、`sessionExpiredMessage`、`sessionExpiredEvent`
+- [frontend/src/auth.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/auth.js): `authFetch`（`GET /api/auth/csrf`）、`readSession`、`wasSignedIn`、`login`
+- [frontend/src/useAuth.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/useAuth.js): `useAuth`
+- [frontend/src/App.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/App.jsx): `/account/login` で `LoginPage` を返すところ
+- [frontend/src/components/LoginPage.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/components/LoginPage.jsx): `LoginPage`（`flashNotice` の表示）
+- [frontend/src/components/AuthPanel.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/components/AuthPanel.jsx): `AuthPanel`
+- [frontend/src/components/SessionNotice.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/components/SessionNotice.jsx): `SessionNotice`、`flashMessages`、`flashNotice`
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthController.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthController.java): `me`、`csrf`
+- [backend/src/main/java/jp/kusakari/ec/auth/PasswordLoginController.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/PasswordLoginController.java): `changePassword`、`PasswordRequest`
+- [backend/src/main/java/jp/kusakari/ec/auth/CognitoPasswordLogin.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/CognitoPasswordLogin.java): `changePassword`、`authenticateTokens`、`initiateAuth`、`toUser`、`refresh`
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthService.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthService.java): `current`、`session`
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthMemberRepository.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthMemberRepository.java): `findByIssuerAndSubject`
+- [backend/src/main/java/jp/kusakari/ec/auth/SessionValidityFilter.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/SessionValidityFilter.java): `doFilterInternal`、`renewIdToken`
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthConfiguration.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthConfiguration.java): `authorizeHttpRequests`（`/api/auth/csrf` は誰でも）、`authenticationEntryPoint`（401 `LOGIN_REQUIRED`）
+- [backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java): `business`、`invalid`、`database`

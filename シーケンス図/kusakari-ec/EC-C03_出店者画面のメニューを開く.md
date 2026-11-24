@@ -1,291 +1,267 @@
 # EC-C03 出店者画面のメニューを開く
 
 - ユースケース記述: [EC-C03_出店者画面のメニューを開く](<../../アーカイブ/ユースケース/kusakari-ec/EC-C03_出店者画面のメニューを開く.md>)
-- 対象のコード: kusakari-ec の main（19a2be3、2026-11-20 時点）
+- 共通代替フロー: [00_全ユースケース共通の代替フロー](<00_全ユースケース共通の代替フロー.md>)
+- 対象のコード: kusakari-ec の main（6bad7e3、2026-11-24 時点）
 
-出店者が扱える店舗の一覧（`GET /api/seller/stores`）は、「出店者」をクリックする前、EC の画面を開いたときに `useShop` が読み込みます。「出店者」をクリックしても画面は読み込み直さず、`navigation.js` の `currentPath()` が `/seller` を `/seller/products` に置き換えるので、最初に「商品管理」画面が出ます。代替フロー 3a〜3c は、読み込み済みの店舗の一覧と、店舗ごとのロール（`memberRole`）で画面が決めます。詳細図は、EC の画面を開いたときの読み込み（詳細図 1）と、メニューと画面の表示（詳細図 2）に分けました。`GET /api/auth/me` のサーバーの処理は [EC-C01 の詳細図 1](<EC-C01_アカウントのメニューを開く.md>) と同じなので、この図では省略します。
+## シーケンス図
 
-## 概要図
-
-```mermaid
-sequenceDiagram
-    actor User as 出店者
-    participant Page as 共通ヘッダーと<br/>出店者画面 React
-    participant Api as EC API<br/>Spring Boot
-    participant Db as MySQL
-
-    Note over User,Db: EC の画面を開いたとき（「出店者」のクリックより前）
-    Page->>Api: GET /api/auth/me
-    Api->>Db: 会員と所属を読む
-    Db-->>Api: 行
-    Api-->>Page: 200 ログイン状態（accountType、organizationRole）
-    opt オーナー、担当者、運営者
-        Page->>Api: GET /api/seller/stores
-        alt 取得できた
-            Api->>Db: 会員を読み、店舗側のアカウントか運営者かを確かめる
-            Db-->>Api: 行
-            alt 運営者
-                Api->>Db: 全店舗を読む
-                Db-->>Api: 行
-            else オーナー、担当者
-                Api->>Db: 組織か所属の店舗と、店舗ごとのロールを読む
-                Db-->>Api: 行
-            end
-            Api-->>Page: 200 店舗の一覧（店舗ごとの memberRole）
-        else 取得できない
-            Api-->>Page: エラー、通信の失敗
-            Page->>Page: 店舗の一覧を空にする（エラーは出さない）
-        end
-    end
-    Page-->>User: 共通ヘッダーに「出店者」
-
-    Note over User,Db: 基本フロー 1 「出店者」をクリックする
-    User->>Page: 共通ヘッダーの「出店者」をクリック
-    Page->>Page: URL を /seller に変え、<br/>/seller/products に置き換える（読み込み直さない）
-
-    Note over User,Db: 基本フロー 2 メニューと「商品管理」を出す
-    Page->>Api: GET /api/auth/me
-    Api-->>Page: 200 ログイン状態
-    Note right of Page: 共通代替フロー *b を適用<br/>（未ログインならログインのフォームを出す）
-    alt 出店者・運営者のアカウントでない（URL を直接開いた）
-        Page-->>User: 「この画面を利用する権限がありません。」
-    else 店舗に所属していない担当者
-        Page-->>User: メニューは「出店者通知」だけ。「どの店舗にも所属していないため、<br/>この画面は使えません。自分あての通知だけを見られます。」
-    else 出店者、運営者
-        Page-->>User: 出店者メニュー（商品管理、店舗受け取り、注文実績、<br/>店舗一覧、店舗プロフィール、出店者通知）。<br/>オーナー、ORG_ADMIN、いずれかの店舗の MANAGER には<br/>アカウント、招待キー、オーナーと ORG_ADMIN には履歴
-        alt 3c 選んだ店舗で担当のロールがない（ORG_ADMIN）
-            Page-->>User: 「(店舗名)では担当のロールがないため、<br/>人事（アカウント・招待キー）の画面だけを使えます。」
-        else ロールがある、または店舗がない
-            alt 3b 管理できる店舗がない
-                Page-->>User: 「商品管理」と「管理できる店舗がありません。」
-            else 店舗がある
-                Note right of Page: 商品の一覧の取得（GET /api/seller/products）は<br/>EC-S03 など。図では省略
-                Page-->>User: 「管理する店舗」の選択欄と「商品管理」画面
-            end
-        end
-    end
-
-    Note over User,Db: 基本フロー 3 サイドバーのメニューを選ぶ
-    User->>Page: サイドバーのメニューをクリック
-    Page->>Page: URL を変えて画面を切り替える（読み込み直さない）
-    alt 3c ロールのない店舗で、商品管理・商品登録・店舗受け取り・店舗プロフィール
-        Page-->>User: 「(店舗名)では担当のロールがないため、…」
-        Note right of User: 3c-2 ユースケースを終了する
-    else 3b 店舗受け取り・店舗プロフィール・招待キー・履歴で、店舗がない
-        Page-->>User: 「管理できる店舗がまだありません。」と「店舗一覧を開く」
-        Note right of User: 3b-2 ユースケースを終了する
-    else 開ける
-        opt 3a-1 店舗ごとの画面で、店舗が 2 つ以上
-            Page-->>User: 画面の上に「管理する店舗」の選択欄
-        end
-        Page-->>User: 対象の画面（内容は呼び出し元のユースケース）
-    end
-    opt 3a-2 管理する店舗を選ぶ
-        User->>Page: 「管理する店舗」で店舗を選ぶ
-        Page->>Page: 選んだ店舗をブラウザーに保存する（通信なし）
-        Page-->>User: 3a-3 選んだ店舗の内容で画面を描き直す<br/>（内容の取得は呼び出し元のユースケース）
-    end
-    opt サイドバーを折りたたむ
-        User->>Page: 「メニューを閉じる」をクリック
-        Page-->>User: アイコンだけのサイドバー（通信なし）
-    end
-```
-
-## 詳細図 1 EC の画面を開いたときの読み込み
+参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
+出店者が扱える店舗の一覧（`GET /api/seller/stores`）は、「出店者」をクリックする前、EC の画面を開いたときに `useShop` が読み込みます。「出店者」をクリックしても画面は読み込み直さず、`Workspace` がログイン状態だけを `GET /api/auth/me` で読み直します。代替フロー 3a〜3c は、読み込み済みの店舗の一覧と、店舗ごとの立場（`memberRole`）で画面が決めます。共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
 
 ```mermaid
 sequenceDiagram
+    autonumber
     actor User as 出店者
     box rgba(47,111,219,0.10) ブラウザー React
-        participant App as App.jsx
-        participant Head as KusakariHeader.jsx
-        participant Shop as useShop.js
-        participant UA as useAuth.js
-        participant AuthJs as auth.js
-        participant Http as api.js
+        participant Head as 共通ヘッダー<br/>KusakariHeader<br/>(KusakariHeader.jsx)
+        participant App as EC の画面の切り替え<br/>App<br/>(App.jsx)
+        participant Nav as URL の切り替え<br/>navigate・usePath<br/>(navigation.js)
+        participant Shop as 店舗とカートの状態<br/>useShop<br/>(useShop.js)
+        participant Work as 出店者画面の枠<br/>Workspace<br/>(Workspace.jsx)
+        participant Side as サイドバー<br/>WorkspaceSidebar<br/>(WorkspaceSidebar.jsx)
+        participant PM as 商品管理画面<br/>ProductManager<br/>(ProductManager.jsx)
+        participant Sel as 店舗の選択欄<br/>SellerStoreSelect<br/>(SellerStoreSelect.jsx)
+        participant UseAuth as ログイン状態の確認<br/>useAuth<br/>(useAuth.js)
+        participant AuthJs as ログイン状態の読み込み<br/>readSession<br/>(auth.js)
+        participant Http as 通信<br/>request<br/>(api.js)
     end
     box rgba(27,127,92,0.12) EC API Spring Boot
-        participant AuthCtrl as AuthController
-        participant Ctrl as StoreController
-        participant Svc as StoreService
-        participant Auth as AuthService
+        participant AuthCtrl as ログイン状態API<br/>AuthController<br/>(AuthController.java)
+        participant StCtrl as 店舗API<br/>StoreController<br/>(StoreController.java)
+        participant StSvc as 店舗の処理<br/>StoreService<br/>(StoreService.java)
+        participant AuthSvc as ログイン中の会員<br/>AuthService<br/>(AuthService.java)
     end
     participant Db as MySQL
 
-    Note over User,Db: EC の画面を開いたとき（「出店者」のクリックより前）
-    App->>Shop: useShop()
-    App->>UA: useAuth()（共通ヘッダー用）
-    Shop->>UA: useAuth()（店舗の読み込み用）
-    UA->>AuthJs: それぞれの useEffect が readSession()
-    AuthJs->>AuthCtrl: GET /api/auth/me（2 回）
-    Note right of AuthCtrl: サーバーの処理は EC-C01 の詳細図 1 と同じ。<br/>図では省略
-    AuthCtrl-->>AuthJs: 200 SessionView
-    AuthJs-->>UA: session
-    UA-->>Shop: session
-    UA-->>App: session
-    Shop->>Shop: sellerAccount は canSell(session)<br/>（SHOP_OWNER、SHOP_STAFF、ADMIN）
-    opt オーナー、担当者、運営者
-        Shop->>Shop: useEffect が reloadSellerStores()
-        Shop->>Http: request('/seller/stores')
-        Http->>Ctrl: GET /api/seller/stores
-        alt 取得できた
-            Ctrl->>Svc: mine()
-            Note right of Svc: 読み取り専用のトランザクション
-            Svc->>Auth: requireSellerRole() と current()
-            Auth->>Db: SELECT members ほか
-            Db-->>Auth: 行
-            Auth-->>Svc: AuthMember
-            alt 運営者（isAdmin）
-                Svc->>Db: stores.findAllByOrderByIdAsc() が SELECT stores
-                Db-->>Svc: 行
-                Note right of Svc: managedList() は memberRole を付けない
-            else オーナー、担当者
-                Svc->>Auth: candidateStoreIdsOf(member)
-                Auth->>Db: SELECT organizations、organization_members、<br/>stores、store_members
-                Db-->>Auth: 行
-                Auth-->>Svc: 店舗 ID のリスト（ORG_ADMIN は組織の全店舗、<br/>ほかの担当者はロールの無い所属も含む）
-                Svc->>Db: stores.findAllById() が SELECT stores
-                Db-->>Svc: 行
-                Svc->>Auth: memberRoleAt(member, store)（店舗ごと）
-                Auth-->>Svc: OWNER、MANAGER、STAFF、NONE か null
-            end
-            Note right of Svc: 運営の警告と未完了の注文の件数も読む。<br/>図では省略
-            Svc-->>Ctrl: Profile のリスト
-            Ctrl-->>Http: 200 店舗の配列（memberRole つき）
-            Http-->>Shop: setOwnStores(stores)
-        else 取得できない（通信の失敗、5xx など）
-            Http--xShop: throw ApiError
-            Shop->>Shop: catch で setOwnStores([])
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 15、46 (URL を直接開いたときも同じ) に適用<br/>*a 通信に失敗した場合: 15、46 に適用
+
+    User->>App: EC の「メイン」画面を開く
+    App->>Shop: 店舗とカートの状態を用意する (useShop)
+    Shop->>UseAuth: ログイン状態を読むよう頼む (useAuth)<br/>App も共通ヘッダー用に同じく呼ぶ
+    UseAuth->>AuthJs: 作られたときに自動で読む (refreshSession → readSession)
+    AuthJs->>AuthCtrl: GET /api/auth/me (App 用と useShop 用の 2 回)
+    AuthCtrl->>AuthSvc: ログイン状態を作るよう頼む (me → session)
+    AuthSvc->>Db: ログイン中の会員と所属を読む<br/>(current、organizationIdOf、organizationRoleOf、storeIdsOf)
+    Db-->>AuthSvc: 会員と所属の行
+    AuthSvc-->>AuthCtrl: ログイン状態
+    AuthCtrl-->>AuthJs: 200 ログイン状態 (accountType、organizationRole)
+    AuthJs-->>UseAuth: ログイン状態
+    UseAuth-->>Shop: ログイン状態
+    Shop->>Shop: 店舗側のアカウントか運営者かを決める<br/>(canSell。SHOP_OWNER、SHOP_STAFF、ADMIN)
+    Shop->>Http: 扱える店舗の一覧を取りに行く<br/>(reloadSellerStores → request)
+    Http->>StCtrl: GET /api/seller/stores
+    StCtrl->>StSvc: 扱える店舗の一覧を作るよう頼む (mine)<br/>読み取り専用のトランザクション
+    StSvc->>AuthSvc: 店舗側のアカウントか運営者かを確かめる (requireSellerRole)
+    AuthSvc-->>StSvc: 確かめた
+    StSvc->>AuthSvc: ログイン中の会員を読む (current)
+    AuthSvc-->>StSvc: ログイン中の会員
+    alt 運営者 (isAdmin)
+        StSvc->>Db: 全店舗を読む (findAllByOrderByIdAsc)
+        Db-->>StSvc: 店舗の行
+        StSvc->>StSvc: 未完了の注文の件数と運営の警告を付ける (managedList)<br/>店舗ごとの立場は付けない
+    else オーナー、担当者
+        StSvc->>AuthSvc: 店舗の候補を調べる (candidateStoreIdsOf)<br/>オーナーと ORG_ADMIN は組織の全店舗、ほかの担当者は所属の店舗
+        AuthSvc->>Db: SELECT organizations、organization_members、<br/>stores、store_members
+        Db-->>AuthSvc: 行
+        AuthSvc-->>StSvc: 店舗 ID のリスト
+        StSvc->>Db: 店舗を読む (findAllById)
+        Db-->>StSvc: 店舗の行
+        loop 店舗ごと
+            StSvc->>AuthSvc: その店舗での立場を調べる (memberRoleAt)<br/>担当者は store_members を読む
+            AuthSvc-->>StSvc: OWNER、MANAGER、STAFF、NONE (所属でロールなし)、<br/>担当でなければ null
         end
+        StSvc->>StSvc: 未完了の注文の件数と運営の警告、立場を付ける<br/>(withOpenOrders、withWarning、withRole)
     end
-    Shop-->>App: sellerStores、sellerStoreId<br/>（localStorage の kusakari.sellerStoreId の店舗、無ければ先頭）
-    App->>Head: showSeller は canSell(session)
+    StSvc-->>StCtrl: 店舗のリスト
+    StCtrl-->>Http: 200 店舗の配列 (memberRole つき)
+    Http-->>Shop: 店舗の配列 (setOwnStores)
+    Shop-->>App: 扱える店舗と選んでいる店舗<br/>(localStorage の kusakari.sellerStoreId の店舗、なければ先頭)
+    App->>Head: 「出店者」を出すよう渡す (showSeller は canSell)
     Head-->>User: 共通ヘッダーに「出店者」
-```
 
-## 詳細図 2 基本フロー 1〜3 メニューと画面を出す
-
-```mermaid
-sequenceDiagram
-    actor User as 出店者
-    box rgba(47,111,219,0.10) ブラウザー React
-        participant Head as KusakariHeader.jsx
-        participant App as App.jsx
-        participant Nav as navigation.js
-        participant Work as Workspace.jsx
-        participant Side as WorkspaceSidebar.jsx
-        participant Shop as useShop.js
-        participant PM as ProductManager.jsx
-        participant Sel as SellerStoreSelect.jsx
-        participant UA as useAuth.js
-        participant AuthJs as auth.js
-    end
-    box rgba(27,127,92,0.12) EC API Spring Boot
-        participant AuthCtrl as AuthController
-    end
-
-    Note over User,AuthCtrl: 基本フロー 1 「出店者」をクリックする
-    User->>Head: 「出店者」をクリック
-    Head->>App: follow() が onNavigate(href)
-    App->>Nav: navigateFromHeader() が navigate('/seller')
-    Nav->>Nav: history.pushState() と popstate。<br/>currentPath() が /seller を /seller/products に置き換える
-    Nav-->>App: usePath() が '/seller/products' を返す
-    App->>Work: path が / と /cart 以外なので Workspace を描く
-
-    Note over User,AuthCtrl: 基本フロー 2 メニューと「商品管理」を出す
-    Work->>UA: useAuth()
-    UA->>AuthJs: useEffect が readSession()
+    User->>Head: 1 共通ヘッダーの「出店者」をクリック
+    Head->>App: クリックした URL を渡す (follow → onNavigate)
+    App->>Nav: URL を /seller に変える (navigateFromHeader → navigate)
+    Nav-->>App: /seller を /seller/products に置き換えた path<br/>(usePath → currentPath。履歴は増やさない)
+    App->>Work: path が / と /cart 以外なので Workspace を表示<br/>(「メイン」画面から移ったので新しく作る)
+    Work->>UseAuth: ログイン状態を読むよう頼む (useAuth)
+    UseAuth->>AuthJs: 作られたときに自動で読む (refreshSession → readSession)
     AuthJs->>AuthCtrl: GET /api/auth/me
-    AuthCtrl-->>AuthJs: 200 SessionView
-    AuthJs-->>UA: session
-    UA-->>Work: session（accountType、organizationRole）
-    Note right of Work: 共通代替フロー *b を適用<br/>（未ログインなら AuthPanel のログインのフォーム）
-    Work->>Shop: sellerStores、sellerStoreId、sellerStoresLoading
-    Shop-->>Work: 詳細図 1 で読んだ店舗と、選んでいる店舗
-    alt 出店者・運営者のアカウントでない（canSell が false）
-        Work-->>User: 「この画面を利用する権限がありません。」
-    else 店舗に所属していない担当者（unassigned）
-        Work->>Side: groups は「出店者通知」（noticeItem）だけ
-        Side-->>User: 「出店者メニュー」と「出店者通知」
-        Work-->>User: 「どの店舗にも所属していないため、この画面は使えません。<br/>自分あての通知だけを見られます。」
+    AuthCtrl-->>AuthJs: 200 ログイン状態 (中身は 6〜9 と同じ)
+    AuthJs-->>UseAuth: ログイン状態
+    UseAuth-->>Work: ログイン状態 (accountType、organizationRole)
+    Work->>Shop: 読み込み済みの店舗と選んでいる店舗を使う<br/>(sellerStores、sellerStoreId、sellerStoresLoading)
+    Shop-->>Work: 14〜36 で読んだ店舗と、選んでいる店舗
+    alt 店舗に所属していない担当者 (unassigned。ORG_ADMIN でない SHOP_STAFF で店舗が 0)
+        Work->>Side: メニューは「出店者通知」だけ (noticeItem)
+        Side-->>User: 「出店者メニュー」と「メニューを閉じる」、「商品一覧へ戻る」、「出店者通知」
+        Work-->>User: 見出し「所属している店舗がありません」、「どの店舗にも所属していないため、<br/>この画面は使えません。自分あての通知だけを見られます。」、「通知の画面へ戻る」
     else 出店者、運営者
-        Work->>Work: personnel はオーナー、ORG_ADMIN、<br/>いずれかの店舗の MANAGER か
-        Work->>Side: groups を「出店者メニュー」にする。sellerMenu、<br/>personnel なら personnelMenu、オーナーと ORG_ADMIN なら historyItem
-        Side-->>User: 「出店者メニュー」と折りたたみボタン、<br/>「商品一覧へ戻る」とメニュー
-        alt 3c 選んだ店舗で担当のロールがない（personnelOnly）
-            Work-->>User: 「(店舗名)では担当のロールがないため、<br/>人事（アカウント・招待キー）の画面だけを使えます。」
+        Work->>Work: 人事のメニューを出すかを決める (personnel)<br/>オーナー、ORG_ADMIN、いずれかの店舗の MANAGER
+        Work->>Side: 出店者メニューを渡す (sellerMenu、personnel なら personnelMenu、<br/>オーナーと ORG_ADMIN なら historyItem)
+        Side-->>User: 「出店者メニュー」と「メニューを閉じる」、「商品一覧へ戻る」、<br/>「商品管理」「店舗受け取り」「注文実績」「店舗一覧」「店舗プロフィール」「出店者通知」<br/>(personnel なら「アカウント」「招待キー」、オーナーと ORG_ADMIN なら「履歴」も)
+        alt 3c 選んだ店舗で担当のロールがない (personnelOnly。ORG_ADMIN)
+            Work-->>User: 3c-1 見出し「商品管理」と「(店舗名)では担当のロールがないため、<br/>人事（アカウント・招待キー）の画面だけを使えます。」<br/>(店舗が 2 つ以上なら上に「管理する店舗」の選択欄)
         else ロールがある、または店舗がない
-            Work->>PM: ProductManager（embedded）
-            PM->>Sel: SellerStoreSelect（店舗が 1 つでも出す）
-            alt 3b 管理できる店舗がない（sellerStoreId が 0）
-                Sel-->>User: 「管理できる店舗がありません。」
+            Work->>PM: 商品管理を表示 (ProductManager、embedded)
+            PM->>Sel: 店舗の選択欄を出す (SellerStoreSelect。店舗が 1 つでも出す)
+            alt 3b 管理できる店舗がない (sellerStoreId が 0)
+                Sel-->>User: 見出し「商品管理」と 3b-1「管理できる店舗がありません。」
             else 店舗がある
-                Sel-->>User: 「管理する店舗」の選択欄
-                Note right of PM: useSellerCatalog() が GET /api/seller/products?storeId=… を<br/>送る。商品管理の中身は EC-S03 など。図では省略
-                PM-->>User: 「商品管理」画面
+                Sel-->>User: 見出し「商品管理」と「管理する店舗」の選択欄
+                PM-->>User: 「商品管理」画面 (商品の取得と中身は EC-S03 など)
             end
         end
     end
 
-    Note over User,AuthCtrl: 基本フロー 3 サイドバーのメニューを選ぶ
-    User->>Side: サイドバーのメニューをクリック
-    Side->>Nav: MenuLink の PageLink（Common.jsx）の follow() が navigate(href)
-    Nav-->>App: usePath() が新しい path を返す
-    App->>Work: Workspace を描き直す
-    alt 3c ロールのない店舗で、rolePaths（商品管理、商品登録、<br/>店舗受け取り、店舗プロフィール）
-        Work-->>User: 「(店舗名)では担当のロールがないため、…」
-        Note right of User: 3c-2 ユースケースを終了する
-    else 3b storePaths（店舗受け取り、店舗プロフィール、招待キー、履歴）で、店舗がない
-        Work-->>User: 「管理できる店舗がまだありません。」と「店舗一覧を開く」
-        Note right of User: 3b-2 ユースケースを終了する
+    User->>Side: 3 サイドバーの対象のメニューをクリック
+    Side->>Work: URL を対象の path に変え、Workspace を描き直す<br/>(MenuLink の PageLink → navigate)。ログイン状態と店舗は読み直さない
+    alt 3c ロールのない店舗で、商品管理・商品登録・店舗受け取り・店舗プロフィール (rolePaths)
+        Work-->>User: 3c-1「(店舗名)では担当のロールがないため、<br/>人事（アカウント・招待キー）の画面だけを使えます。」(3c-2 ユースケースを終了する)
+    else 3b 店舗受け取り・店舗プロフィール・招待キー・履歴で、店舗がない (storePaths)
+        Work-->>User: 3b-1「管理できる店舗がまだありません。」と<br/>「店舗一覧を開く」(3b-2 ユースケースを終了する)
     else 開ける
-        opt 3a-1 storePaths の画面で、店舗が 2 つ以上
-            Work->>Sel: 画面の上に SellerStoreSelect を描く
+        opt 3a-1 店舗ごとの画面 (storePaths) で、店舗が 2 つ以上
+            Work->>Sel: 画面の上に選択欄を出す (SellerStoreSelect)
             Sel-->>User: 「管理する店舗」の選択欄
         end
-        Work-->>User: path に合う画面（内容は呼び出し元のユースケース）
+        Work-->>User: そのメニューの見出しと画面 (内容は呼び出し元のユースケース)
     end
-    opt 3a-2 管理する店舗を選ぶ
-        User->>Sel: 「管理する店舗」で店舗を選ぶ
-        Sel->>Shop: setSellerStoreId(id)
-        Shop->>Shop: localStorage に kusakari.sellerStoreId を保存する
-        Shop-->>Work: sellerStoreId が変わる
-        Work-->>User: 3a-3 選んだ店舗の内容で画面を描き直す<br/>（内容の取得は呼び出し元のユースケース）
+    opt 3a 管理する店舗を選ぶ
+        User->>Sel: 3a-2「管理する店舗」で店舗を選ぶ
+        Sel->>Shop: 選んだ店舗を覚えるよう頼む (setSellerStoreId)
+        Shop->>Shop: localStorage の kusakari.sellerStoreId に保存する
+        Shop-->>Work: 選んでいる店舗が変わる (sellerStoreId)
+        Work-->>User: 3a-3 選んだ店舗の内容で画面を描き直す<br/>(内容の取得は呼び出し元のユースケース)
     end
     opt サイドバーを折りたたむ
         User->>Side: 「メニューを閉じる」をクリック
-        Side->>Work: onToggle()
-        Work->>Work: setSidebarClosed(true)
-        Work-->>User: アイコンだけのサイドバー
+        Side->>Work: 折りたたむよう伝える (onToggle)
+        Work-->>User: アイコンだけのサイドバー (setSidebarClosed)。<br/>ボタンは「メニューを開く」になる
+    end
+```
+
+## 共通代替フローを直接書いた図
+
+上の図の `GET /api/seller/stores`（上の図の 15）に、この画面で起こる共通代替フロー（\*a、\*b）を書き込んだ図です。「出店者」をクリックした後の `GET /api/auth/me`（上の図の 46）の \*a・\*b は、[EC-C02](<EC-C02_管理者画面のメニューを開く.md>) の「共通代替フローを直接書いた図」と同じなので省いています（`/operator/members` を `/seller/products` に読み替え）。サイドバーのメニューのクリック、店舗の選択、折りたたみは通信しないので、共通代替フローは起こりません。
+
+`GET /api/seller/stores` が失敗しても、画面は通信のエラーを出さず、店舗の一覧を空として扱います。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as 出店者
+    box rgba(47,111,219,0.10) ブラウザー React
+        participant Head as 共通ヘッダー<br/>KusakariHeader<br/>(KusakariHeader.jsx)
+        participant App as EC の画面の切り替え<br/>App<br/>(App.jsx)
+        participant Shop as 店舗とカートの状態<br/>useShop<br/>(useShop.js)
+        participant Work as 出店者画面の枠<br/>Workspace<br/>(Workspace.jsx)
+        participant Http as 通信<br/>request<br/>(api.js)
+        participant AuthJs as 通信の準備<br/>authFetch・login<br/>(auth.js)
+        participant Notice as 期限切れのお知らせ<br/>SessionNotice<br/>(SessionNotice.jsx)
+    end
+    box rgba(27,127,92,0.12) EC API Spring Boot
+        participant Filter as セッションの確認<br/>SessionValidityFilter<br/>(SessionValidityFilter.java)
+        participant StCtrl as 店舗API<br/>StoreController<br/>(StoreController.java)
+        participant StSvc as 店舗の処理<br/>StoreService<br/>(StoreService.java)
+    end
+    participant Db as MySQL
+    box rgba(180,120,20,0.12) 外部サービス
+        participant Cog as Amazon Cognito
+    end
+
+    User->>App: EC の「メイン」画面を開く
+    App->>Shop: ログイン状態を読み、店舗側のアカウントか運営者かを決める<br/>(useShop。上の図の 2〜13)
+    Shop->>Http: 扱える店舗の一覧を取りに行く (reloadSellerStores → request)
+    alt *a 届かない、または応答が JSON でない
+        Http-xFilter: GET /api/seller/stores
+        Http->>Http: 通信の失敗にまとめる<br/>(send か readResponse → ApiError(networkErrorMessage, 0))
+        Http--xShop: エラーを投げる
+        Shop->>Shop: 店舗の一覧を空にする (catch → setOwnStores([]))<br/>*a-1 のエラーの文は出さない
+    else *b ログインの期限切れ (サーバーのセッションがない、refresh トークンが失効)
+        Http->>Filter: GET /api/seller/stores
+        Filter-->>Http: 401 LOGIN_REQUIRED<br/>(セッションが無いときは AuthConfiguration.java が返す)
+        Http->>Notice: 期限切れを知らせる<br/>(wasSignedIn が真なので kusakari-session-expired)
+        Http--xShop: エラーを投げる (ApiError(sessionExpiredMessage, 401))
+        Shop->>Shop: 店舗の一覧を空にする (catch → setOwnStores([]))
+        Notice-->>User: *b-1「ログインの有効期限が切れました。もう一度ログインしてください。」<br/>「ログインすると、この画面に戻ります。」「ログインする」「閉じる」
+        User->>Notice: 「ログインする」をクリック
+        Notice->>AuthJs: ログイン画面へ移る (login)
+        AuthJs-->>User: /account/login?returnTo=今の URL のログイン画面<br/>(*b-2 で元の画面を読み込み直し、店舗も読み直す)
+    else *a ID トークンの更新で Cognito に届かない
+        Http->>Filter: GET /api/seller/stores
+        Filter-xCog: ID トークンを更新する<br/>(InitiateAuth REFRESH_TOKEN_AUTH、CognitoPasswordLogin.java)
+        Filter-->>Http: 503 AUTH_UNAVAILABLE (セッションは残す)
+        Http--xShop: エラーを投げる (ApiError 503)
+        Shop->>Shop: 店舗の一覧を空にする (catch → setOwnStores([]))<br/>*a-1 のエラーの文は出さない
+    else 要求が Controller まで届いた
+        Http->>Filter: GET /api/seller/stores
+        Filter->>StCtrl: 要求を通す (chain.doFilter)
+        StCtrl->>StSvc: 扱える店舗の一覧を作るよう頼む (mine)
+        StSvc->>Db: 会員、店舗の候補、店舗、立場を読む (上の図の 17〜32)
+        alt *a MySQL との通信に失敗
+            Db--xStSvc: 失敗 (DataAccessException)
+            StSvc--xStCtrl: 例外
+            StCtrl-->>Http: 503 DATABASE_UNAVAILABLE (ApiErrors.java の database)
+            Http--xShop: エラーを投げる (ApiError 503)
+            Shop->>Shop: 店舗の一覧を空にする (catch → setOwnStores([]))<br/>*a-1 のエラーの文は出さない
+        else 読めた
+            Db-->>StSvc: 行
+            StSvc-->>StCtrl: 店舗のリスト
+            StCtrl-->>Http: 200 店舗の配列
+            Http-->>Shop: 店舗の配列 (setOwnStores)
+        end
+    end
+    Shop-->>App: 扱える店舗 (空のこともある)
+    App->>Head: 「出店者」を出すよう渡す (showSeller は canSell)
+    Head-->>User: 共通ヘッダーに「出店者」
+    User->>Head: 「出店者」をクリック
+    Head->>App: クリックした URL を渡す (follow → onNavigate)
+    App->>Work: URL を /seller/products に変え、Workspace を表示<br/>(上の図の 41〜51)
+    alt 店舗の一覧が空になった担当者 (ORG_ADMIN を除く)
+        Work-->>User: 「どの店舗にも所属していないため、この画面は使えません。<br/>自分あての通知だけを見られます。」とメニューは「出店者通知」だけ
+    else 店舗の一覧が空になったオーナー、ORG_ADMIN、運営者
+        Work-->>User: 「商品管理」と「管理できる店舗がありません。」(3b と同じ表示)
+    else 店舗を読めた
+        Work-->>User: 「商品管理」画面 (上の図の 52〜63)
     end
 ```
 
 ## ユースケース記述との差
 
-- 基本フロー 2：オーナーと ORG_ADMIN には、「アカウント」「招待キー」のほかに「履歴」（`/seller/member-events`）も表示します。記述にありません。
-- 3a：「商品管理」では、店舗が 1 つでも「管理する店舗」の選択欄を出します（`ProductManager` の `SellerStoreSelect`）。ほかの画面は店舗が 2 つ以上のときだけです。選択欄を出す画面には「履歴」も含みます。
-- 3b：「管理できる店舗がまだありません。」と「店舗一覧を開く」を出すのは、「店舗受け取り」「店舗プロフィール」「招待キー」「履歴」です。「商品管理」は選択欄の位置に「管理できる店舗がありません。」を出します。「注文実績」は `SalesPage` が `GET /api/seller/sales/stores` で読める店舗を決めます。
-- 3b：記述は「担当の店舗がない担当者」にも「管理できる店舗がまだありません。」を出すとしています。コードでは、どの店舗にも所属していない担当者（ORG_ADMIN を除く）は、メニューが「出店者通知」だけになり、「どの店舗にも所属していないため、この画面は使えません。自分あての通知だけを見られます。」を出します。
-- 3c：「注文実績」は、3c の表示より先に `SalesPage` を出す分岐があるので、ロールの無い店舗を選んでも 3c の文言は出ません。3c の文言は「商品登録」（`/seller/products/new`）でも出ます。
-- `GET /api/seller/stores` に失敗すると、画面は店舗の一覧を空として扱い、通信エラーを出しません（`reloadSellerStores` の `catch`）。3b と同じ表示になり、共通代替フロー *a の「通信エラーを表示する」と違います。
+- 関連情報は共通代替フロー \*b だけを挙げていますが、`GET /api/seller/stores` と `GET /api/auth/me` には \*a も起こります。`GET /api/seller/stores` が失敗すると、画面は店舗の一覧を空として扱い、通信のエラーを出しません（`reloadSellerStores` の `catch`）。オーナー・ORG_ADMIN・運営者には 3b と同じ「管理できる店舗がありません。」が、ほかの担当者には「どの店舗にも所属していないため、この画面は使えません。…」が出ます。「再取得」はなく、やり直すにはブラウザーで再読み込みします。
+- 基本フロー 2: オーナーと ORG_ADMIN には、「アカウント」「招待キー」のほかに「履歴」（`/seller/member-events`）も出します。記述にありません。
+- 基本フロー 2: 運営者（ADMIN）も出店者画面を開けます（`canSell`）。運営者には全店舗が出て、店舗ごとの立場を付けないので、人事のメニュー（「アカウント」「招待キー」）は出ません。記述のアクターは出店者だけです。
+- 3a: 「商品管理」では、店舗が 1 つでも「管理する店舗」の選択欄を出します（`ProductManager` の `SellerStoreSelect`）。ほかの画面は店舗が 2 つ以上のときだけです。選択欄を出す画面には「履歴」も含みます。
+- 3b: 「管理できる店舗がまだありません。」と「店舗一覧を開く」を出すのは、「店舗受け取り」「店舗プロフィール」「招待キー」「履歴」です。「商品管理」は選択欄の位置に「管理できる店舗がありません。」を出します。「注文実績」は `SalesPage` が `GET /api/seller/sales/stores` で読める店舗を決めます。
+- 3b: 記述は「担当の店舗がない担当者」にも「管理できる店舗がまだありません。」を出すとしています。コードでは、どの店舗にも所属していない担当者（ORG_ADMIN を除く）は、メニューが「出店者通知」だけになり、「どの店舗にも所属していないため、この画面は使えません。自分あての通知だけを見られます。」を出します。
+- 3c: 「注文実績」は、3c の表示より先に `SalesPage` を出す分岐があるので、ロールのない店舗を選んでも 3c の文は出ません。3c の文は「商品登録」（`/seller/products/new`）でも出ます。3c になるのは立場が null の店舗（ORG_ADMIN の、担当していない店舗）だけで、所属していてロールのない担当者（`NONE`）は 3c になりません。
+- 3a-2: 選んだ店舗は `localStorage` に保存します。保存できないブラウザーでは、再読み込みまでの間だけ覚えます。
 - サイドバーの先頭に「商品一覧へ戻る」があります。記述にありません。
+- 出店者・運営者のアカウントでない人が出店者画面の URL を開いたときの「この画面を利用する権限がありません。」は、画面（`Workspace`）が `canSell` で決めます。事前条件で外したので、図には書いていません。
 
 ## 参照したコード
 
-- [packages/site-header/KusakariHeader.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/packages/site-header/KusakariHeader.jsx): `KusakariHeader`、`follow`（「出店者」は `showSeller` のときだけ）
-- [frontend/src/App.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/App.jsx): `navigateFromHeader`、`showSeller`、`Workspace`
-- [frontend/src/auth.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/auth.js): `canSell`、`readSession`
-- [frontend/src/useAuth.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/useAuth.js): `useAuth`
-- [frontend/src/useShop.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/useShop.js): `reloadSellerStores`、`setSellerStoreId`、`savedStoreChoice`、`sellerStores`、`sellerStoreId`、`sellerStoresLoading`
-- [frontend/src/api.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/api.js): `request`
-- [frontend/src/workspace/navigation.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/navigation.js): `navigate`、`usePath`、`currentPath`（`/seller` の置き換え）
-- [frontend/src/workspace/Workspace.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/Workspace.jsx): `sellerMenu`、`personnelMenu`、`historyItem`、`storePaths`、`rolePaths`、`unassigned`、`personnelOnly`、`personnel`
-- [frontend/src/workspace/WorkspaceSidebar.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/WorkspaceSidebar.jsx): `WorkspaceSidebar`、`MenuLink`
-- [frontend/src/workspace/Common.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/Common.jsx): `PageLink`
-- [frontend/src/components/ProductManager.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/components/ProductManager.jsx): `ProductManager`
-- [frontend/src/components/SellerStoreSelect.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/components/SellerStoreSelect.jsx): `SellerStoreSelect`
-- [frontend/src/workspace/SalesReport.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/SalesReport.jsx): `SalesPage`
-- [backend/src/main/java/jp/kusakari/ec/store/controller/StoreController.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/store/controller/StoreController.java): `mine`
-- [backend/src/main/java/jp/kusakari/ec/store/service/StoreService.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/store/service/StoreService.java): `mine`、`managedList`、`withOpenOrders`、`withRole`
-- [backend/src/main/java/jp/kusakari/ec/auth/AuthService.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/AuthService.java): `requireSellerRole`、`current`、`candidateStoreIdsOf`、`memberRoleAt`
-- [backend/src/main/java/jp/kusakari/ec/auth/AuthController.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/AuthController.java): `me`
+- [packages/site-header/KusakariHeader.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/packages/site-header/KusakariHeader.jsx): `KusakariHeader`、`follow`（「出店者」は `showSeller` のときだけ）
+- [frontend/src/App.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/App.jsx): `navigateFromHeader`、`showSeller`、`Workspace` の表示
+- [frontend/src/auth.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/auth.js): `canSell`、`readSession`、`wasSignedIn`、`login`
+- [frontend/src/useAuth.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/useAuth.js): `useAuth`（`refreshSession`）
+- [frontend/src/useShop.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/useShop.js): `reloadSellerStores`、`setSellerStoreId`、`savedStoreChoice`、`sellerStores`、`sellerStoreId`、`sellerStoresLoading`
+- [frontend/src/api.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/api.js): `request`、`send`、`readResponse`、`networkErrorMessage`、`sessionExpiredMessage`
+- [frontend/src/workspace/navigation.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/navigation.js): `navigate`、`usePath`、`currentPath`（`/seller` の置き換え）
+- [frontend/src/workspace/Workspace.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/Workspace.jsx): `sellerMenu`、`personnelMenu`、`historyItem`、`noticeItem`、`storePaths`、`rolePaths`、`unassigned`、`personnelOnly`、`personnel`、`setSidebarClosed`
+- [frontend/src/workspace/WorkspaceSidebar.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/WorkspaceSidebar.jsx): `WorkspaceSidebar`、`MenuLink`
+- [frontend/src/workspace/Common.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/Common.jsx): `PageLink`
+- [frontend/src/components/ProductManager.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/components/ProductManager.jsx): `ProductManager`、`ManagerFrame`
+- [frontend/src/components/SellerStoreSelect.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/components/SellerStoreSelect.jsx): `SellerStoreSelect`
+- [frontend/src/components/SessionNotice.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/components/SessionNotice.jsx): 期限切れのお知らせ
+- [frontend/src/workspace/SalesReport.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/SalesReport.jsx): `SalesPage`
+- [backend/src/main/java/jp/kusakari/ec/store/controller/StoreController.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/store/controller/StoreController.java): `mine`
+- [backend/src/main/java/jp/kusakari/ec/store/service/StoreService.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/store/service/StoreService.java): `mine`、`managedList`、`withOpenOrders`、`withWarning`、`withRole`
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthService.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthService.java): `session`、`requireSellerRole`、`current`、`candidateStoreIdsOf`、`memberRoleAt`
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthController.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthController.java): `me`
+- [backend/src/main/java/jp/kusakari/ec/auth/SessionValidityFilter.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/SessionValidityFilter.java): `doFilterInternal`（ID トークンの更新、401、503 のときはセッションを残す）
+- [backend/src/main/java/jp/kusakari/ec/auth/CognitoPasswordLogin.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/CognitoPasswordLogin.java): ID トークンの更新、503 `AUTH_UNAVAILABLE`
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthConfiguration.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthConfiguration.java): `authenticationEntryPoint`（401 `LOGIN_REQUIRED`）
+- [backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java): `database`

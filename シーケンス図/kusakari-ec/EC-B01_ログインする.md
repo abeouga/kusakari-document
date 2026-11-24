@@ -1,507 +1,373 @@
 # EC-B01 ログインする
 
 - ユースケース記述: [EC-B01_ログインする](<../../アーカイブ/ユースケース/kusakari-ec/EC-B01_ログインする.md>)
-- 対象のコード: kusakari-ec の main（19a2be3、2026-11-20 時点）
+- 共通代替フロー: [00_全ユースケース共通の代替フロー](<00_全ユースケース共通の代替フロー.md>)
+- 対象のコード: kusakari-ec の main（6bad7e3、2026-11-24 時点）
 
-ログインは EC の画面（`/account/login`）でメールアドレスとパスワードを受け取り、EC API が Amazon Cognito の `InitiateAuth` を呼びます。ブラウザーは Cognito と直接通信しません（代替フロー 7d の認証画面だけは例外です）。ブラウザーに渡すのは `KUSAKARI_SESSION` の Cookie だけで、トークンはサーバーの HTTP セッションに置きます。
+## シーケンス図
 
-## 概要図
-
-### 概要図 1 基本フロー 1〜8
-
-```mermaid
-sequenceDiagram
-    actor User as 利用者
-    participant Page as ログイン画面<br/>React
-    participant Api as EC API<br/>Spring Boot
-    participant Db as MySQL
-    participant Idp as Amazon Cognito
-
-    Note over User,Idp: 基本フロー 1〜2 ログイン画面を開く
-    User->>Page: 共通ヘッダーの「ログイン」をクリック
-    Page->>Page: /account/login?returnTo=元の画面 に切り替える<br/>(ページは読み込み直さない)
-    Page->>Api: GET /api/auth/me
-    alt 確認できた
-        Api->>Api: セッションが無いので未ログインとして返す<br/>(DB は読まない)
-        Api-->>Page: 200 authenticated=false
-        Page-->>User: 「メールアドレス」「パスワード」「ログイン」<br/>「新規登録」などの入口
-    else *a 確認できない
-        Api--xPage: 200 以外の応答、または通信の失敗
-        Page-->>User: 「ログイン状態を確認できません。」など
-    end
-
-    Note over User,Idp: 基本フロー 3〜6 入力して「ログイン」をクリックする
-    User->>Page: メールアドレスとパスワードを入力し<br/>「ログイン」をクリック
-    alt 6a 未入力の欄がある
-        Page-->>User: ブラウザーが未入力の欄に入力を求める<br/>(通信しない)
-    else 入力されている
-        Page->>Api: GET /api/auth/csrf
-        Api-->>Page: 200 CSRF の確認情報
-        Note over User,Idp: 基本フロー 7 メールアドレスとパスワードを照合する
-        Page->>Api: POST /api/auth/login<br/>email、password、returnTo
-        Api->>Idp: InitiateAuth (USER_PASSWORD_AUTH)
-        alt 7a 一致するアカウントがない
-            Idp-->>Api: NotAuthorizedException<br/>または UserNotFoundException
-            Api-->>Page: 401 INVALID_CREDENTIALS
-            Page-->>User: 「メールアドレスまたはパスワードが<br/>正しくありません。」
-        else 7c メールアドレスの確認が済んでいない
-            Idp-->>Api: UserNotConfirmedException
-            Api-->>Page: 409 EMAIL_NOT_CONFIRMED
-            Page-->>User: 確認コードの入力欄 (概要図 2 の 7c へ)
-        else 7d 追加の本人確認やパスワードの変更が必要
-            Idp-->>Api: ChallengeName のある応答<br/>または PasswordResetRequiredException
-            Api-->>Page: 409 AUTH_CHALLENGE_REQUIRED
-            Page-->>User: 「追加の本人確認またはパスワード変更が必要です。<br/>認証画面で手続きを完了してください。」など<br/>(概要図 2 の 7d へ)
-        else 7e 短時間にログインを繰り返し失敗した
-            Idp-->>Api: TooManyRequestsException
-            Api-->>Page: 429 AUTH_RATE_LIMITED
-            Page-->>User: 「試行回数が多すぎます。<br/>時間をおいて再試行してください。」
-        else *a Cognito に接続できない
-            Idp--xApi: 接続できない、または想定外のエラー
-            Api-->>Page: 503 AUTH_UNAVAILABLE
-            Page-->>User: 「認証サービスに接続できません。<br/>時間をおいて再試行してください。」など
-        else 照合できた
-            Idp-->>Api: ID トークン、アクセストークン、更新トークン
-            Api->>Api: ID トークンの署名、issuer、audience を確かめる
-            Api->>Db: 会員を issuer と subject で検索
-            Db-->>Api: 会員の行 または なし
-            alt 会員がいる
-                Api->>Db: メール確認日時が空なら入れる (UPDATE)
-                Db-->>Api: 完了
-            else 初めてのログイン
-                Api->>Db: 購入者 (USER) の会員を追加 (INSERT)
-                Db-->>Api: 完了
-            end
-            Api->>Db: 会員を読み、利用できるかを確かめる
-            Db-->>Api: 会員の行
-            alt 7b 利用停止中または退会済み
-                Api->>Api: 認証情報を消し、セッションを無効にする
-                Api-->>Page: 403 ACCOUNT_DISABLED
-                Page-->>User: 「このアカウントは利用できません。」
-            else 利用できる
-                Api->>Api: セッション ID を変え、更新トークンを<br/>セッションに保存し、CSRF の確認情報を作り直す
-                Api-->>Page: 200 returnTo (確かめた戻り先)
-                Note over User,Idp: 基本フロー 8 ログイン状態にして元の画面を表示する
-                Page->>Page: returnTo の画面を読み込み直す
-                Page->>Api: GET /api/auth/me
-                Api->>Db: 会員を検索
-                Db-->>Api: 会員の行
-                Api-->>Page: 200 authenticated=true
-                Page-->>User: 元の画面またはトップ画面<br/>共通ヘッダーに「アカウント」
-            end
-        end
-    end
-```
-
-### 概要図 2 代替フロー 7c・7d
+参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
+ログインは EC の画面でメールアドレスとパスワードを受け取り、EC API が Amazon Cognito の `InitiateAuth` を呼びます。ブラウザーが Cognito の画面へ移るのは、代替フロー 7d の認証画面だけです。ブラウザーには `KUSAKARI_SESSION` の Cookie だけを渡し、トークンはサーバーの HTTP セッションに置きます。
+共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
 
 ```mermaid
 sequenceDiagram
-    actor User as 利用者
-    participant Page as ログイン画面<br/>React
-    participant Api as EC API<br/>Spring Boot
-    participant Db as MySQL
-    participant Idp as Amazon Cognito
-
-    Note over User,Idp: 代替フロー 7c 確認コードを入力して登録を完了する
-    Page-->>User: 見出し「メールアドレスの確認」と「確認コード」の入力欄
-    User->>Page: 確認コードを入力し「確認して登録を完了」をクリック
-    Note over Page,Api: POST の前に GET /api/auth/csrf を送る (概要図 1 と同じ)
-    Page->>Api: POST /api/auth/signup/confirm<br/>email、code
-    Api->>Idp: ConfirmSignUp
-    alt 確認コードが正しくない、または期限切れ (EC-B16 の 11a と同じ)
-        Idp-->>Api: CodeMismatchException<br/>または ExpiredCodeException
-        Api-->>Page: 400 CODE_MISMATCH または CODE_EXPIRED
-        Page-->>User: 「確認コードが正しくありません。」など
-    else 確認できた
-        Idp-->>Api: 確認済みにした
-        Api-->>Page: 200 confirmed=true
-        Page->>Api: POST /api/auth/login<br/>画面のメモリにあるパスワードで
-        Note over Api,Idp: 概要図 1 の基本フロー 7 の「照合できた」と同じ
-        Api-->>Page: 200 returnTo
-        Page-->>User: 元の画面 (基本フロー 8 と同じ)
-    end
-
-    Note over User,Idp: 代替フロー 7d 認証画面で手続きを完了する
-    User->>Page: 「パスワードを忘れた方・追加の本人確認」をクリック
-    Page->>Api: GET /api/auth/login<br/>managed=true と returnTo 付き (ページ遷移)
-    Api->>Api: 戻り先をセッションに保存 (AUTH_RETURN_TO)
-    Api-->>Page: 302 /api/auth/authorize/cognito
-    Page->>Api: GET /api/auth/authorize/cognito
-    Api-->>Page: 302 Cognito の /oauth2/authorize<br/>(PKCE、state、nonce 付き)
-    Page->>Idp: GET /oauth2/authorize
-    Idp-->>User: Cognito の認証画面 (Managed Login)
-    User->>Idp: 追加の本人確認やパスワードの再設定を完了する
-    Idp-->>Page: 302 /api/auth/callback/cognito (認可コード付き)
-    Page->>Api: GET /api/auth/callback/cognito
-    Api->>Idp: POST /oauth2/token (認可コードを交換する)
-    alt 交換や検証に失敗した
-        Idp-->>Api: エラー、または検証できないトークン
-        Api-->>Page: 302 /account/login?auth=failed
-        Page-->>User: 「認証が完了しませんでした。<br/>もう一度ログインしてください。」
-    else トークンを受け取れた
-        Idp-->>Api: ID トークン、更新トークン
-        Api->>Db: 会員を検索・追加し、利用できるかを確かめる<br/>(基本フロー 7 と同じ)
-        Db-->>Api: 会員の行
-        alt 7b などで続けられない
-            Api->>Api: セッションを無効にする
-            Api-->>Page: 302 /account/login?auth=failed
-            Page-->>User: 「認証が完了しませんでした。<br/>もう一度ログインしてください。」
-        else 続けられる
-            Api->>Api: 更新トークンをセッションに保存
-            Api-->>Page: 302 保存した戻り先
-            Page-->>User: 元の画面 (基本フロー 8 と同じ)
-        end
-    end
-```
-
-## 詳細図
-
-### 詳細図 1 基本フロー 1〜2 ログイン画面を開く
-
-```mermaid
-sequenceDiagram
+    autonumber
     actor User as 利用者
     box rgba(47,111,219,0.10) ブラウザー React
-        participant Header as KusakariHeader.jsx
-        participant App as App.jsx
-        participant Auth as auth.js
-        participant Login as LoginPage.jsx
-        participant Panel as AuthPanel.jsx
-        participant Hook as useAuth.js
+        participant Header as 共通ヘッダー<br/>KusakariHeader<br/>(KusakariHeader.jsx)
+        participant App as 画面の切り替え<br/>App<br/>(App.jsx)
+        participant Login as ログイン画面<br/>LoginPage<br/>(LoginPage.jsx)
+        participant Panel as ログインの入力欄<br/>AuthPanel<br/>(AuthPanel.jsx)
+        participant Form as 確認コードの入力欄<br/>SignupForm<br/>(SignupForm.jsx)
+        participant UseAuth as ログイン状態の読み込み<br/>useAuth<br/>(useAuth.js)
+        participant AuthJs as ログインの通信<br/>readSession・postAuth<br/>(auth.js)
+        participant Browser as ブラウザー<br/>ページの移動<br/>(AuthPanel.jsx の a 要素)
     end
     box rgba(27,127,92,0.12) EC API Spring Boot
-        participant AuthCtrl as AuthController
-        participant AuthSvc as AuthService
-    end
-
-    Note over User,AuthSvc: 基本フロー 1〜2 ログイン画面を開く
-    User->>Header: 「ログイン」ボタンをクリック
-    Header->>App: panelAction() のボタンが onPanel('login')
-    App->>Auth: openHeaderPanel('login') が login() を呼ぶ
-    Auth->>Auth: loginPath() が returnTo に<br/>今の画面の URL を入れる
-    Auth-->>App: navigation.js の navigate() が pushState と popstate。<br/>usePath() が path を /account/login にする
-    App->>Login: path が /account/login なので LoginPage を表示
-    Login->>Panel: AuthPanel を表示 (mode は login)
-    Panel->>Hook: useAuth()
-    Note right of Hook: useEffect が readSession() を自動で呼ぶ。<br/>LoginPage の useAuth() も同じ要求を送る
-    Hook->>Auth: readSession()
-    Auth->>AuthCtrl: GET /api/auth/me
-    alt 確認できた
-        Note right of AuthCtrl: 未ログインなので<br/>SessionValidityFilter は何もしない
-        AuthCtrl->>AuthSvc: session()
-        AuthSvc->>AuthSvc: current() が 401 LOGIN_REQUIRED を投げ<br/>session() の catch が受ける
-        AuthSvc-->>AuthCtrl: SessionView (authenticated=false)
-        AuthCtrl-->>Auth: 200 mode=cognito、authenticated=false
-        Auth-->>Hook: AuthSession
-        Hook-->>Panel: session
-        Note right of Panel: mode が demo (隔離した試験の設定) なら<br/>「Cognitoが未設定のため…」を出す (図では省略)
-        Panel-->>User: 「メールアドレス」「パスワード」「ログイン」<br/>「パスワードを忘れた方・追加の本人確認」<br/>「新規登録」「招待キーで登録（店舗の担当者）」
-    else *a 確認できない
-        AuthCtrl--xAuth: 200 以外の応答、または通信の失敗
-        Auth--xHook: throw Error「ログイン状態を確認できません。」
-        Hook-->>Panel: error
-        Panel-->>User: 「ログイン状態を確認できません。」など
-    end
-```
-
-### 詳細図 2 基本フロー 3〜8、代替フロー 6a・7a・7b・7e
-
-```mermaid
-sequenceDiagram
-    actor User as 利用者
-    box rgba(47,111,219,0.10) ブラウザー React
-        participant App as App.jsx
-        participant Panel as AuthPanel.jsx
-        participant Auth as auth.js
-    end
-    box rgba(27,127,92,0.12) EC API Spring Boot
-        participant AuthCtrl as AuthController
-        participant LoginCtrl as PasswordLogin<br/>Controller
-        participant Errs as ApiErrors
-        participant CogP as CognitoPassword<br/>Login
-        participant AuthSvc as AuthService
-        participant Repo as AuthMember<br/>Repository
+        participant Filter as セッションの確認<br/>SessionValidityFilter<br/>(SessionValidityFilter.java)
+        participant AuthCtrl as ログイン状態API<br/>AuthController<br/>(AuthController.java)
+        participant LoginCtrl as パスワードログインAPI<br/>PasswordLoginController<br/>(PasswordLoginController.java)
+        participant SignupCtrl as 新規登録API<br/>SignupController<br/>(SignupController.java)
+        participant Sec as 認証画面との連携<br/>oauth2Login<br/>(AuthConfiguration.java)
+        participant Urls as 戻り先の確認<br/>AuthUrls<br/>(AuthUrls.java)
+        participant Errs as エラーの応答<br/>ApiErrors<br/>(ApiErrors.java)
+        participant CogP as Cognito でのログイン<br/>CognitoPasswordLogin<br/>(CognitoPasswordLogin.java)
+        participant CogS as Cognito での新規登録<br/>CognitoSignup<br/>(CognitoSignup.java)
+        participant AuthSvc as ログイン中の会員<br/>AuthService<br/>(AuthService.java)
+        participant Repo as 会員の読み書き<br/>AuthMemberRepository<br/>(AuthMemberRepository.java)
     end
     participant Db as MySQL
     box rgba(180,120,20,0.12) 外部サービス
-        participant Idp as Amazon Cognito
+        participant Cog as Amazon Cognito
     end
 
-    Note over User,Idp: 基本フロー 3〜6 入力して「ログイン」をクリックする
-    User->>Panel: メールアドレスとパスワードを入力し<br/>「ログイン」をクリック
-    alt 6a 未入力の欄がある
-        Panel-->>User: ブラウザーが required の欄に入力を求める。<br/>submit() は呼ばれず、通信しない
+    Note over User,Cog: 共通代替フロー<br/>*a 通信に失敗した場合: 9、22、24、26、32、35、37、43、62、95、97、99、7d のページの移動の 122・127・130・134・135 に適用
+
+    User->>Header: 共通ヘッダーの「ログイン」をクリック
+    Header->>App: ログインのボタンが押されたことを伝える<br/>(onPanel('login') → openHeaderPanel)
+    App->>AuthJs: ログイン画面へ移るよう頼む (login)
+    AuthJs->>App: 今の画面の URL を returnTo に入れて、URL を<br/>/account/login?returnTo=… に変える (loginPath → navigate、navigation.js)。<br/>ページは読み込み直さない
+    App->>Login: path が /account/login なので LoginPage を表示
+    Login->>Panel: ログインの入力欄を表示 (AuthPanel、mode は login)
+    Panel->>UseAuth: ログイン状態を読むよう頼む (useAuth)<br/>LoginPage の useAuth も同じ通信を送る
+    UseAuth->>AuthJs: 画面を開いたときに自動で<br/>ログイン状態を読む (useEffect → readSession)
+    AuthJs->>Filter: GET /api/auth/me
+    Filter->>AuthCtrl: 認証情報が無いので、そのまま通す (chain.doFilter)
+    AuthCtrl->>AuthSvc: ログイン状態をまとめるよう頼む (me → session)
+    AuthSvc->>AuthSvc: ログイン中の会員を確かめる (current)。<br/>認証情報が無いので 401 を投げ、session が受け止める
+    AuthSvc-->>AuthCtrl: 未ログイン (SessionView、authenticated=false)
+    AuthCtrl-->>AuthJs: 200 mode=cognito、authenticated=false
+    AuthJs-->>UseAuth: ログイン状態
+    UseAuth-->>Panel: ログイン状態
+    Panel-->>User: 「ログイン」画面。「メールアドレス」「パスワード」「ログイン」、<br/>「パスワードを忘れた方・追加の本人確認」「新規登録」<br/>「招待キーで登録（店舗の担当者）」
+
+    User->>Panel: 「メールアドレス」と「パスワード」を入力し、<br/>「ログイン」をクリック
+    alt 6a メールアドレスかパスワードが未入力
+        Panel-->>User: 6a-1 ブラウザーが未入力の欄に入力を求める<br/>(input の required。submit は呼ばれず、通信しない)。<br/>6a-2 基本フロー 3 へ戻る
     else 入力されている
-        Panel->>Panel: submit(event)<br/>setSubmitting(true)
-        Panel->>Auth: passwordLogin(email, password, returnTo)
-        Auth->>Auth: postAuth() が authFetch() を呼ぶ
-        Auth->>AuthCtrl: GET /api/auth/csrf
-        AuthCtrl-->>Auth: 200 headerName と token
-        Note over User,Idp: 基本フロー 7 メールアドレスとパスワードを照合する
-        Auth->>LoginCtrl: POST /api/auth/login<br/>CSRF のヘッダー付き
-        Note right of LoginCtrl: @Valid が LoginRequest を検査する。<br/>違反は ApiErrors.invalid() が<br/>400 INVALID_INPUT にする (図では省略)
-        LoginCtrl->>CogP: authenticate(email.trim(), password)
-        CogP->>Idp: initiateAuth() が POST /<br/>InitiateAuth (USER_PASSWORD_AUTH)
-        alt 7a 一致するアカウントがない
-            Idp-->>CogP: NotAuthorizedException<br/>または UserNotFoundException
-            CogP--xErrs: throw ApiException(401,<br/>INVALID_CREDENTIALS)
-            Errs-->>Auth: business() が 401 と message を返す
-            Auth--xPanel: postAuth() が throw AuthError
-            Panel-->>User: 「メールアドレスまたはパスワードが<br/>正しくありません。」
-        else 7c メールアドレスの確認が済んでいない
-            Idp-->>CogP: UserNotConfirmedException
-            CogP--xErrs: throw ApiException(409,<br/>EMAIL_NOT_CONFIRMED)
-            Errs-->>Auth: business() が 409 と code を返す
-            Auth--xPanel: throw AuthError (code は EMAIL_NOT_CONFIRMED)
-            Panel-->>User: 確認コードの入力欄 (詳細図 3)
-        else 7d 追加の本人確認やパスワードの変更が必要
-            Idp-->>CogP: ChallengeName のある応答<br/>または PasswordResetRequiredException
-            CogP--xErrs: throw ApiException(409,<br/>AUTH_CHALLENGE_REQUIRED)
-            Errs-->>Auth: business() が 409 と message を返す
-            Auth--xPanel: throw AuthError
-            Panel-->>User: 「追加の本人確認またはパスワード変更が必要です。<br/>認証画面で手続きを完了してください。」<br/>または「認証画面でメール確認または<br/>パスワード再設定を完了してください。」(詳細図 4)
-        else 7e 短時間にログインを繰り返し失敗した
-            Idp-->>CogP: TooManyRequestsException
-            CogP--xErrs: throw ApiException(429,<br/>AUTH_RATE_LIMITED)
-            Errs-->>Auth: business() が 429 と message を返す
-            Auth--xPanel: throw AuthError
-            Panel-->>User: 「試行回数が多すぎます。<br/>時間をおいて再試行してください。」
-        else *a Cognito に接続できない
-            Idp--xCogP: 接続できない、または想定外のエラー
-            CogP--xErrs: throw ApiException(503,<br/>AUTH_UNAVAILABLE)
-            Errs-->>Auth: business() が 503 と message を返す
-            Auth--xPanel: throw AuthError
-            Panel-->>User: 「認証サービスに接続できません。<br/>時間をおいて再試行してください。」など
-        else 照合できた
-            Idp-->>CogP: AuthenticationResult<br/>IdToken、AccessToken、RefreshToken
-            CogP->>CogP: toUser(IdToken)<br/>署名、issuer、audience、token_use、期限を検証
-            CogP-->>LoginCtrl: Login(user, refreshToken)
-            LoginCtrl->>AuthSvc: provision(user)
-            Note right of AuthSvc: @Transactional。<br/>email_verified が true でなければ<br/>403 EMAIL_UNVERIFIED
-            AuthSvc->>Repo: findByIssuerAndSubject(issuer, subject)
+        Panel->>Panel: 送信中にして入力欄を押せなくする<br/>(submit → setSubmitting(true))。ボタンは「ログイン中…」
+        Panel->>AuthJs: メールアドレスとパスワードで<br/>ログインするよう頼む (passwordLogin)
+        AuthJs->>AuthCtrl: GET /api/auth/csrf<br/>(postAuth → authFetch が書き込みの前に送る)
+        AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
+        AuthJs->>LoginCtrl: POST /api/auth/login<br/>(email、password、returnTo、CSRF トークンのヘッダー付き)
+        LoginCtrl->>CogP: メールアドレスの前後の空白を取り、<br/>照合を頼む (authenticate)
+        CogP->>Cog: メールアドレスとパスワードを照合する<br/>(initiateAuth、InitiateAuth USER_PASSWORD_AUTH)
+        alt 照合できた
+            Cog-->>CogP: ID トークン、アクセストークン、refresh トークン
+            CogP->>CogP: ID トークンの署名、issuer、audience、<br/>token_use、期限を確かめる (toUser)
+            CogP-->>LoginCtrl: 会員の情報と refresh トークン (Login)
+            LoginCtrl->>AuthSvc: 会員を用意するよう頼む (provision)<br/>provision 全体が 1 つのトランザクション
+            AuthSvc->>Repo: issuer と subject で会員を探す (findByIssuerAndSubject)
             Repo->>Db: SELECT members
-            Db-->>Repo: 行 または 空
-            Repo-->>AuthSvc: Optional の AuthMember
+            Db-->>Repo: 会員の行 (なければなし)
+            Repo-->>AuthSvc: 会員 (なければなし)
             alt 会員がいる
-                AuthSvc->>AuthSvc: markEmailVerified()<br/>空なら確認日時を入れる
-                Note right of AuthSvc: コミットのときに UPDATE members
+                AuthSvc->>Db: メール確認日時が空なら入れて、コミットする<br/>(markEmailVerified、UPDATE members)
             else 初めてのログイン
-                AuthSvc->>Repo: saveAndFlush(購入者 USER の AuthMember)
+                AuthSvc->>Repo: 購入者 (USER) の会員を追加する (saveAndFlush)
                 Repo->>Db: INSERT members
                 Db-->>Repo: 完了
-                Repo-->>AuthSvc: AuthMember
             end
-            AuthSvc-->>LoginCtrl: 戻る
-            LoginCtrl->>LoginCtrl: SecurityContext に<br/>OAuth2AuthenticationToken を入れる
-            LoginCtrl->>AuthSvc: current()
-            AuthSvc->>Repo: findByIssuerAndSubject(issuer, subject)
+            AuthSvc-->>LoginCtrl: 終わった
+            LoginCtrl->>LoginCtrl: ログイン中の会員として認証情報を入れる<br/>(SecurityContext に OAuth2AuthenticationToken)
+            LoginCtrl->>AuthSvc: 会員が使えるかを確かめる (current)
+            AuthSvc->>Repo: issuer と subject で会員を探す (findByIssuerAndSubject)
             Repo->>Db: SELECT members
-            Db-->>Repo: 行
-            Repo-->>AuthSvc: AuthMember
-            Note right of AuthSvc: 担当者 (SHOP_STAFF) は organization_members も読み、<br/>除名されていれば 403 ACCOUNT_EXPELLED
-            alt 7b 利用停止中または退会済み (enabled が false)
-                AuthSvc--xLoginCtrl: throw ApiException(403,<br/>ACCOUNT_DISABLED)
-                LoginCtrl->>LoginCtrl: catch で clearContext() と<br/>セッションの invalidate()
-                LoginCtrl--xErrs: throw error
-                Errs-->>Auth: business() が 403 と message を返す
-                Auth--xPanel: throw AuthError
-                Panel-->>User: 「このアカウントは利用できません。」
+            Db-->>Repo: 会員の行
+            Repo-->>AuthSvc: 会員
+            alt 7b 利用停止中か退会済み (enabled が偽)
+                AuthSvc--xLoginCtrl: 403 ACCOUNT_DISABLED の例外を投げる (ApiException)
+                LoginCtrl->>LoginCtrl: 認証情報を消し、セッションを無効にする<br/>(clearContext、invalidate)
+                LoginCtrl--xErrs: 例外を投げ直す
+                Errs-->>AuthJs: 403「このアカウントは利用できません。」(business)
+                AuthJs--xPanel: エラーを投げる (postAuth → AuthError)
+                Panel-->>User: 7b-1「このアカウントは利用できません。」と<br/>ログインの入力欄 (入力はそのまま。ログインしていない)
             else 利用できる
-                AuthSvc-->>LoginCtrl: AuthMember
-                LoginCtrl->>LoginCtrl: changeSessionId()、<br/>CognitoRefreshSession.store()、<br/>CSRF のトークンを消す、saveContext()
-                LoginCtrl->>LoginCtrl: AuthUrls の safeReturn(returnTo)
-                LoginCtrl-->>Auth: 200 returnTo
-                Note over User,Idp: 基本フロー 8 ログイン状態にして元の画面を表示する
-                Auth->>Auth: dispatchEvent(kusakari-auth-changed)
-                Note right of Auth: 表示中の useAuth() が GET /api/auth/me を<br/>送り直すが、すぐに画面を移る (図では省略)
-                Auth-->>Panel: returnTo
-                Panel->>Panel: complete(target)<br/>window.location.replace(target)
-                Panel->>App: 元の画面を読み込み直す
-                App->>Auth: useAuth() の readSession()
-                Auth->>AuthCtrl: GET /api/auth/me
-                Note right of AuthCtrl: SessionValidityFilter が<br/>current() で会員を確かめる
-                AuthCtrl->>AuthSvc: session()
-                AuthSvc->>Repo: current() の findByIssuerAndSubject()
-                Repo->>Db: SELECT members
-                Db-->>Repo: 行
-                Repo-->>AuthSvc: AuthMember
-                AuthSvc-->>AuthCtrl: SessionView (authenticated=true)
-                AuthCtrl-->>Auth: 200 authenticated=true、email、accountType
-                Auth-->>App: session
-                App-->>User: 元の画面。KusakariHeader に「アカウント」
+                AuthSvc-->>LoginCtrl: 会員
+                LoginCtrl->>LoginCtrl: セッション ID を変え、refresh トークンをセッションに保存し、<br/>CSRF トークンを消して、認証情報をセッションに保存する<br/>(changeSessionId、CognitoRefreshSession.store、saveToken(null)、saveContext)
+                LoginCtrl->>Urls: 戻り先を確かめる (safeReturn)
+                Urls-->>LoginCtrl: 戻り先 (EC と Canvas のオリジン以外、<br/>/account/login、/api/auth/ は EC の「/」に換える)
+                LoginCtrl-->>AuthJs: 200 returnTo
+                AuthJs->>AuthJs: ログイン状態が変わったことを知らせる<br/>(kusakari-auth-changed)
+                AuthJs-->>Panel: 戻り先
+                Panel->>Browser: 「移動しています」を出し、戻り先の画面を<br/>読み込み直す (complete → window.location.replace)
+                Browser->>App: 戻り先の画面を最初から表示する
+                App->>AuthJs: ログイン状態を読む (useAuth → readSession)
+                AuthJs->>Filter: GET /api/auth/me
+                Filter->>AuthSvc: ログイン中の会員が使えるかを確かめる (current)<br/>ID トークンは期限内
+                AuthSvc->>Db: 会員を読む (findByIssuerAndSubject、SELECT members)
+                Db-->>AuthSvc: 会員の行
+                AuthSvc-->>Filter: 会員
+                Filter->>AuthCtrl: 要求を通す (chain.doFilter)
+                AuthCtrl->>AuthSvc: ログイン状態をまとめるよう頼む (me → session)
+                AuthSvc->>Db: 会員を読み、種類に応じて組織と店舗も読む<br/>(current、organizationIdOf、storeIdsOf)
+                Db-->>AuthSvc: 会員、組織、店舗の行
+                AuthSvc-->>AuthCtrl: ログイン中 (SessionView、authenticated=true)
+                AuthCtrl-->>AuthJs: 200 authenticated=true、email、name、accountType など
+                AuthJs-->>App: ログイン状態
+                App-->>User: 元の画面 (戻り先がなければトップ)、<br/>共通ヘッダーに「アカウント」
+            end
+        else 7a 一致するアカウントがない
+            Cog-->>CogP: NotAuthorizedException か UserNotFoundException
+            CogP--xErrs: 401 INVALID_CREDENTIALS の例外を投げる (ApiException)
+            Errs-->>AuthJs: 401「メールアドレスまたはパスワードが<br/>正しくありません。」(business)
+            AuthJs--xPanel: エラーを投げる (postAuth → AuthError)
+            Panel-->>User: 7a-1「メールアドレスまたはパスワードが正しくありません。」<br/>入力はそのまま (7a-2 基本フロー 3 へ戻る)
+        else 7e 短時間にログインを繰り返し失敗した
+            Cog-->>CogP: TooManyRequestsException
+            CogP--xErrs: 429 AUTH_RATE_LIMITED の例外を投げる (ApiException)
+            Errs-->>AuthJs: 429「試行回数が多すぎます。<br/>時間をおいて再試行してください。」(business)
+            AuthJs--xPanel: エラーを投げる (postAuth → AuthError)
+            Panel-->>User: 7e-1「試行回数が多すぎます。時間をおいて再試行してください。」<br/>入力はそのまま
+        else 7c メールアドレスの確認が済んでいない
+            Cog-->>CogP: UserNotConfirmedException
+            CogP--xErrs: 409 EMAIL_NOT_CONFIRMED の例外を投げる (ApiException)
+            Errs-->>AuthJs: 409 EMAIL_NOT_CONFIRMED (business)
+            AuthJs--xPanel: エラーを投げる (AuthError、code は EMAIL_NOT_CONFIRMED)
+            Panel->>Panel: メールアドレスとパスワードを画面のメモリに覚え、<br/>確認コードの入力に切り替える (setPending、switchMode('confirm'))
+            Panel->>Login: 見出しを「メールアドレスの確認」に変えるよう伝える (onModeChange)
+            Panel->>Form: 確認コードの入力欄を表示 (SignupForm、step は confirm)
+            Form-->>User: 7c-1「(メールアドレス) に送信した6桁の確認コードを入力してください。」<br/>「確認コード」「確認して登録を完了」「確認コードを再送する」「ログインに戻る」
+            User->>Form: 7c-2 確認コードを入力し、「確認して登録を完了」をクリック<br/>(6 桁の数字でなければ、ブラウザーが pattern で止める)
+            Form->>AuthJs: 確認コードを送るよう頼む (confirm → run → confirmSignUp)
+            AuthJs->>AuthCtrl: GET /api/auth/csrf (postAuth → authFetch)
+            AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
+            AuthJs->>SignupCtrl: POST /api/auth/signup/confirm (email、code)
+            SignupCtrl->>CogS: 前後の空白を取り、確認コードの照合を頼む (confirm)
+            CogS->>Cog: 確認コードを照合する (call、ConfirmSignUp)
+            alt 確認コードが正しくないか期限切れ (記述なし)
+                Cog-->>CogS: CodeMismatchException か ExpiredCodeException
+                CogS--xErrs: 400 CODE_MISMATCH か CODE_EXPIRED の例外を投げる (translate)
+                Errs-->>AuthJs: 400「確認コードが正しくありません。」か<br/>「確認コードの有効期限が切れています。コードを再送してください。」
+                AuthJs--xForm: エラーを投げる (AuthError)
+                Form-->>User: そのエラーの文。確認コードの入力欄は残る
+            else 確認できた
+                Cog-->>CogS: 確認済みにした
+                CogS-->>SignupCtrl: 終わった
+                SignupCtrl-->>AuthJs: 200 confirmed=true
+                AuthJs-->>Form: 終わった
+                Form->>AuthJs: 覚えていたパスワードでログインするよう頼む (passwordLogin)
+                AuthJs->>LoginCtrl: GET /api/auth/csrf と POST /api/auth/login<br/>(流れは 22〜56 の「照合できた」「利用できる」 と同じ)
+                LoginCtrl-->>AuthJs: 200 returnTo
+                AuthJs-->>Form: 戻り先
+                Form->>Panel: ログインできたことを伝える (onSignedIn → complete)
+                Panel-->>User: 7c-3 戻り先の画面を読み込み直す<br/>(基本フロー 8 へ。流れは 59〜74 と同じ)
+            end
+        else 7d 追加の本人確認やパスワードの変更が必要
+            Cog-->>CogP: ChallengeName のある応答か<br/>PasswordResetRequiredException
+            CogP--xErrs: 409 AUTH_CHALLENGE_REQUIRED の例外を投げる (ApiException)
+            Errs-->>AuthJs: 409「追加の本人確認またはパスワード変更が必要です。<br/>認証画面で手続きを完了してください。」か<br/>「認証画面でメール確認またはパスワード再設定を完了してください。」
+            AuthJs--xPanel: エラーを投げる (postAuth → AuthError)
+            Panel-->>User: 7d-1 そのエラーの文と、ログインの入力欄
+            User->>Panel: 7d-2「パスワードを忘れた方・追加の本人確認」をクリック
+            Panel->>Browser: a 要素のリンクでページごと移る<br/>(href は /api/auth/login?managed=true&returnTo=…)
+            Browser->>AuthCtrl: GET /api/auth/login?managed=true&returnTo=…
+            AuthCtrl->>Urls: 戻り先を確かめる (safeReturn)
+            Urls-->>AuthCtrl: 確かめた戻り先
+            AuthCtrl->>AuthCtrl: 戻り先をセッションの AUTH_RETURN_TO に保存 (login)
+            AuthCtrl-->>Browser: 302 /api/auth/authorize/cognito
+            Browser->>Sec: GET /api/auth/authorize/cognito
+            Sec->>Sec: 認可要求 (PKCE、state、nonce) を作り、セッションに保存<br/>(DefaultOAuth2AuthorizationRequestResolver、withPkce)
+            Sec-->>Browser: 302 Cognito の /oauth2/authorize
+            Browser->>Cog: GET /oauth2/authorize
+            Cog-->>User: 7d-3 Cognito の認証画面 (Managed Login)
+            User->>Cog: 7d-4 認証画面で追加の本人確認や<br/>パスワードの再設定を済ませる
+            Cog-->>Browser: 302 /api/auth/callback/cognito (code と state)
+            Browser->>Sec: GET /api/auth/callback/cognito
+            Sec->>Cog: 認可コードをトークンに換える (oauth2Login、POST /oauth2/token)
+            alt 交換や検証に失敗した (記述なし)
+                Cog-->>Sec: エラーか、検証できないトークン
+                Sec->>Sec: セッションを無効にする (failureHandler)
+                Sec-->>Browser: 302 /account/login?auth=failed
+                Browser-->>User: 「認証が完了しませんでした。<br/>もう一度ログインしてください。」とログインの入力欄
+            else トークンを受け取れた
+                Cog-->>Sec: ID トークンと refresh トークン
+                Sec->>AuthSvc: 会員を用意し、使えるかを確かめる<br/>(successHandler → provision、current)。流れは 30〜45 と同じ
+                alt 7b などで続けられない
+                    AuthSvc--xSec: 403 ACCOUNT_DISABLED などの例外を投げる
+                    Sec->>Sec: セッションを無効にする (catch → invalidate、clearContext)
+                    Sec-->>Browser: 302 /account/login?auth=failed
+                    Browser-->>User: 「認証が完了しませんでした。<br/>もう一度ログインしてください。」とログインの入力欄
+                else 続けられる
+                    AuthSvc-->>Sec: 会員
+                    Sec->>Sec: refresh トークンをセッションに保存する (CognitoRefreshSession.store)
+                    Sec->>Urls: AUTH_RETURN_TO の戻り先を確かめる (safeReturn)
+                    Urls-->>Sec: 戻り先
+                    Sec-->>Browser: 302 戻り先
+                    Browser-->>User: 7d-4 戻り先の画面 (基本フロー 8 へ。<br/>画面を開いたときの流れは 61〜74 と同じ)
+                end
             end
         end
     end
 ```
 
-### 詳細図 3 代替フロー 7c 確認コードを入力して登録を完了する
+## 共通代替フローを直接書いた図
+
+上の図の、ログイン画面を開いたときの `GET /api/auth/me` と、「ログイン」をクリックしたときの `GET /api/auth/csrf`・`POST /api/auth/login` に、この画面で起こる共通代替フロー（\*a）を書き込んだ図です。ログインの前なので、\*b（未ログインの場合）は適用しません。7c の確認コードの送信（`POST /api/auth/signup/confirm`）も、同じ `postAuth()` を通るので、失敗したときの表示は下の図と同じです（`SignupForm` の `run()` がエラーの文を出し、確認コードの入力欄が残ります）。7d のページの移動の \*a は [EC-B20](<EC-B20_パスワードを再設定する.md>) の「共通代替フローを直接書いた図」と同じなので省いています。
 
 ```mermaid
 sequenceDiagram
+    autonumber
     actor User as 利用者
     box rgba(47,111,219,0.10) ブラウザー React
-        participant Panel as AuthPanel.jsx
-        participant Form as SignupForm.jsx
-        participant Auth as auth.js
+        participant Login as ログイン画面<br/>LoginPage<br/>(LoginPage.jsx)
+        participant Panel as ログインの入力欄<br/>AuthPanel<br/>(AuthPanel.jsx)
+        participant UseAuth as ログイン状態の読み込み<br/>useAuth<br/>(useAuth.js)
+        participant AuthJs as ログインの通信<br/>readSession・postAuth<br/>(auth.js)
     end
     box rgba(27,127,92,0.12) EC API Spring Boot
-        participant SignupCtrl as SignupController
-        participant Errs as ApiErrors
-        participant CogS as CognitoSignup
-        participant LoginCtrl as PasswordLogin<br/>Controller
-    end
-    box rgba(180,120,20,0.12) 外部サービス
-        participant Idp as Amazon Cognito
-    end
-
-    Note over User,Idp: 代替フロー 7c-1 確認コードの入力欄を表示する
-    Panel->>Panel: submit() の catch で code が EMAIL_NOT_CONFIRMED。<br/>setPending(email, password) と switchMode('confirm')
-    Panel->>Form: SignupForm (step は confirm、<br/>initialEmail と initialPassword を渡す)
-    Form-->>User: 「(メールアドレス) に送信した6桁の確認コードを入力してください。」<br/>「確認コード」「確認して登録を完了」「確認コードを再送する」
-    Note right of Form: ここでは確認コードを送り直さない。<br/>届いていなければ「確認コードを再送する」<br/>(EC-B16 の 11a-2 と同じ処理)
-
-    Note over User,Idp: 代替フロー 7c-2〜7c-3 確認コードを照合する
-    User->>Form: 確認コードを入力し「確認して登録を完了」をクリック
-    Note right of Form: 6桁の数字でなければ pattern で<br/>ブラウザーが止める。通信しない
-    Form->>Form: confirm(event) から run()
-    Form->>Auth: confirmSignUp(email, code)
-    Note right of Auth: postAuth() の authFetch() が<br/>先に GET /api/auth/csrf を送る
-    Auth->>SignupCtrl: POST /api/auth/signup/confirm
-    SignupCtrl->>CogS: confirm(email.trim(), code.trim())
-    CogS->>Idp: call() が POST /<br/>ConfirmSignUp
-    alt 確認コードが正しくない、または期限切れ (EC-B16 の 11a と同じ)
-        Idp-->>CogS: CodeMismatchException<br/>または ExpiredCodeException
-        CogS--xErrs: translate() が ApiException(400,<br/>CODE_MISMATCH または CODE_EXPIRED)
-        Errs-->>Auth: business() が 400 と message を返す
-        Auth--xForm: throw AuthError
-        Form-->>User: 「確認コードが正しくありません。」など
-    else 確認できた
-        Idp-->>CogS: 成功
-        CogS-->>SignupCtrl: 戻る
-        SignupCtrl-->>Auth: 200 confirmed=true
-        Auth-->>Form: 戻る
-        Form->>Auth: passwordLogin(email, password, returnTo)
-        Auth->>LoginCtrl: POST /api/auth/login
-        Note over LoginCtrl,Idp: 詳細図 2 の「照合できた」と同じ
-        LoginCtrl-->>Auth: 200 returnTo
-        Auth-->>Form: returnTo
-        Form->>Panel: onSignedIn(target) で complete(target)
-        Panel-->>User: 元の画面を読み込み直す (基本フロー 8 と同じ)
-    end
-```
-
-### 詳細図 4 代替フロー 7d 認証画面で手続きを完了する
-
-```mermaid
-sequenceDiagram
-    actor User as 利用者
-    box rgba(47,111,219,0.10) ブラウザー React
-        participant Panel as AuthPanel.jsx
-    end
-    box rgba(27,127,92,0.12) EC API Spring Boot
-        participant AuthCtrl as AuthController
-        participant Urls as AuthUrls
-        participant Sec as Spring Security<br/>AuthConfiguration.java
-        participant AuthSvc as AuthService
-        participant Repo as AuthMember<br/>Repository
+        participant AuthCtrl as ログイン状態API<br/>AuthController<br/>(AuthController.java)
+        participant LoginCtrl as パスワードログインAPI<br/>PasswordLoginController<br/>(PasswordLoginController.java)
+        participant CogP as Cognito でのログイン<br/>CognitoPasswordLogin<br/>(CognitoPasswordLogin.java)
+        participant AuthSvc as ログイン中の会員<br/>AuthService<br/>(AuthService.java)
+        participant Errs as エラーの応答<br/>ApiErrors<br/>(ApiErrors.java)
     end
     participant Db as MySQL
     box rgba(180,120,20,0.12) 外部サービス
-        participant Idp as Amazon Cognito
+        participant Cog as Amazon Cognito
     end
 
-    Note over User,Idp: 代替フロー 7d-1〜7d-3 認証画面を開く
-    Note right of Panel: 7d-1 の文言は<br/>詳細図 2 の 7d の枝で表示する
-    User->>Panel: 「パスワードを忘れた方・追加の本人確認」をクリック
-    Note right of Panel: 通常のリンク (a 要素)。<br/>ここからはページ遷移になる
-    Panel->>AuthCtrl: GET /api/auth/login<br/>managed=true と returnTo 付き
-    AuthCtrl->>Urls: safeReturn(returnTo)
-    Urls-->>AuthCtrl: 確かめた戻り先
-    AuthCtrl->>AuthCtrl: セッションの AUTH_RETURN_TO に保存
-    AuthCtrl-->>Panel: 302 /api/auth/authorize/cognito
-    Panel->>Sec: GET /api/auth/authorize/cognito
-    Sec->>Sec: DefaultOAuth2AuthorizationRequestResolver が<br/>PKCE、state、nonce を付ける
-    Sec-->>Panel: 302 Cognito の /oauth2/authorize
-    Panel->>Idp: GET /oauth2/authorize
-    Idp-->>User: Cognito の認証画面 (Managed Login)
-
-    Note over User,Idp: 代替フロー 7d-4 手続きを完了して戻る
-    User->>Idp: 追加の本人確認やパスワードの再設定を完了する
-    Idp-->>Panel: 302 /api/auth/callback/cognito (認可コード付き)
-    Panel->>Sec: GET /api/auth/callback/cognito
-    Sec->>Idp: POST /oauth2/token
-    Note right of Sec: oauth2Login() の標準の処理。<br/>ID トークンの検証などは図では省略
-    alt 交換や検証に失敗した
-        Idp-->>Sec: エラー、または検証できないトークン
-        Sec->>Sec: failureHandler がセッションを無効にする
-        Sec-->>Panel: 302 /account/login?auth=failed
-        Panel-->>User: 「認証が完了しませんでした。<br/>もう一度ログインしてください。」
-    else トークンを受け取れた
-        Idp-->>Sec: ID トークン、更新トークン
-        Sec->>AuthSvc: successHandler が provision(user)
-        Note right of AuthSvc: 会員の検索と追加は<br/>詳細図 2 と同じ (図では省略)
-        AuthSvc-->>Sec: 戻る
-        Sec->>AuthSvc: current()
-        AuthSvc->>Repo: findByIssuerAndSubject(issuer, subject)
-        Repo->>Db: SELECT members
-        Db-->>Repo: 会員の行
-        Repo-->>AuthSvc: AuthMember
-        alt 7b などで続けられない
-            AuthSvc--xSec: throw ApiException<br/>(403 ACCOUNT_DISABLED など)
-            Sec->>Sec: catch でセッションを無効にし<br/>clearContext()
-            Sec-->>Panel: 302 /account/login?auth=failed
-            Panel-->>User: 「認証が完了しませんでした。<br/>もう一度ログインしてください。」
-        else 続けられる
-            AuthSvc-->>Sec: AuthMember
-            Sec->>Sec: CognitoRefreshSession.store() で<br/>更新トークンをセッションに保存
-            Sec->>Urls: safeReturn(AUTH_RETURN_TO)
-            Urls-->>Sec: 戻り先
-            Sec-->>Panel: 302 戻り先
-            Panel-->>User: 元の画面 (基本フロー 8 と同じ)
+    User->>Login: 共通ヘッダーの「ログイン」をクリック<br/>(上の図の 1〜5 でログイン画面を表示)
+    Login->>Panel: ログインの入力欄を表示 (AuthPanel)
+    Panel->>UseAuth: ログイン状態を読むよう頼む (useAuth)
+    UseAuth->>AuthJs: ログイン状態を読む (useEffect → readSession)
+    alt *a GET /api/auth/me が届かない
+        AuthJs-xAuthCtrl: GET /api/auth/me
+        AuthJs--xUseAuth: fetch の例外 (TypeError) をそのまま投げる
+        UseAuth->>Panel: 例外の文を渡す (setError)
+        Panel-->>User: *a-1 ブラウザーが作る例外の文だけを表示<br/>(入力欄も「再取得」も出ない)
+    else *a 200 以外の応答 (403 を除く)
+        AuthJs->>AuthCtrl: GET /api/auth/me
+        AuthCtrl-->>AuthJs: 200 以外の応答
+        AuthJs--xUseAuth: エラーを投げる (readSession)
+        UseAuth->>Panel: エラーの文を渡す (setError)
+        Panel-->>User: *a-1「ログイン状態を確認できません。」だけを表示
+    else 読めた
+        AuthJs->>AuthCtrl: GET /api/auth/me
+        AuthCtrl-->>AuthJs: 200 mode=cognito、authenticated=false
+        AuthJs-->>UseAuth: ログイン状態
+        UseAuth-->>Panel: ログイン状態
+        Panel-->>User: 「メールアドレス」「パスワード」「ログイン」など
+        User->>Panel: 入力して「ログイン」をクリック
+        Panel->>AuthJs: ログインするよう頼む (submit → passwordLogin)
+        alt *a GET /api/auth/csrf が届かない
+            AuthJs-xAuthCtrl: GET /api/auth/csrf (postAuth → authFetch)
+            AuthJs--xPanel: fetch の例外 (TypeError) をそのまま投げる
+            Panel-->>User: *a-1 ブラウザーが作る例外の文 (catch → setFailure)。<br/>*a-2 入力はそのまま
+        else *a GET /api/auth/csrf が 200 以外
+            AuthJs->>AuthCtrl: GET /api/auth/csrf (postAuth → authFetch)
+            AuthCtrl-->>AuthJs: 200 以外の応答
+            AuthJs--xPanel: エラーを投げる (authFetch)
+            Panel-->>User: *a-1「操作の確認情報を取得できません。<br/>画面を再読み込みしてください。」。*a-2 入力はそのまま
+        else CSRF トークンを取れた
+            AuthJs->>AuthCtrl: GET /api/auth/csrf (postAuth → authFetch)
+            AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン
+            alt *a POST /api/auth/login が届かない
+                AuthJs-xLoginCtrl: POST /api/auth/login
+                AuthJs--xPanel: fetch の例外 (TypeError) をそのまま投げる
+                Panel-->>User: *a-1 ブラウザーが作る例外の文。*a-2 入力はそのまま
+            else *a 200 以外で、応答が JSON でない (中継のサーバーの 502 ページなど)
+                AuthJs->>LoginCtrl: POST /api/auth/login
+                LoginCtrl-->>AuthJs: 200 以外の、JSON でない本文
+                AuthJs--xPanel: 決まった文でエラーを投げる (postAuth の fallback)
+                Panel-->>User: *a-1「ログインできませんでした。<br/>時間をおいて再試行してください。」。*a-2 入力はそのまま
+            else *a EC API から Cognito に届かない
+                AuthJs->>LoginCtrl: POST /api/auth/login
+                LoginCtrl->>CogP: 照合を頼む (authenticate)
+                CogP-xCog: InitiateAuth USER_PASSWORD_AUTH (initiateAuth)
+                CogP--xErrs: 503 AUTH_UNAVAILABLE の例外を投げる<br/>(RestClientException の catch)
+                Errs-->>AuthJs: 503「認証を確認できません。<br/>時間をおいて再試行してください。」(business)
+                AuthJs--xPanel: エラーを投げる (AuthError)
+                Panel-->>User: *a-1「認証を確認できません。時間をおいて再試行してください。」。<br/>*a-2 入力はそのまま
+            else *a MySQL との通信に失敗
+                AuthJs->>LoginCtrl: POST /api/auth/login
+                LoginCtrl->>CogP: 照合を頼む (authenticate)
+                CogP->>Cog: InitiateAuth USER_PASSWORD_AUTH
+                Cog-->>CogP: ID トークン、refresh トークン
+                CogP-->>LoginCtrl: 会員の情報と refresh トークン
+                LoginCtrl->>AuthSvc: 会員を用意し、使えるかを確かめる (provision、current)
+                AuthSvc->>Db: SELECT members ほか
+                Db--xAuthSvc: 失敗 (DataAccessException)。<br/>provision の変更は取り消す
+                AuthSvc--xErrs: 例外
+                Errs-->>AuthJs: 503「保存処理を完了できませんでした。<br/>時間をおいて再試行してください。」(database)
+                AuthJs--xPanel: エラーを投げる (AuthError)
+                Panel-->>User: *a-1「保存処理を完了できませんでした。<br/>時間をおいて再試行してください。」。*a-2 入力はそのまま
+            end
+        end
+    end
+    opt *a-3 やり直す
+        alt ログイン画面を開いたときに失敗していた
+            User->>Login: ブラウザーで再読み込みする<br/>(画面にやり直しのボタンは無い。基本フロー 2 へ戻る)
+        else 「ログイン」で失敗していた
+            User->>Panel: 残った入力のまま、もう一度「ログイン」をクリック<br/>(基本フロー 5 へ戻る)
         end
     end
 ```
 
 ## ユースケース記述との差
 
-- 6a: 未入力の検査は React のコードではなく、入力欄の `required` でブラウザーが行います。文言はブラウザーが出すもので、記述の「入力を求める表示」に当たります。サーバーでも `LoginRequest` の `@NotBlank` が検査し、違反すると 400 `INVALID_INPUT`「入力内容・文字数・数値の範囲を確認してください。」になります。
-- 7b: 記述にない応答が 2 つあります。組織から除名された担当者（`SHOP_STAFF`）は 403 `ACCOUNT_EXPELLED`「このアカウントは無効化されています。組織の管理者にお問い合わせください。」です。Cognito の ID トークンでメールアドレスが確認済みでないときは、`provision()` が 403 `EMAIL_UNVERIFIED`「メール確認が必要です。」にします。
-- 7b-2・7e-2: 記述は「ユースケースを終了する」ですが、画面はエラーの文言を出し、ログインの入力欄をそのまま残します。続けて入力し直せます。
-- 7c: ログインの時点では確認コードを送り直しません。新規登録のときに届いたコードを入力します。コードが届いていない、または期限切れのときは「確認コードを再送する」（EC-B16 の 11a-2 と同じ処理）を使います。記述の 7c にはこの手順がありません。また、409 の文言「メールアドレスの確認が完了していません。確認コードを入力してください。」は画面に出ず、見出しが「メールアドレスの確認」に変わります。
-- 7c-3: 確認コードの照合に失敗したとき（`CODE_MISMATCH`、`CODE_EXPIRED` など）の扱いは、記述の 7c にありません。コードでは EC-B16 の 11a と同じ文言を出します。
-- 7d-4: 認証画面での手続きやトークンの交換に失敗したとき、`/account/login?auth=failed` に戻り「認証が完了しませんでした。もう一度ログインしてください。」と表示します。記述にない枝です。
-- 共通代替フロー *a: EC API が Cognito に接続できないときは 503 `AUTH_UNAVAILABLE` になります。ブラウザーから EC API に届かないときは、`postAuth()` が例外を言い換えないため、ブラウザーが出す `TypeError` の文言がそのまま表示されます（ログアウトの `logout()` だけは日本語の文言に言い換えています）。
+- 6a: 未入力の検査は React のコードではなく、入力欄の `required` でブラウザーが行います。文言はブラウザーが出すもので、記述の「入力を求める表示」に当たります。サーバーでも `LoginRequest` の `@NotBlank`・`@Email`・`@Size` が検査し、違反すると 400 `INVALID_INPUT`「入力内容・文字数・数値の範囲を確認してください。」になります（`ApiErrors.invalid()`）。
+- 7b: 記述にない応答が 2 つあります。組織から除名された担当者（`SHOP_STAFF`）は、`current()` が 403 `ACCOUNT_EXPELLED`「このアカウントは無効化されています。組織の管理者にお問い合わせください。」を返します。Cognito の ID トークンでメールアドレスが確認済みでないときは、`provision()` が 403 `EMAIL_UNVERIFIED`「メール確認が必要です。」を返します。どちらも図の 7b と同じく、エラーの文を出してログインさせません（`EMAIL_UNVERIFIED` は `provision()` の中なので、セッションを無効にする `catch` は通りません）。
+- 7a-2・7b-2・7e-2: 記述は 7b・7e を「ユースケースを終了する」としていますが、画面はエラーの文を出し、ログインの入力欄と入力をそのまま残します。続けて入力し直せます。
+- 7c: ログインの時点では確認コードを送り直しません。新規登録のときに届いたコードを入力します。届いていない、または期限切れのときは「確認コードを再送する」（EC-B16 の 11a-2 と同じ処理）を使います。記述の 7c にはこの手順がありません。409 の文「メールアドレスの確認が完了していません。確認コードを入力してください。」は画面に出ず、見出しが「メールアドレスの確認」に変わります。
+- 7c-3: 確認コードの照合に失敗したとき（`CODE_MISMATCH`、`CODE_EXPIRED`）の扱いは、記述の 7c にありません。コードでは EC-B16 の 11a と同じ文を出します。
+- 7d-4: 認証画面での手続きやトークンの交換に失敗したとき、`/account/login?auth=failed` に戻って「認証が完了しませんでした。もう一度ログインしてください。」と出します。記述にない枝です。
+- 基本フロー 8: 戻り先は、ヘッダーの「ログイン」を押した画面の URL（`returnTo`）です。`AuthUrls.safeReturn()` が、EC と Canvas のオリジン以外の URL、`/account/login`、`/api/auth/` で始まる URL を EC の「/」に換えます。Canvas の画面から来た場合は Canvas へ戻ります。記述の「元の画面または『メイン』画面」に当たります。
+- 基本フロー 2: ログイン画面を開くと、`LoginPage` と `AuthPanel` がそれぞれ `useAuth()` を呼ぶので、`GET /api/auth/me` を 2 回送ります。図では 1 回だけ書いています。ログインの後の `kusakari-auth-changed` でも、表示中の `useAuth()` が `GET /api/auth/me` を送り直しますが、すぐにページを読み込み直すので図には書いていません。
+- 共通代替フロー \*a: ログインの通信は `api.js` を通らないので、00 の \*a-1 の共通の文（「サーバーに接続できません。…」）になりません。届かないときは `fetch()` の例外の文（ブラウザーが作る英語などの文）がそのまま出ます。CSRF トークンを取れないときの「操作の確認情報を取得できません。画面を再読み込みしてください。」は、`api.js` を通る画面と違い、この画面ではそのまま出ます。ログイン画面を開いたときの `GET /api/auth/me` に失敗すると、入力欄の代わりにエラーの文だけが出て、「再取得」のボタンはありません。
+- 共通代替フロー \*a: Cognito の応答で Cognito の側のエラー（図の 7a・7c・7d・7e 以外）が返ったときは、503 `AUTH_UNAVAILABLE` でも文が「認証サービスに接続できません。時間をおいて再試行してください。」に変わります。Cognito に届かないときと、ID トークンを確かめられないとき（`toUser()`）は「認証を確認できません。時間をおいて再試行してください。」です。古い図は届かないときを「認証サービスに接続できません。」としていましたが、コードでは「認証を確認できません。」です。
+- 共通代替フロー \*b: ログインの前のユースケースなので、適用しません。
+- `GET /api/auth/me` が 403 を返したとき（ログインの後に利用停止になった会員など）、`readSession()` は応答の文（「このアカウントは利用できません。」など）を出します。事前条件がログアウト状態なので、図には書いていません。
 
 ## 確かめられなかったこと
 
 - Cognito が `ChallengeName` を返す条件（多要素認証、仮パスワードの変更など）と、`TooManyRequestsException` になる回数や時間は、Cognito の User Pool の設定と Cognito の仕様で決まります。このリポジトリのコードでは確かめられません。
-- 存在しないメールアドレスのとき Cognito が返す例外は、User Pool の `prevent_user_existence_errors` で変わります。EC の `infra/cognito/kusakari-ec-terraform/main.tf` では `ENABLED`（`NotAuthorizedException` を返す）ですが、実際の User Pool は kusakari-terraform で管理しており、その設定は確かめていません。どちらの例外でも 401 `INVALID_CREDENTIALS` になります。
+- 存在しないメールアドレスのとき Cognito が返す例外は、User Pool の `prevent_user_existence_errors` で変わります。実際の User Pool は kusakari-terraform で管理しており、その設定は確かめていません。どちらの例外でも 401 `INVALID_CREDENTIALS` になります。
 - 代替フロー 7d の認証画面（Managed Login）の中の手順は Cognito の画面で、コードでは確かめられません。
-- `oauth2Login()` が `/oauth2/token` の後に行う処理（ID トークンの検証、`/oauth2/userInfo` を呼ぶかどうか、セッション ID の変更）は Spring Security の中の処理です。この図では Spring Security のソースまでは確かめていません。
+- `oauth2Login()` が `/oauth2/token` の後に行う処理（ID トークンの検証、`/oauth2/userInfo` を呼ぶかどうか、セッション ID の変更）は Spring Security の中の処理で、Spring Security のソースまでは確かめていません。
+- ログインの後に読み込み直したページで、`SessionValidityFilter` の `current()` が MySQL に届かなかったときの応答は確かめていません。`DataAccessException` はこのフィルターの `catch`（`ApiException` だけ）を通らず、`@RestControllerAdvice` の外で起きるので、`ApiErrors.database()` の 503 にならない可能性があります。
 
 ## 参照したコード
 
-- [packages/site-header/KusakariHeader.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/packages/site-header/KusakariHeader.jsx): `panelAction()`、「ログイン」ボタン、「アカウント」リンク
-- [frontend/src/App.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/App.jsx): `openHeaderPanel()`、`/account/login` で `LoginPage` を返す条件、`useAuth()`
-- [frontend/src/workspace/navigation.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/navigation.js): `navigate()`、`usePath()`
-- [frontend/src/auth.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/auth.js): `login()`、`loginPath()`、`readSession()`、`authFetch()`、`postAuth()`、`passwordLogin()`、`confirmSignUp()`、`AuthError`
-- [frontend/src/useAuth.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/useAuth.js): `useAuth()`、`kusakari-auth-changed` の受け取り
-- [frontend/src/components/LoginPage.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/components/LoginPage.jsx): `LoginPage`、見出しの切り替え（`headings`）
-- [frontend/src/components/AuthPanel.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/components/AuthPanel.jsx): `submit()`、`complete()`、`switchMode()`、`auth=failed` の表示、「パスワードを忘れた方・追加の本人確認」のリンク
-- [frontend/src/components/SignupForm.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/components/SignupForm.jsx): `confirm()`、`run()`、確認コードの入力欄
-- [backend/src/main/java/jp/kusakari/ec/auth/AuthController.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/AuthController.java): `me()`、`csrf()`、`login()`（`managed=true`）
-- [backend/src/main/java/jp/kusakari/ec/auth/PasswordLoginController.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/PasswordLoginController.java): `login()`、`LoginRequest`
-- [backend/src/main/java/jp/kusakari/ec/auth/CognitoPasswordLogin.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/CognitoPasswordLogin.java): `authenticate()`、`initiateAuth()`、`toUser()`
-- [backend/src/main/java/jp/kusakari/ec/auth/CognitoRefreshSession.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/CognitoRefreshSession.java): `store()`
-- [backend/src/main/java/jp/kusakari/ec/auth/AuthService.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/AuthService.java): `provision()`、`current()`、`session()`
-- [backend/src/main/java/jp/kusakari/ec/auth/AuthMember.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/AuthMember.java): `markEmailVerified()`、`withdraw()`、`enabled`
-- [backend/src/main/java/jp/kusakari/ec/auth/AuthMemberRepository.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/AuthMemberRepository.java): `findByIssuerAndSubject()`
-- [backend/src/main/java/jp/kusakari/ec/auth/AuthUrls.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/AuthUrls.java): `safeReturn()`
-- [backend/src/main/java/jp/kusakari/ec/auth/AuthConfiguration.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/AuthConfiguration.java): `cognitoClients()`、`cognitoSecurity()` の `oauth2Login()`、`successHandler`、`failureHandler`
-- [backend/src/main/java/jp/kusakari/ec/auth/SessionValidityFilter.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/SessionValidityFilter.java): `doFilterInternal()`
-- [backend/src/main/java/jp/kusakari/ec/auth/SignupController.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/SignupController.java): `confirm()`
-- [backend/src/main/java/jp/kusakari/ec/auth/CognitoSignup.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/CognitoSignup.java): `confirm()`、`call()`、`translate()`
-- [backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java): `business()`、`invalid()`
-- [infra/cognito/kusakari-ec-terraform/main.tf](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/infra/cognito/kusakari-ec-terraform/main.tf): `explicit_auth_flows`、`prevent_user_existence_errors`
-- [docs/cognito-auth.md](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/docs/cognito-auth.md): ログインと Managed Login の決定
+- [packages/site-header/KusakariHeader.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/packages/site-header/KusakariHeader.jsx): `panelAction`、「ログイン」ボタン、「アカウント」リンク
+- [frontend/src/App.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/App.jsx): `openHeaderPanel`、`/account/login` で `LoginPage` を返す条件、`useAuth`
+- [frontend/src/workspace/navigation.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/navigation.js): `navigate`、`usePath`
+- [frontend/src/auth.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/auth.js): `login`、`loginPath`、`readSession`、`authFetch`、`postAuth`、`passwordLogin`、`confirmSignUp`、`AuthError`
+- [frontend/src/useAuth.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/useAuth.js): `useAuth`、`kusakari-auth-changed` の受け取り
+- [frontend/src/components/LoginPage.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/components/LoginPage.jsx): `LoginPage`、見出しの切り替え（`headings`）
+- [frontend/src/components/AuthPanel.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/components/AuthPanel.jsx): `submit`、`complete`、`switchMode`、`returnTo`、`auth=failed` の表示、「パスワードを忘れた方・追加の本人確認」のリンク
+- [frontend/src/components/SignupForm.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/components/SignupForm.jsx): `confirm`、`run`、確認コードの入力欄
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthController.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthController.java): `me`、`csrf`、`login`（`managed=true`）
+- [backend/src/main/java/jp/kusakari/ec/auth/PasswordLoginController.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/PasswordLoginController.java): `login`、`LoginRequest`
+- [backend/src/main/java/jp/kusakari/ec/auth/CognitoPasswordLogin.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/CognitoPasswordLogin.java): `authenticate`、`initiateAuth`、`toUser`
+- [backend/src/main/java/jp/kusakari/ec/auth/CognitoRefreshSession.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/CognitoRefreshSession.java): `store`
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthService.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthService.java): `provision`、`current`、`session`、`organizationIdOf`、`storeIdsOf`
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthMember.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthMember.java): `markEmailVerified`、`isEnabled`
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthMemberRepository.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthMemberRepository.java): `findByIssuerAndSubject`
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthUrls.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthUrls.java): `safeReturn`
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthConfiguration.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthConfiguration.java): `cognitoClients`、`cognitoSecurity` の `oauth2Login`（`withPkce`、`successHandler`、`failureHandler`）
+- [backend/src/main/java/jp/kusakari/ec/auth/SessionValidityFilter.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/SessionValidityFilter.java): `doFilterInternal`
+- [backend/src/main/java/jp/kusakari/ec/auth/SignupController.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/SignupController.java): `confirm`、`ConfirmRequest`
+- [backend/src/main/java/jp/kusakari/ec/auth/CognitoSignup.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/CognitoSignup.java): `confirm`、`call`、`translate`
+- [backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java): `business`、`invalid`、`database`

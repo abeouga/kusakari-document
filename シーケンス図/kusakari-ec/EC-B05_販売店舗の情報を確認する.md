@@ -1,185 +1,211 @@
 # EC-B05 販売店舗の情報を確認する
 
 - ユースケース記述: [EC-B05_販売店舗の情報を確認する](<../../アーカイブ/ユースケース/kusakari-ec/EC-B05_販売店舗の情報を確認する.md>)
-- 対象のコード: kusakari-ec の main（19a2be3、2026-11-20 時点）
+- 共通代替フロー: [00_全ユースケース共通の代替フロー](<00_全ユースケース共通の代替フロー.md>)
+- 対象のコード: kusakari-ec の main（6bad7e3、2026-11-24 時点）
 
-「店舗紹介」画面（パス `/store/{店舗 ID}`）は、ログインしていなくても開ける `Workspace` の画面です。`Workspace` はログイン状態を `GET /api/auth/me` で確かめてから、店舗の情報を `GET /api/stores/{id}` で取得します。詳細図は「基本フロー 1 画面の切り替え」と「基本フロー 2 店舗の情報の取得と表示」に分けています。ログインは不要なので、共通代替フロー *b は当てはまりません。
+## シーケンス図
 
-## 概要図
+参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
+「店舗紹介」画面（パス `/store/{店舗 ID}`）は、ログインしていなくても開ける `Workspace` の画面です。`Workspace` は、ログイン状態を `GET /api/auth/me` で確かめてから、店舗の情報を `GET /api/stores/{id}` で取得します。
+ログインは不要なので、共通代替フロー \*b は適用しません。
 
 ```mermaid
 sequenceDiagram
+    autonumber
     actor User as 購入者
-    participant Page as 「店舗紹介」画面<br/>React
-    participant Api as EC API<br/>Spring Boot
+    box rgba(47,111,219,0.10) ブラウザー React
+        participant StoreLink as 「植物について」の店舗のリンク<br/>PageLink<br/>(Common.jsx)
+        participant App as EC の画面の枠<br/>App<br/>(App.jsx)
+        participant Work as アカウント・店舗の画面の枠<br/>Workspace<br/>(Workspace.jsx)
+        participant UseAuth as ログイン状態の取得<br/>useAuth<br/>(useAuth.js)
+        participant AuthJs as ログインの通信<br/>readSession<br/>(auth.js)
+        participant Profile as 「店舗紹介」画面<br/>ProfilePage<br/>(PartnerForms.jsx)
+        participant Res as 店舗の情報の取得<br/>useResource<br/>(useResource.js)
+        participant Http as 通信<br/>request<br/>(api.js)
+    end
+    box rgba(27,127,92,0.12) EC API Spring Boot
+        participant AuthCtrl as ログイン状態API<br/>AuthController<br/>(AuthController.java)
+        participant Ctrl as 店舗API<br/>StoreController<br/>(StoreController.java)
+        participant Errs as エラーの応答<br/>ApiErrors<br/>(ApiErrors.java)
+        participant Svc as 店舗の処理<br/>StoreService<br/>(StoreService.java)
+        participant AuthSvc as ログイン中の会員<br/>AuthService<br/>(AuthService.java)
+        participant Mod as 運営者の警告<br/>StoreModerationService<br/>(StoreModerationService.java)
+        participant StoreRepo as 店舗の読み書き<br/>StoreRepository<br/>(StoreRepository.java)
+        participant OrgRepo as 組織の読み書き<br/>OrganizationRepository<br/>(OrganizationRepository.java)
+    end
     participant Db as MySQL
 
-    Note over User,Db: 基本フロー 1 「販売店舗の紹介を見る」をクリックする
-    User->>Page: 「植物について」ダイアログの<br/>「販売店舗の紹介を見る」をクリック
-    Page->>Page: URL を /store/{店舗 ID} に切り替え<br/>「ログイン状態を確認しています。」
-    Page->>Api: GET /api/auth/me
-    Note right of Api: ログイン中なら会員・組織・<br/>担当店舗を読む。図では省略
-    Api-->>Page: 200 ログイン状態<br/>(未ログインなら authenticated が false)
+    Note over User,Db: 共通代替フロー<br/>*a 通信に失敗した場合: 7、19、再取得の 60 に適用
 
-    Note over User,Db: 基本フロー 2 店舗の情報を表示する
-    Page-->>User: 「読み込んでいます。」
-    Page->>Api: GET /api/stores/{id}
-    Api->>Db: 店舗を ID で検索
-    Db-->>Api: 店舗の行 または なし
+    User->>StoreLink: 「植物について」ダイアログの「販売店舗の紹介を見る」をクリック<br/>(ProductDetail.jsx が href に /store/{商品の店舗 ID} を渡す)
+    StoreLink->>App: URL を /store/{店舗 ID} に変え (follow → navigate)、<br/>新しいパスを渡す (usePath)
+    App->>Work: パスが / でも /cart でもないので Workspace を表示する。<br/>「植物について」ダイアログは描かなくなり、閉じる
+    Work->>UseAuth: ログイン状態を読むよう頼む (useAuth)
+    Work-->>User: 読み終わるまで「ログイン状態を確認しています。」
+    UseAuth->>AuthJs: 画面を開いたときに自動で読む<br/>(useEffect → refreshSession → readSession)
+    AuthJs->>AuthCtrl: GET /api/auth/me
+    AuthCtrl->>AuthSvc: ログイン状態を作るよう頼む (session)
+    AuthSvc->>AuthSvc: ログイン中の会員を確かめる (current)。<br/>未ログインなら 401 を受け止めて authenticated が false、<br/>ログイン中なら会員と組織・店舗の所属を読む
+    AuthSvc-->>AuthCtrl: ログイン状態 (SessionView)
+    AuthCtrl-->>AuthJs: 200 ログイン状態
+    AuthJs-->>UseAuth: ログイン状態
+    UseAuth-->>Work: ログイン状態 (setSession)
+    Work->>Work: パスが /store/ で始まるので、未ログインでもログイン欄を出さない (publicStore)。<br/>見出しは「店舗紹介」、サイドバーは「マイページ」「アカウント設定」
+    Work->>Profile: 店舗 ID を渡して読み取り専用で表示する<br/>(ProfilePage storeId readOnly)
+    Profile->>Res: 店舗の情報を取りに行くよう頼む (useResource('/stores/{店舗 ID}'))
+    Res->>Http: 画面を開いたときに自動で通信を始める<br/>(useEffect → setData(null) → reload → request)
+    Profile-->>User: 「読み込んでいます。」(ResourceStatus)
+    Http->>Ctrl: GET /api/stores/{id} (ログインしていなくてもよい)
+    Ctrl->>Svc: 店舗の公開ページの情報を作るよう頼む (get)<br/>読み取り専用のトランザクション
+    Svc->>StoreRepo: 店舗を読む (require → findById)
+    StoreRepo->>Db: SELECT stores
+    Db-->>StoreRepo: 店舗の行 (なければなし)
+    StoreRepo-->>Svc: 店舗 (なければなし)
     alt 2a 店舗の行がない
-        Api-->>Page: 404 STORE_NOT_FOUND
-        Page-->>User: 「店舗が見つかりません。」と「再取得」ボタン
+        Svc--xErrs: 404 STORE_NOT_FOUND の例外を投げる (notFound → ApiException)
+        Errs-->>Http: 404「店舗が見つかりません。」(business)
+        Http--xRes: エラーを投げる (readResponse → ApiError 404)
+        Res->>Res: エラーの文を覚える (reload の catch → setError)
+        Res-->>Profile: エラーの文
+        Profile-->>User: 2a-1「店舗が見つかりません。」と「再取得」(ResourceStatus)
     else 店舗の行がある
-        Api->>Api: ログイン中の店舗側の立場 (オーナー・担当者・運営者) で<br/>扱える店舗かを確かめる (読む行は図では省略)
+        Svc->>AuthSvc: 店舗側の立場で見られるかを確かめる (canViewAsStaff)
+        AuthSvc->>AuthSvc: 運営者なら見られる。運営者が利用停止した店舗は運営者だけ。<br/>オーナーは自分の組織の店舗、担当者は所属する店舗なら見られる (canManageView)。<br/>未ログイン (current の 401) と利用できないアカウント (403) は見られない
+        AuthSvc-->>Svc: 店舗側の立場で見られるか (staff)
+        Svc->>Svc: 購入者に見せる店舗かを確かめる (publiclyVisible)<br/>公開中で、運営者の利用停止も閉鎖済みもないか
         opt 公開中で、運営者の利用停止も閉鎖済みもない
-            Api->>Db: 組織を検索
-            Db-->>Api: 組織の行 (停止されていないか)
+            Svc->>OrgRepo: 店舗の組織を読む (findById)
+            OrgRepo->>Db: SELECT organizations
+            Db-->>OrgRepo: 組織の行
+            OrgRepo-->>Svc: 組織 (停止 (suspended) でなければ購入者に見せる)
         end
         alt 2a 購入者に見せない店舗で、店舗側の立場でもない
-            Api-->>Page: 404 STORE_NOT_FOUND
-            Page-->>User: 「店舗が見つかりません。」と「再取得」ボタン
-        else 購入者・未ログインに見せる店舗
-            Api-->>Page: 200 店舗の情報
-            Page-->>User: 店舗名、所在地 / 営業時間、店舗紹介、<br/>「閉店予定」か「営業中」
-        else 店舗側の立場で扱える店舗
-            Api->>Db: 運営者の警告を検索
-            Db-->>Api: 警告の行
-            Api-->>Page: 200 店舗の情報と警告
-            Page-->>User: 同じ表示。運営者が利用停止した店舗は「受付休止」
+            Svc--xErrs: 404 STORE_NOT_FOUND の例外を投げる (notFound → ApiException)
+            Errs-->>Http: 404「店舗が見つかりません。」(business)
+            Http--xRes: エラーを投げる (readResponse → ApiError 404)
+            Res->>Res: エラーの文を覚える (reload の catch → setError)
+            Res-->>Profile: エラーの文
+            Profile-->>User: 2a-1「店舗が見つかりません。」と「再取得」(ResourceStatus)
+        else 購入者に見せる店舗か、店舗側の立場で見られる
+            Svc->>OrgRepo: 会社名のために組織を読む (view → findById)
+            OrgRepo->>Db: SELECT organizations<br/>(35〜38 で読んでいれば、同じトランザクションの中ではもう読まない)
+            Db-->>OrgRepo: 組織の行
+            OrgRepo-->>Svc: 組織
+            opt 店舗側の立場で見られる (staff が true)
+                Svc->>Mod: 運営者の今出ている警告を読む (warnings)
+                Mod->>Db: SELECT store_moderation_events<br/>(findByStoreIdInAndEventTypeInOrderByIdDesc)
+                Db-->>Mod: 警告の行
+                Mod-->>Svc: 警告
+            end
+            Svc-->>Ctrl: 店舗の情報 (Profile。購入者・未ログインには警告なし)
+            Ctrl-->>Http: 200 店舗の情報
+            Http-->>Res: 店舗の情報 (setData)
+            Res-->>Profile: 店舗の情報
+            Profile-->>User: 店舗名、「所在地 / 営業時間」、店舗紹介、<br/>closingStartedAt があれば「閉店予定」、なければ enabled で「営業中」か「受付休止」
         end
     end
-    Note right of User: 2a-2 ユースケースを終了する。<br/>「再取得」は同じ GET を送り直す
-    Note over User,Db: 共通代替フロー *a を適用 (「再取得」で取得をやり直す)
+    opt 2a-1 の後に「再取得」をクリックした
+        User->>Profile: 「再取得」をクリック
+        Profile->>Res: 店舗の情報を取り直すよう頼む (resource.reload)
+        Res->>Http: GET /api/stores/{id} をもう一度送る (request)。<br/>以降は 20〜57 と同じ (2a-2 店舗がなければ、ここで終わる)
+    end
 ```
 
-## 詳細図 1 基本フロー 1 画面の切り替え
+## 共通代替フローを直接書いた図
+
+上の図のログイン状態の確認（`GET /api/auth/me`）と店舗の情報の取得（`GET /api/stores/{id}`）に、共通代替フロー \*a を書き込んだ図です。ログイン状態の確認は `api.js` を通らないので、失敗したときの文と、やり直しの方法が \*a の決まりと違います。
 
 ```mermaid
 sequenceDiagram
+    autonumber
     actor User as 購入者
     box rgba(47,111,219,0.10) ブラウザー React
-        participant PLink as PageLink<br/>Common.jsx
-        participant Nav as navigation.js
-        participant App as App.jsx
-        participant Work as Workspace.jsx
-        participant Auth as useAuth.js
-        participant AuthJs as auth.js
+        participant Work as アカウント・店舗の画面の枠<br/>Workspace<br/>(Workspace.jsx)
+        participant UseAuth as ログイン状態の取得<br/>useAuth<br/>(useAuth.js)
+        participant AuthJs as ログインの通信<br/>readSession<br/>(auth.js)
+        participant Profile as 「店舗紹介」画面<br/>ProfilePage<br/>(PartnerForms.jsx)
+        participant Status as エラーの表示<br/>ResourceStatus<br/>(ResourceView.jsx)
+        participant Res as 店舗の情報の取得<br/>useResource<br/>(useResource.js)
+        participant Http as 通信<br/>request<br/>(api.js)
     end
     box rgba(27,127,92,0.12) EC API Spring Boot
-        participant AuthCtrl as Auth<br/>Controller
-        participant AuthSvc as AuthService
-    end
-
-    Note over User,AuthSvc: 基本フロー 1 「販売店舗の紹介を見る」をクリックする
-    User->>PLink: 「植物について」ダイアログの<br/>「販売店舗の紹介を見る」をクリック
-    Note right of PLink: ProductDetail.jsx が href に<br/>/store/{product.sellerStoreId} を渡す
-    PLink->>PLink: follow(event) が preventDefault()
-    PLink->>Nav: navigate(href)
-    Nav->>Nav: history.pushState() と popstate の発行<br/>window.scrollTo(0, 0)
-    Nav-->>App: usePath() が setPath(currentPath())
-    App->>App: path が / でも /cart でもないので<br/>workspace が true
-    App->>Work: Workspace shop=shop path=path header=header を表示
-    Note right of App: 「植物について」ダイアログは描かれなくなり<br/>Dialog.jsx のクリーンアップが close() する
-    Work->>Auth: useAuth()
-    Note right of Auth: useEffect が refreshSession() を<br/>自動で実行する
-    Work-->>User: session が null の間は<br/>「ログイン状態を確認しています。」
-    Auth->>AuthJs: readSession()
-    AuthJs->>AuthCtrl: GET /api/auth/me
-    AuthCtrl->>AuthSvc: session()
-    Note right of AuthSvc: current() が 401 なら未ログインの SessionView を返す。<br/>ログイン中は members などを読む。図では省略
-    AuthSvc-->>AuthCtrl: SessionView
-    AuthCtrl-->>AuthJs: 200 SessionView
-    AuthJs-->>Auth: session
-    Auth-->>Work: setSession(value)
-    Work->>Work: publicStore が true なので<br/>未ログインでも AuthPanel を出さない
-    Work->>Work: ProfilePage storeId=path の 2 番目 readOnly を<br/>content にし、見出しを「店舗紹介」にする
-    Note over Work,AuthSvc: 続きは詳細図 2
-    Note over User,AuthSvc: 共通代替フロー *a。readSession() が失敗すると useAuth() が setError() を実行し<br/>Workspace.jsx はメッセージだけを出す (再実行のボタンはない)
-```
-
-## 詳細図 2 基本フロー 2 店舗の情報の取得と表示
-
-```mermaid
-sequenceDiagram
-    actor User as 購入者
-    box rgba(47,111,219,0.10) ブラウザー React
-        participant Profile as ProfilePage<br/>PartnerForms.jsx
-        participant Res as useResource.js
-        participant Http as api.js
-    end
-    box rgba(27,127,92,0.12) EC API Spring Boot
-        participant Ctrl as Store<br/>Controller
-        participant Errs as ApiErrors
-        participant Svc as StoreService
-        participant AuthSvc as AuthService
-        participant Mod as StoreModeration<br/>Service
-        participant StoreRepo as Store<br/>Repository
-        participant OrgRepo as Organization<br/>Repository
+        participant Filter as セッションの確認<br/>SessionValidityFilter<br/>(SessionValidityFilter.java)
+        participant AuthCtrl as ログイン状態API<br/>AuthController<br/>(AuthController.java)
+        participant Ctrl as 店舗API<br/>StoreController<br/>(StoreController.java)
+        participant Svc as 店舗の処理<br/>StoreService<br/>(StoreService.java)
     end
     participant Db as MySQL
+    box rgba(180,120,20,0.12) 外部サービス
+        participant Cog as Amazon Cognito
+    end
 
-    Note over User,Db: 基本フロー 2 店舗の情報を取得して表示する
-    Profile->>Res: useResource(/stores/{storeId})
-    Note right of Res: useEffect が setData(null) の後<br/>reload() を自動で実行する
-    Profile-->>User: ResourceStatus が「読み込んでいます。」
-    Res->>Http: request(/stores/{storeId})
-    Http->>Ctrl: GET /api/stores/{id}
-    Ctrl->>Svc: get(id)
-    Note over Svc,Db: get() の @Transactional(readOnly = true) の範囲。ロックはしない
-    Svc->>StoreRepo: require(id) が findById(id)
-    StoreRepo->>Db: SELECT stores
-    Db-->>StoreRepo: 行 または 空
-    StoreRepo-->>Svc: Optional の StoreEntity
-    alt 2a 店舗の行がない
-        Svc--xErrs: throw ApiException(404, STORE_NOT_FOUND)
-        Errs-->>Http: business() が 404 と message を返す
-        Http--xRes: readResponse() が throw ApiError(404)
-        Res->>Res: catch で setError('店舗が見つかりません。')
-        Res-->>Profile: resource.error
-        Profile-->>User: 「店舗が見つかりません。」と「再取得」ボタン
-    else 店舗の行がある
-        Svc->>AuthSvc: canViewAsStaff(store)
-        Note right of AuthSvc: ログイン中なら current() と canManageView() が<br/>members などを読む。図では省略。<br/>未ログインは current() の 401 を受け止めて false。<br/>運営者が利用停止した店舗は運営者だけが true
-        AuthSvc-->>Svc: staff (true か false)
-        Svc->>Svc: publiclyVisible(store) が<br/>published、suspended、closedAt を見る
-        opt 公開中で、運営者の利用停止も閉鎖済みもない
-            Svc->>OrgRepo: findById(organizationId)
-            OrgRepo->>Db: SELECT organizations
-            Db-->>OrgRepo: 行
-            OrgRepo-->>Svc: 組織が停止 (suspended) でないか
-        end
-        alt 2a 購入者に見せない店舗で、staff も false
-            Svc--xErrs: throw ApiException(404, STORE_NOT_FOUND)
-            Errs-->>Http: business() が 404 と message を返す
-            Http--xRes: readResponse() が throw ApiError(404)
-            Res->>Res: catch で setError('店舗が見つかりません。')
-            Res-->>Profile: resource.error
-            Profile-->>User: 「店舗が見つかりません。」と「再取得」ボタン
-        else 購入者・未ログインに見せる店舗 (staff が false)
-            Svc->>OrgRepo: view(store) が findById(organizationId) で会社名を読む
-            OrgRepo-->>Svc: OrganizationEntity
-            Svc-->>Ctrl: Profile (warning は null)
-            Ctrl-->>Http: 200 Profile
-            Http-->>Res: data
-            Res-->>Profile: resource.data
-            Profile-->>User: 店舗名、所在地 / 営業時間、店舗紹介、<br/>closingStartedAt があれば「閉店予定」、なければ「営業中」
-        else 店舗側の立場で扱える店舗 (staff が true)
-            Svc->>OrgRepo: view(store) が findById(organizationId) で会社名を読む
-            OrgRepo-->>Svc: OrganizationEntity
-            Svc->>Mod: warnings(List.of(id))
-            Mod->>Db: findByStoreIdInAndEventTypeInOrderByIdDesc()<br/>SELECT store_moderation_events
-            Db-->>Mod: 行
-            Mod-->>Svc: 警告の Map
-            Svc-->>Ctrl: Profile (warning つき)
-            Ctrl-->>Http: 200 Profile
-            Http-->>Res: data
-            Res-->>Profile: resource.data
-            Profile-->>User: 同じ表示。enabled が false なら「受付休止」
+    User->>Work: 「販売店舗の紹介を見る」をクリック (上の図の 1〜3)
+    Work->>UseAuth: ログイン状態を読むよう頼む (useAuth)
+    UseAuth->>AuthJs: 自動で読む (useEffect → refreshSession → readSession)
+    alt *a GET /api/auth/me が届かない、または応答が JSON でない
+        AuthJs-xFilter: GET /api/auth/me
+        AuthJs--xUseAuth: エラーを投げる (fetch か response.json の例外)
+        UseAuth-->>Work: エラーの文 (setError)
+        Work-->>User: *a-1 ブラウザーが作るエラーの文だけ。「再取得」はない
+    else *a ID トークンの更新で Cognito に届かない (ログイン中)
+        AuthJs->>Filter: GET /api/auth/me
+        Filter-xCog: ID トークンを更新する<br/>(InitiateAuth REFRESH_TOKEN_AUTH、CognitoPasswordLogin.java)
+        Filter-->>AuthJs: 503 AUTH_UNAVAILABLE (セッションは残す)
+        AuthJs--xUseAuth: 200 でないのでエラーを投げる
+        UseAuth-->>Work: エラーの文 (setError)
+        Work-->>User: *a-1「ログイン状態を確認できません。」だけ。「再取得」はない
+    else 要求が AuthController まで届いた
+        AuthJs->>Filter: GET /api/auth/me
+        Filter->>AuthCtrl: 要求を通す (chain.doFilter)
+        alt *a MySQL との通信に失敗
+            AuthCtrl-->>AuthJs: 503 DATABASE_UNAVAILABLE (ApiErrors.java の database)
+            AuthJs--xUseAuth: 200 でないのでエラーを投げる
+            UseAuth-->>Work: エラーの文 (setError)
+            Work-->>User: *a-1「ログイン状態を確認できません。」だけ。「再取得」はない
+        else ログイン状態を読めた
+            AuthCtrl-->>AuthJs: 200 ログイン状態 (上の図の 8〜11)
+            AuthJs-->>UseAuth: ログイン状態
+            UseAuth-->>Work: ログイン状態 (setSession)
+            Work->>Profile: 読み取り専用で表示する (ProfilePage storeId readOnly)
+            Profile->>Res: 店舗の情報を取りに行くよう頼む (useResource)
+            Res->>Http: 自動で通信を始める (useEffect → reload → request)
+            alt *a GET /api/stores/{id} が届かない、または応答が JSON でない
+                Http-xFilter: GET /api/stores/{id}
+                Http--xRes: エラーを投げる (send か readResponse → ApiError(networkErrorMessage, 0))
+                Res->>Status: エラーの文を出す (reload の catch → setError)
+                Status-->>User: *a-1「サーバーに接続できません。接続を確認して<br/>再試行してください。」と「再取得」
+            else 要求が StoreService まで届いた
+                Http->>Filter: GET /api/stores/{id}
+                Filter->>Ctrl: 要求を通す (chain.doFilter)
+                Ctrl->>Svc: 店舗の公開ページの情報を作るよう頼む (get)
+                Svc->>Db: 店舗、組織、警告を読む (上の図の 21〜52)
+                alt *a MySQL との通信に失敗
+                    Db--xSvc: 失敗 (DataAccessException)
+                    Svc--xCtrl: 例外
+                    Ctrl-->>Http: 503 DATABASE_UNAVAILABLE (ApiErrors.java の database)
+                    Http--xRes: エラーを投げる (readResponse → ApiError 503)
+                    Res->>Status: エラーの文を出す (reload の catch → setError)
+                    Status-->>User: *a-1「保存処理を完了できませんでした。時間をおいて<br/>再試行してください。」と「再取得」
+                else 読めた
+                    Db-->>Svc: 行
+                    Svc-->>Ctrl: 店舗の情報、または 404 (上の図の 25〜56)
+                    Ctrl-->>Http: 200 店舗の情報、または 404
+                    Http-->>Res: 店舗の情報、またはエラー
+                    Res-->>Profile: 店舗の情報、またはエラーの文
+                    Profile-->>User: 店舗の情報、または 2a-1「店舗が見つかりません。」と「再取得」
+                end
+            end
         end
     end
-    Note right of OrgRepo: view() の findById() は、publiclyVisible() で<br/>同じ組織を読んでいれば、同じトランザクションの<br/>中ではもう一度 SELECT しない
-    Note right of User: 2a-2 ユースケースを終了する。<br/>「再取得」は resource.reload() で同じ GET を送る
-    Note over User,Db: 共通代替フロー *a を適用。reload() の catch が setError(message) を実行し<br/>ResourceStatus がメッセージと「再取得」を出す
+    opt *a-3 やり直す
+        alt 店舗の情報の取得が失敗していた
+            User->>Status: 「再取得」をクリック
+            Status->>Res: 店舗の情報を取り直す (resource.reload)。上の 25 から
+        else ログイン状態の確認が失敗していた
+            User->>Work: ブラウザーでページを再読み込みする<br/>(EC のページを読み込み直し、上の 2 から)
+        end
+    end
 ```
 
 ## ユースケース記述との差
@@ -188,7 +214,10 @@ sequenceDiagram
 - 営業状態の表示は「営業中」「閉店予定」のほかに「受付休止」があります（`enabled` が `false`、つまり運営者が利用停止した店舗）。購入者・未ログインには利用停止中の店舗が 404 になるので、「受付休止」を見るのは運営者だけです。
 - 閉鎖済みの店舗を店舗側の立場で開くと、`closingStartedAt` が残っているので「閉店予定」と表示します。「閉鎖済み」の表示はありません。
 - 記述の 2a は非公開・利用停止中・閉鎖済みの店舗を挙げています。コードは、店舗の組織が停止（`organizations.suspended` が true）のときも 404 にします。組織が受付停止中（停止の前の段階）の店舗は購入者にも表示し、「営業中」と出ます。
-- 記述にない処理です。画面を開くたびに `Workspace` が `GET /api/auth/me` を送り、応答が来るまで「ログイン状態を確認しています。」を出します。この通信が失敗すると、`Workspace` はメッセージだけを出し、再実行のボタンはありません。共通代替フロー *a の *a-2（再実行を可能にする）と違います。
+- 2a-2「ユースケースを終了する」: 画面には「再取得」が出ます。押すと同じ `GET /api/stores/{id}` を送り直し、店舗がなければまた「店舗が見つかりません。」になります。
+- 記述にない処理です。画面を開くたびに `Workspace` が `GET /api/auth/me` を送り、応答が来るまで「ログイン状態を確認しています。」を出します。この通信は `api.js` を通らないので、失敗すると `Workspace` はエラーの文だけを出し、「再取得」はありません。届かないときの文はブラウザーが作る文で、\*a-1 の「サーバーに接続できません。…」になりません。やり直すにはブラウザーで再読み込みします。
+- \*a: ログイン中に ID トークンの更新で Cognito に届かないときは、先に送る `GET /api/auth/me` が 503 になり、店舗の情報は取りに行きません。そのため、`GET /api/stores/{id}` の 503 `AUTH_UNAVAILABLE` は図に書いていません。
+- 記述にない処理です。「店舗紹介」画面のサイドバーには、購入者のメニュー（「マイページ」「アカウント設定」）が出ます。未ログインでも出ます。
 - 記述にない処理です。購入者・未ログインへの応答（`StoreService.Profile`）にも、担当者（`contact`）と問い合わせメール（`email`）が入っています。画面には出しません。
 - 記述にない入口です。「店舗を探す」のダイアログ（`Stores.jsx`）の「店舗の紹介を見る」も、同じ `/store/{店舗 ID}` を開きます。
 - 記述にない処理です。認証を省略する隔離テストの設定（`kusakari.auth.mode` が `demo`）では、`canViewAsStaff()` が常に `true` を返すので、どの店舗も表示されます。
@@ -196,29 +225,32 @@ sequenceDiagram
 ## 確かめられなかったこと
 
 - `view()` の中の `organizations.findById()` が、`publiclyVisible()` で読んだ組織を JPA の永続化コンテキストから返し、SQL を出さないことは、SQL のログでは確かめていません。
-- 「店舗紹介」画面からブラウザーの「戻る」で「トップ」画面へ戻ると、`App.jsx` の `detailId` が残っているので「植物について」ダイアログがまた開くとコードからは読めます。画面では確かめていません。
+- 「店舗紹介」画面からブラウザーの「戻る」で「メイン」画面へ戻ると、`App.jsx` の `detailId` が残っているので「植物について」ダイアログがまた開くとコードからは読めます。画面では確かめていません。
+- ログイン中に MySQL に接続できないとき、`GET /api/auth/me` は `SessionValidityFilter` の `members.current()` で最初に DB を読みます。ここでの例外は `ApiErrors.database()` を通らない可能性があり、そのときの応答は確かめていません（00 の「確かめられなかったこと」と同じ）。
 
 ## 参照したコード
 
-- [frontend/src/components/ProductDetail.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/components/ProductDetail.jsx): 「販売店舗の紹介を見る」の `PageLink`
-- [frontend/src/workspace/Common.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/Common.jsx): `PageLink`、`follow()`
-- [frontend/src/workspace/navigation.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/navigation.js): `navigate()`、`usePath()`
-- [frontend/src/App.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/App.jsx): `workspace` の判定、`Workspace` の表示、`detailId`
-- [frontend/src/workspace/Workspace.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/Workspace.jsx): `publicStore`、`ProfilePage` の表示、見出し「店舗紹介」
-- [frontend/src/useAuth.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/useAuth.js): `refreshSession()`
-- [frontend/src/auth.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/auth.js): `readSession()`
-- [frontend/src/workspace/PartnerForms.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/PartnerForms.jsx): `ProfilePage` の `readOnly` の表示、営業状態の文言
-- [frontend/src/workspace/useResource.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/useResource.js): `useResource()`、`reload()`
-- [frontend/src/workspace/ResourceView.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/ResourceView.jsx): `ResourceStatus`（「再取得」「読み込んでいます。」）
-- [frontend/src/api.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/api.js): `request()`、`readResponse()`
-- [frontend/src/components/Stores.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/components/Stores.jsx): 「店舗の紹介を見る」の `PageLink`
-- [backend/src/main/java/jp/kusakari/ec/auth/AuthController.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/AuthController.java): `me()`
-- [backend/src/main/java/jp/kusakari/ec/auth/AuthService.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/AuthService.java): `session()`、`current()`、`canViewAsStaff()`、`canManageView()`
-- [backend/src/main/java/jp/kusakari/ec/auth/AuthConfiguration.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/AuthConfiguration.java): `/api/auth/me` と `GET /api/stores/*` の `permitAll()`
-- [backend/src/main/java/jp/kusakari/ec/store/controller/StoreController.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/store/controller/StoreController.java): `get()`
-- [backend/src/main/java/jp/kusakari/ec/store/service/StoreService.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/store/service/StoreService.java): `get()`、`require()`、`publiclyVisible()`、`view()`、`notFound()`、`Profile`
-- [backend/src/main/java/jp/kusakari/ec/store/service/StoreModerationService.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/store/service/StoreModerationService.java): `warnings()`
-- [backend/src/main/java/jp/kusakari/ec/catalog/persistence/repository/StoreRepository.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/catalog/persistence/repository/StoreRepository.java): `findById()`（JpaRepository）
-- [backend/src/main/java/jp/kusakari/ec/store/persistence/repository/OrganizationRepository.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/store/persistence/repository/OrganizationRepository.java): `findById()`（JpaRepository）
-- [backend/src/main/java/jp/kusakari/ec/catalog/persistence/entity/StoreEntity.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/catalog/persistence/entity/StoreEntity.java): `startClosing()`、`completeClosing()`（閉鎖済みでも `closingStartedAt` は残る）
-- [backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java): `business()`
+- [frontend/src/components/ProductDetail.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/components/ProductDetail.jsx): 「販売店舗の紹介を見る」の `PageLink`
+- [frontend/src/workspace/Common.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/Common.jsx): `PageLink`、`follow`
+- [frontend/src/workspace/navigation.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/navigation.js): `navigate`、`usePath`
+- [frontend/src/App.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/App.jsx): `workspace` の判定、`Workspace` の表示、`detailId`
+- [frontend/src/workspace/Workspace.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/Workspace.jsx): `publicStore`、`ProfilePage` の表示、見出し「店舗紹介」、`error` の表示、「ログイン状態を確認しています。」
+- [frontend/src/useAuth.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/useAuth.js): `useAuth`、`refreshSession`
+- [frontend/src/auth.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/auth.js): `readSession`（「ログイン状態を確認できません。」）
+- [frontend/src/workspace/PartnerForms.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/PartnerForms.jsx): `ProfilePage` の `readOnly` の表示、営業状態の文言
+- [frontend/src/workspace/useResource.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/useResource.js): `useResource`、`reload`
+- [frontend/src/workspace/ResourceView.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/ResourceView.jsx): `ResourceStatus`（「再取得」「読み込んでいます。」）
+- [frontend/src/api.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/api.js): `request`、`send`、`readResponse`、`networkErrorMessage`
+- [frontend/src/components/Stores.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/components/Stores.jsx): 「店舗の紹介を見る」の `PageLink`
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthController.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthController.java): `me`
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthService.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthService.java): `session`、`current`、`canViewAsStaff`、`canManageView`
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthConfiguration.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthConfiguration.java): `/api/auth/me` と `GET /api/stores/*` の `permitAll`
+- [backend/src/main/java/jp/kusakari/ec/auth/SessionValidityFilter.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/SessionValidityFilter.java): `doFilterInternal`、`renewIdToken`
+- [backend/src/main/java/jp/kusakari/ec/auth/CognitoPasswordLogin.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/CognitoPasswordLogin.java): ID トークンの更新、503 `AUTH_UNAVAILABLE`
+- [backend/src/main/java/jp/kusakari/ec/store/controller/StoreController.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/store/controller/StoreController.java): `get`
+- [backend/src/main/java/jp/kusakari/ec/store/service/StoreService.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/store/service/StoreService.java): `get`、`require`、`publiclyVisible`、`view`、`notFound`、`Profile`
+- [backend/src/main/java/jp/kusakari/ec/store/service/StoreModerationService.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/store/service/StoreModerationService.java): `warnings`
+- [backend/src/main/java/jp/kusakari/ec/catalog/persistence/repository/StoreRepository.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/catalog/persistence/repository/StoreRepository.java): `findById`（JpaRepository）
+- [backend/src/main/java/jp/kusakari/ec/store/persistence/repository/OrganizationRepository.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/store/persistence/repository/OrganizationRepository.java): `findById`（JpaRepository）
+- [backend/src/main/java/jp/kusakari/ec/catalog/persistence/entity/StoreEntity.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/catalog/persistence/entity/StoreEntity.java): `startClosing`、`completeClosing`（閉鎖済みでも `closingStartedAt` は残る）
+- [backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java): `business`、`database`

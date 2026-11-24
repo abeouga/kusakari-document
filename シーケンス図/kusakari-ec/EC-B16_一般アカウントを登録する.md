@@ -1,578 +1,387 @@
 # EC-B16 一般アカウントを登録する
 
 - ユースケース記述: [EC-B16_一般アカウントを登録する](<../../アーカイブ/ユースケース/kusakari-ec/EC-B16_一般アカウントを登録する.md>)
-- 対象のコード: kusakari-ec の main（19a2be3、2026-11-20 時点）
+- 共通代替フロー: [00_全ユースケース共通の代替フロー](<00_全ユースケース共通の代替フロー.md>)
+- 対象のコード: kusakari-ec の main（6bad7e3、2026-11-24 時点）
 
-新規登録は、ログイン画面（`/account/login`）のカードの中で入力欄を切り替えて行います。EC API が Amazon Cognito の `SignUp`、`ConfirmSignUp`、`ResendConfirmationCode` を呼び、確認コードが通ったら EC-B01 と同じ `POST /api/auth/login` でログインします。会員（`members` の行）を作る時点は、アカウントの種類で違います。
+## シーケンス図
 
-| 登録の方法 | 会員を作る時点 | `account_type` |
-| --- | --- | --- |
-| 通常の登録 | 確認コードのあとのログイン（`provision()`） | `USER` |
-| 企業様向けの登録（6a） | 確認コードの送信（`registerApplicant()`） | `SHOP_OWNER_APPLICANT` |
-| 招待キーでの登録（3a） | 確認コードの送信（`StoreInvitationService.register()`） | `SHOP_STAFF` |
-
-## 概要図
-
-### 概要図 1 基本フロー 1〜9、代替フロー 3a・6a・8a・8b
+参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
+新規登録は、ログイン画面（`/account/login`）のカードの中で入力欄を切り替えて行います。EC API が Amazon Cognito の `SignUp`、`ConfirmSignUp`、`ResendConfirmationCode` を呼び、確認コードが通ったら EC-B01 と同じ `POST /api/auth/login` でログインします。会員（`members` の行）を作る時点は、通常の登録では確認のあとのログイン、企業様向け（6a）と招待キー（3a）では確認コードの送信のときです。共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
 
 ```mermaid
 sequenceDiagram
-    actor User as 購入者
-    participant Page as ログイン画面<br/>React
-    participant Api as EC API<br/>Spring Boot
-    participant Db as MySQL
-    participant Idp as Amazon Cognito
-
-    Note over User,Idp: 基本フロー 1〜2 ログイン画面を開く (EC-B01 の基本フロー 1〜2 と同じ)
-    User->>Page: 共通ヘッダーの「ログイン」をクリック
-    Page->>Api: GET /api/auth/me
-    Api-->>Page: 200 authenticated=false
-    Page-->>User: ログイン画面<br/>「新規登録」「招待キーで登録（店舗の担当者）」がある
-
-    Note over User,Idp: 基本フロー 3〜4 と代替フロー 3a-1〜3a-2 登録の入力欄を表示する (通信しない)
-    alt 3a 招待キーで登録する
-        User->>Page: 「招待キーで登録（店舗の担当者）」をクリック<br/>または登録用の URL (invite 付き) を開く
-        Page-->>User: 見出し「招待キーで登録」、入力欄と「招待キー」欄<br/>(URL を開いたときはキーを入れた状態)
-    else 新規登録
-        User->>Page: 「新規登録」をクリック
-        Page-->>User: 見出し「新規登録」、「メールアドレス」<br/>「パスワード（8文字以上）」「パスワード（確認）」<br/>企業様向けのチェックボックス
-    end
-
-    Note over User,Idp: 基本フロー 5〜9 と代替フロー 6a・8a 確認コードを送る (招待キーなし)
-    User->>Page: メールアドレス、パスワード、確認用を入力
-    opt 6a 企業様向けの登録をする
-        User->>Page: 「企業様向け：出店を申請するアカウントとして登録する」にチェック
-    end
-    User->>Page: 「確認コードを送信」をクリック
-    alt 8a 未入力、メールアドレスの形式違い、8 文字未満
-        Page-->>User: ブラウザーが入力を求める (通信しない)
-    else ブラウザーの検査を通る
-        Page->>Api: GET /api/auth/csrf
-        Api-->>Page: 200 CSRF の確認情報
-        Page->>Api: POST /api/auth/signup<br/>email、password、confirmPassword、business
-        alt 8a 形式の違反、または確認用と一致しない
-            Api-->>Page: 400 INVALID_INPUT または PASSWORD_MISMATCH
-            Page-->>User: 「パスワードと確認用パスワードが一致しません。」など
-        else 検査を通る
-            Api->>Idp: SignUp (ユーザー名はメールアドレス)
-            alt 8a Cognito が受け付けない
-                Idp-->>Api: UsernameExistsException、<br/>InvalidPasswordException など
-                Api-->>Page: 409 EMAIL_IN_USE、400 PASSWORD_REJECTED など
-                Page-->>User: 「このメールアドレスは既に登録されています。<br/>ログインしてください。」など
-            else 登録できた
-                Idp-->>Api: UserSub (未確認のユーザー)
-                Note right of Idp: 基本フロー 9<br/>Cognito が確認コードのメールを送る
-                opt 6a 企業様向けの登録
-                    Api->>Db: 出店申請用 (SHOP_OWNER_APPLICANT) の会員を追加
-                    Db-->>Api: 完了
-                end
-                Api-->>Page: 200 codeSent=true
-                Page-->>User: 「確認コード」の入力欄
-            end
-        end
-    end
-
-    Note over User,Idp: 代替フロー 3a-3・8b 招待キーで確認コードを送る
-    User->>Page: 入力し、招待キーを入れて「確認コードを送信」をクリック
-    Note over Page,Api: ブラウザーの検査、GET /api/auth/csrf、入力の検査は基本フロー 7〜8 と同じ
-    Page->>Api: POST /api/auth/signup (invitationKey 付き)
-    Note over Api,Db: ここから 1 つのトランザクション
-    Api->>Db: 招待キーの行をロックして読む (SELECT ... FOR UPDATE)。<br/>使用回数、店舗、組織を読む
-    Db-->>Api: 行
-    alt 8b 招待キーが使えない
-        Api-->>Page: 400 INVITATION_INVALID (Cognito には登録しない)
-        Page-->>User: 「招待キーが無効です。期限切れ・取り消し済み・<br/>使用済みのキーは使えません。…」
-    else 使える
-        Api->>Idp: SignUp
-        alt 8a Cognito が受け付けない
-            Idp-->>Api: UsernameExistsException など
-            Api-->>Page: 409 EMAIL_IN_USE など (DB はロールバック)
-            Page-->>User: 「このメールアドレスは既に登録されています。<br/>ログインしてください。」など
-        else 登録できた
-            Idp-->>Api: UserSub (確認コードのメールを送る)
-            Api->>Db: 担当者 (SHOP_STAFF) の会員、組織への所属、<br/>店舗の担当 (ロールなし)、招待キーの使用記録を追加
-            Db-->>Api: 完了 (コミット)
-            Api-->>Page: 200 codeSent=true
-            Page-->>User: 「確認コード」の入力欄
-        end
-    end
-```
-
-### 概要図 2 基本フロー 10〜12、代替フロー 11a
-
-```mermaid
-sequenceDiagram
-    actor User as 購入者
-    participant Page as ログイン画面<br/>React
-    participant Api as EC API<br/>Spring Boot
-    participant Db as MySQL
-    participant Idp as Amazon Cognito
-
-    Note over User,Idp: 基本フロー 10〜11 と代替フロー 11a 確認コードを照合する
-    User->>Page: 確認コードを入力し「確認して登録を完了」をクリック
-    Note over Page,Api: POST の前には毎回 GET /api/auth/csrf を送る
-    Page->>Api: POST /api/auth/signup/confirm<br/>email、code
-    Api->>Idp: ConfirmSignUp
-    alt 11a 確認コードが無効、または有効期限切れ
-        Idp-->>Api: CodeMismatchException<br/>または ExpiredCodeException
-        Api-->>Page: 400 CODE_MISMATCH または CODE_EXPIRED
-        Page-->>User: 「確認コードが正しくありません。」<br/>または「確認コードの有効期限が切れています。<br/>コードを再送してください。」
-        opt 11a-2 確認コードを再送する
-            User->>Page: 「確認コードを再送する」をクリック
-            Page->>Api: POST /api/auth/signup/resend
-            Api->>Idp: ResendConfirmationCode
-            Idp-->>Api: 受け付けた (確認コードのメールを送る)
-            Api-->>Page: 200 codeSent=true
-            Page-->>User: 「確認コードを再送しました。」
-        end
-    else 確認できた
-        Idp-->>Api: 確認済みにした
-        Api-->>Page: 200 confirmed=true
-    end
-
-    Note over User,Idp: 基本フロー 12 ログイン状態にして元の画面を表示する (確認できたときだけ)
-    alt 画面のメモリにパスワードが無い
-        Page-->>User: ログインの入力欄に戻す
-    else パスワードがある
-        Page->>Api: POST /api/auth/login<br/>email、password、returnTo
-        Api->>Idp: InitiateAuth (USER_PASSWORD_AUTH)
-        alt *a ログインできない
-            Idp--xApi: 接続できない、または想定外のエラー
-            Api-->>Page: 503 AUTH_UNAVAILABLE など
-            Page-->>User: エラーの文言 (確認コードの入力欄のまま)
-        else 照合できた
-            Idp-->>Api: ID トークン、更新トークン
-            Api->>Db: 会員を issuer と subject で検索
-            Db-->>Api: 会員の行 または なし
-            alt 企業様向け・招待キーで作った会員がいる
-                Api->>Db: メール確認日時を入れる (UPDATE)
-                Db-->>Api: 完了
-            else 購入者 (会員がまだない)
-                Api->>Db: 購入者 (USER) の会員を追加 (INSERT)
-                Db-->>Api: 完了
-            end
-            Api->>Db: 会員を読み、利用できるかを確かめる
-            Db-->>Api: 会員の行
-            Api-->>Page: 200 returnTo
-            Page->>Page: returnTo の画面を読み込み直す
-            Page->>Api: GET /api/auth/me
-            Api->>Db: 会員を検索
-            Db-->>Api: 会員の行
-            Api-->>Page: 200 authenticated=true
-            Page-->>User: 元の画面 (ログイン状態)
-        end
-    end
-```
-
-## 詳細図
-
-### 詳細図 1 基本フロー 1〜4、代替フロー 3a-1〜3a-2 登録の入力欄を表示する
-
-```mermaid
-sequenceDiagram
+    autonumber
     actor User as 購入者
     box rgba(47,111,219,0.10) ブラウザー React
-        participant Header as KusakariHeader.jsx
-        participant App as App.jsx
-        participant Auth as auth.js
-        participant Login as LoginPage.jsx
-        participant Panel as AuthPanel.jsx
-        participant Form as SignupForm.jsx
+        participant Header as 共通ヘッダー<br/>KusakariHeader<br/>(KusakariHeader.jsx)
+        participant App as 画面の切り替え<br/>App<br/>(App.jsx)
+        participant Login as ログイン画面<br/>LoginPage<br/>(LoginPage.jsx)
+        participant Panel as ログインのカード<br/>AuthPanel<br/>(AuthPanel.jsx)
+        participant Form as 登録の入力欄<br/>SignupForm<br/>(SignupForm.jsx)
+        participant AuthJs as 認証の通信<br/>readSession・postAuth<br/>(auth.js)
     end
     box rgba(27,127,92,0.12) EC API Spring Boot
-        participant AuthCtrl as AuthController
-        participant AuthSvc as AuthService
-    end
-
-    Note over User,AuthSvc: 基本フロー 1〜2 ログイン画面を開く (EC-B01 の詳細図 1 と同じ)
-    User->>Header: 「ログイン」をクリック
-    Header->>App: onPanel('login')
-    App->>Auth: openHeaderPanel('login') が login() を呼ぶ
-    Auth-->>App: navigate() で /account/login?returnTo=… に切り替える
-    App->>Login: LoginPage を表示
-    Login->>Panel: AuthPanel を表示 (mode は login)
-    Panel->>Auth: useAuth() の readSession()
-    Auth->>AuthCtrl: GET /api/auth/me
-    AuthCtrl->>AuthSvc: session()
-    AuthSvc-->>AuthCtrl: SessionView (authenticated=false)
-    AuthCtrl-->>Auth: 200 authenticated=false
-    Auth-->>Panel: session
-    Panel-->>User: ログイン画面
-
-    Note over User,AuthSvc: 基本フロー 3〜4 と代替フロー 3a-1〜3a-2 登録の入力欄を表示する
-    alt 3a 招待キーで登録する
-        User->>Panel: 「招待キーで登録（店舗の担当者）」をクリック
-        Note right of Panel: 登録用の URL /account/login?invite=キー を開いたときは、<br/>LoginPage と AuthPanel が invitationInUrl() で<br/>最初から mode を invite にする
-        Panel->>Panel: switchMode('invite')
-        Panel->>Login: onModeChange('invite')<br/>見出しを「招待キーで登録」にする
-        Panel->>Form: SignupForm (step は signup、<br/>invitation は URL のキーか空文字)
-        Form-->>User: 「メールアドレス」「パスワード（8文字以上）」<br/>「パスワード（確認）」「招待キー」
-    else 新規登録
-        User->>Panel: 「新規登録」をクリック
-        Panel->>Panel: switchMode('signup')
-        Panel->>Login: onModeChange('signup')<br/>見出しを「新規登録」にする
-        Panel->>Form: SignupForm (step は signup、invitation は null)
-        Form-->>User: 「メールアドレス」「パスワード（8文字以上）」<br/>「パスワード（確認）」<br/>「企業様向け：出店を申請するアカウントとして登録する」
-    end
-    Note over User,AuthSvc: 切り替えは画面の中だけで行い、通信しない。<br/>ログイン中に登録用の URL を開くと、AuthPanel が<br/>「招待キーは新規登録のときだけ使えます。…」を表示する
-```
-
-### 詳細図 2 基本フロー 5〜9、代替フロー 6a・8a（招待キーなし）
-
-```mermaid
-sequenceDiagram
-    actor User as 購入者
-    box rgba(47,111,219,0.10) ブラウザー React
-        participant Form as SignupForm.jsx
-        participant Auth as auth.js
-    end
-    box rgba(27,127,92,0.12) EC API Spring Boot
-        participant AuthCtrl as AuthController
-        participant SignupCtrl as SignupController
-        participant Errs as ApiErrors
-        participant CogS as CognitoSignup
-        participant AuthSvc as AuthService
-        participant Repo as AuthMember<br/>Repository
+        participant AuthCtrl as ログイン状態API<br/>AuthController<br/>(AuthController.java)
+        participant SignupCtrl as 新規登録API<br/>SignupController<br/>(SignupController.java)
+        participant Errs as エラーの応答<br/>ApiErrors<br/>(ApiErrors.java)
+        participant Inv as 招待キーの処理<br/>StoreInvitationService<br/>(StoreInvitationService.java)
+        participant CogS as Cognito への登録<br/>CognitoSignup<br/>(CognitoSignup.java)
+        participant LoginCtrl as ログインAPI<br/>PasswordLoginController<br/>(PasswordLoginController.java)
+        participant CogP as Cognito でのログイン<br/>CognitoPasswordLogin<br/>(CognitoPasswordLogin.java)
+        participant Auth as ログイン中の会員<br/>AuthService<br/>(AuthService.java)
+        participant Repo as 会員の読み書き<br/>AuthMemberRepository<br/>(AuthMemberRepository.java)
     end
     participant Db as MySQL
     box rgba(180,120,20,0.12) 外部サービス
-        participant Idp as Amazon Cognito
+        participant Cog as Amazon Cognito
     end
 
-    Note over User,Idp: 基本フロー 5〜7 と代替フロー 6a 入力して「確認コードを送信」をクリックする
-    User->>Form: メールアドレス、パスワード、確認用のパスワードを入力
-    opt 6a 企業様向けの登録をする
-        User->>Form: 「企業様向け：出店を申請するアカウントとして登録する」にチェック
+    Note over User,Cog: 共通代替フロー<br/>*a 通信に失敗した場合: 8、28、30、89、91、101、103、117、119、147 に適用
+
+    alt 基本フロー 1 共通ヘッダーから開く
+        User->>Header: 「メイン」画面の共通ヘッダーの「ログイン」をクリック
+        Header->>App: ログインを開くよう伝える (onPanel('login') → openHeaderPanel)
+        App->>Login: URL を /account/login?returnTo=元の URL に変え、<br/>LoginPage を表示 (login → navigate)
+    else 3a-1 登録用の URL を開く
+        User->>App: 店舗から受け取った登録用の URL<br/>(/account/login?invite=招待キー) を開く
+        App->>Login: path が /account/login なので LoginPage を表示<br/>(invitationInUrl があるので、見出しは「招待キーで登録」)
     end
-    User->>Form: 「確認コードを送信」をクリック
-    alt 8a 未入力、メールアドレスの形式違い、8 文字未満
-        Form-->>User: ブラウザーが required、type=email、<br/>minLength=8 で入力を求める。<br/>register() は呼ばれず、通信しない
+    Login->>Panel: ログインのカードを表示 (AuthPanel)
+    Panel->>AuthJs: ログイン状態を読む (useAuth → readSession)<br/>LoginPage の useAuth も同じ GET を送る
+    AuthJs->>AuthCtrl: GET /api/auth/me
+    AuthCtrl->>Auth: ログイン状態を作るよう頼む (session)
+    Auth-->>AuthCtrl: ログインしていない (current の 401 を session が受け止める)
+    AuthCtrl-->>AuthJs: 200 authenticated=false
+    AuthJs-->>Panel: ログインしていない
+
+    alt 3a 招待キーで登録する
+        opt 3a-1 共通ヘッダーから開いたとき
+            Panel-->>User: 2 「ログイン」画面 (メールアドレス、パスワード、「ログイン」、<br/>「新規登録」「招待キーで登録（店舗の担当者）」)
+            User->>Panel: 「招待キーで登録（店舗の担当者）」をクリック
+            Panel->>Login: 招待キーでの登録に切り替えたことを伝える<br/>(switchMode('invite') → onModeChange)。見出しは「招待キーで登録」
+        end
+        Panel->>Form: 登録の入力欄を表示 (SignupForm、<br/>招待キーは URL のキーか空文字)
+        Form-->>User: 3a-2 「メールアドレス」「パスワード（8文字以上）」「パスワード（確認）」<br/>「招待キー」(URL を開いたときはキーが入っている)、「確認コードを送信」
+    else 新規登録
+        Panel-->>User: 2 「ログイン」画面 (メールアドレス、パスワード、「ログイン」、<br/>「新規登録」「招待キーで登録（店舗の担当者）」)
+        User->>Panel: 3 「新規登録」をクリック
+        Panel->>Login: 新規登録に切り替えたことを伝える<br/>(switchMode('signup') → onModeChange)。見出しは「新規登録」
+        Panel->>Form: 登録の入力欄を表示 (SignupForm、招待キーなし)
+        Form-->>User: 4 「メールアドレス」「パスワード（8文字以上）」「パスワード（確認）」<br/>「企業様向け：出店を申請するアカウントとして登録する」、「確認コードを送信」
+    end
+
+    User->>Form: 5・6 メールアドレス、パスワード、確認用のパスワードを入力<br/>(3a-3 なら招待キーも)
+    opt 6a 企業様向けの登録をする
+        User->>Form: 6a-1「企業様向け：出店を申請するアカウントとして登録する」にチェック
+    end
+    User->>Form: 7 「確認コードを送信」をクリック
+    alt 8a 未入力、メールアドレスの形式違い、8 文字未満、招待キーが 43 文字でない
+        Form-->>User: ブラウザーが入力を求める (required、type=email、minLength、pattern)。<br/>通信しない。基本フロー 5 へ戻る
     else ブラウザーの検査を通る
-        Form->>Form: register(event) から run()<br/>ボタンは「登録中…」
-        Form->>Auth: signUp(email, password,<br/>confirmPassword, business, null)
-        Auth->>Auth: postAuth() が authFetch() を呼ぶ
-        Auth->>AuthCtrl: GET /api/auth/csrf
-        AuthCtrl-->>Auth: 200 headerName と token
-        Note over User,Idp: 基本フロー 8 入力形式とメールアドレスの重複を確かめる
-        Auth->>SignupCtrl: POST /api/auth/signup<br/>CSRF のヘッダー付き
-        SignupCtrl->>SignupCtrl: @Valid が SignupRequest を検査し、<br/>password と confirmPassword を比べる
-        alt 8a 形式の違反、または確認用と一致しない
-            SignupCtrl--xErrs: MethodArgumentNotValidException<br/>または ApiException(400, PASSWORD_MISMATCH)
-            Errs-->>Auth: invalid() が 400 INVALID_INPUT、<br/>または business() が 400 PASSWORD_MISMATCH
-            Auth--xForm: throw AuthError
-            Form-->>User: 「パスワードと確認用パスワードが一致しません。」<br/>または「入力内容・文字数・数値の範囲を確認してください。」
-        else 検査を通る
-            SignupCtrl->>CogS: signUp(email, password)
-            CogS->>Idp: call() が POST /<br/>SignUp (Username と email にメールアドレス)
+        Form->>AuthJs: 登録を頼む (register → run → signUp)<br/>ボタンは「登録中…」
+        AuthJs->>AuthCtrl: 書き込みの前に CSRF トークンを取る<br/>(postAuth → authFetch、GET /api/auth/csrf)
+        AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
+        AuthJs->>SignupCtrl: POST /api/auth/signup<br/>(email、password、confirmPassword、business、invitationKey)
+        alt 8a 入力の形式の違反
+            SignupCtrl--xErrs: 入力の検査で例外を投げる<br/>(SignupRequest の @Valid → MethodArgumentNotValidException)
+            Errs-->>AuthJs: 400 INVALID_INPUT「入力内容・文字数・数値の範囲を<br/>確認してください。」(invalid)
+            AuthJs--xForm: エラーを投げる (AuthError)
+            Form-->>User: 8a-1 エラーの文 (run の catch → setFailure)。<br/>入力は残る。8a-2 基本フロー 5 へ戻る
+        else 8a 確認用のパスワードと一致しない
+            SignupCtrl--xErrs: 400 PASSWORD_MISMATCH の例外を投げる (ApiException)
+            Errs-->>AuthJs: 400「パスワードと確認用パスワードが一致しません。」(business)
+            AuthJs--xForm: エラーを投げる (AuthError)
+            Form-->>User: 8a-1「パスワードと確認用パスワードが一致しません。」(setFailure)。<br/>入力は残る。8a-2 基本フロー 5 へ戻る
+        else 招待キーなし
+            SignupCtrl->>CogS: Cognito に登録するよう頼む (signUp)
+            CogS->>Cog: 8 SignUp (Username と email にメールアドレス)
             alt 8a Cognito が受け付けない
-                Idp-->>CogS: UsernameExistsException、<br/>InvalidPasswordException など
-                CogS--xErrs: translate() が ApiException<br/>(409 EMAIL_IN_USE、400 PASSWORD_REJECTED など)
-                Note right of Errs: Cognito に接続できないときは<br/>503 AUTH_UNAVAILABLE (共通代替フロー *a)
-                Errs-->>Auth: business() が status と message を返す
-                Auth--xForm: throw AuthError
-                Form-->>User: 「このメールアドレスは既に登録されています。<br/>ログインしてください。」など
+                Cog-->>CogS: UsernameExistsException、InvalidPasswordException など
+                CogS--xErrs: 409 EMAIL_IN_USE、400 PASSWORD_REJECTED などの<br/>例外を投げる (call → translate)
+                Errs-->>AuthJs: 409「このメールアドレスは既に登録されています。ログインしてください。」<br/>か 400「パスワードが条件を満たしていません。…」など (business)
+                AuthJs--xForm: エラーを投げる (AuthError)
+                Form-->>User: 8a-1 応答の文 (setFailure)。入力は残る。8a-2 基本フロー 5 へ戻る
             else 登録できた
-                Idp-->>CogS: UserSub (未確認のユーザー)
-                Note right of Idp: 基本フロー 9<br/>Cognito が確認コードのメールを送る
+                Cog-->>CogS: 未確認のユーザーの UserSub。<br/>9 Cognito が確認コードのメールを送る
                 CogS-->>SignupCtrl: subject
-                opt 6a business が true
-                    SignupCtrl->>AuthSvc: registerApplicant(issuer, subject, email)
-                    Note right of AuthSvc: @Transactional
-                    AuthSvc->>Repo: findByIssuerAndSubject(issuer, subject)
+                opt 6a-2 企業様向けの登録 (business が真)
+                    SignupCtrl->>Auth: 出店申請用アカウントを作るよう頼む (registerApplicant)
+                    Auth->>Repo: 同じ利用者の会員がいるかを読む (findByIssuerAndSubject)
                     Repo->>Db: SELECT members
-                    Db-->>Repo: 行 または 空
-                    Repo-->>AuthSvc: Optional の AuthMember
-                    AuthSvc->>Repo: 無ければ saveAndFlush<br/>(SHOP_OWNER_APPLICANT の AuthMember)
+                    Db-->>Repo: なし
+                    Repo-->>Auth: なし (あれば作らずに終わる)
+                    Auth->>Repo: 出店申請用 (SHOP_OWNER_APPLICANT) の会員を保存する (saveAndFlush)
                     Repo->>Db: INSERT members
                     Db-->>Repo: 完了
-                    Repo-->>AuthSvc: AuthMember
-                    AuthSvc-->>SignupCtrl: 戻る
+                    Repo-->>Auth: 会員
+                    Auth-->>SignupCtrl: 終わった (コミット)
                 end
-                Note right of SignupCtrl: 購入者はここで会員を作らない。<br/>初めてのログイン (基本フロー 12) で作る
-                SignupCtrl-->>Auth: 200 codeSent=true
-                Auth-->>Form: 戻る
-                Form->>Form: setEmail と setPassword (メモリだけ)<br/>onStep('confirm') で AuthPanel が mode を confirm に
-                Form-->>User: 「確認コード」の入力欄と<br/>「確認して登録を完了」「確認コードを再送する」
+                SignupCtrl-->>AuthJs: 200 { codeSent: true }
+                AuthJs-->>Form: 送った
+                Form->>Panel: メールアドレスとパスワードを覚え (setEmail、setPassword)、<br/>確認の段階に切り替える (onStep('confirm') → switchMode)
+                Panel->>Login: 確認の段階に切り替えたことを伝える (onModeChange)。<br/>見出しは「メールアドレスの確認」
+                Form-->>User: 9 「{メールアドレス} に送信した6桁の確認コードを入力してください。」、<br/>「確認コード」「確認して登録を完了」「確認コードを再送する」「ログインに戻る」
+            end
+        else 3a-3 招待キーがある
+            SignupCtrl->>Inv: 招待キーで登録するよう頼む (register)<br/>register 全体が 1 つのトランザクション
+            Inv->>Db: 招待キーの行をロックして読み、使用回数・店舗・組織を読む<br/>(lockByKeyHash、countForInvitation、findById。SELECT ... FOR UPDATE store_invitations ほか)
+            Db-->>Inv: 招待キー、使用回数、店舗、組織
+            alt 8b 招待キーが使えない (キーが無い、取り消し済み、期限切れ、使用済み、<br/>店舗の閉鎖・停止、組織の停止)
+                Inv--xErrs: 400 INVITATION_INVALID の例外を投げる (invalid)。<br/>Cognito には登録しない
+                Errs-->>AuthJs: 400「招待キーが無効です。期限切れ・取り消し済み・使用済みのキーは<br/>使えません。店舗の管理者に新しいキーを依頼してください。」(business)
+                AuthJs--xForm: エラーを投げる (AuthError)
+                Form-->>User: 8b-1 応答の文 (setFailure)。入力は残る。8b-2 代替フロー 3a-3 へ戻る
+            else 招待キーが使える
+                Inv->>CogS: Cognito に登録するよう頼む (signUp.get → signUp)
+                CogS->>Cog: 8 SignUp
+                alt 8a Cognito が受け付けない
+                    Cog-->>CogS: UsernameExistsException など
+                    CogS--xErrs: 409 EMAIL_IN_USE などの例外を投げる (translate)。<br/>トランザクションを取り消し、キーのロックを外す
+                    Errs-->>AuthJs: 409「このメールアドレスは既に登録されています。<br/>ログインしてください。」など (business)
+                    AuthJs--xForm: エラーを投げる (AuthError)
+                    Form-->>User: 8a-1 応答の文 (setFailure)。入力は残る。8a-2 基本フロー 5 へ戻る
+                else 登録できた
+                    Cog-->>CogS: 未確認のユーザーの UserSub。<br/>9 Cognito が確認コードのメールを送る
+                    CogS-->>Inv: subject
+                    Inv->>Db: 店舗の担当者 (SHOP_STAFF) の会員、組織への所属、店舗の担当 (ロールなし)、<br/>キーの使用記録を保存してコミットする (saveAndFlush、save、flush。<br/>members、organization_members、store_members、store_invitation_uses)
+                    Db-->>Inv: 完了
+                    Inv-->>SignupCtrl: 終わった
+                    SignupCtrl-->>AuthJs: 200 { codeSent: true }
+                    AuthJs-->>Form: 送った
+                    Form-->>User: 9 確認コードの入力欄 (流れは 60〜62 と同じ)
+                end
             end
         end
     end
-```
 
-### 詳細図 3 代替フロー 3a-3・8b 招待キーで確認コードを送る
-
-```mermaid
-sequenceDiagram
-    actor User as 購入者
-    box rgba(47,111,219,0.10) ブラウザー React
-        participant Form as SignupForm.jsx
-        participant Auth as auth.js
-    end
-    box rgba(27,127,92,0.12) EC API Spring Boot
-        participant SignupCtrl as SignupController
-        participant Errs as ApiErrors
-        participant InvSvc as StoreInvitation<br/>Service
-        participant CogS as CognitoSignup
-        participant InvRepo as StoreInvitationRepository<br/>StoreInvitationUseRepository
-        participant StoreRepo as StoreRepository<br/>OrganizationRepository
-        participant MemRepo as AuthMemberRepository<br/>OrganizationMemberRepository<br/>StoreMemberRepository
-    end
-    participant Db as MySQL
-    box rgba(180,120,20,0.12) 外部サービス
-        participant Idp as Amazon Cognito
-    end
-
-    Note over User,Idp: 代替フロー 3a-3 招待キーを入れて「確認コードを送信」をクリックする
-    User->>Form: メールアドレス、パスワード、確認用、招待キーを入力し<br/>「確認コードを送信」をクリック
-    Note right of Form: ブラウザーの検査は詳細図 2 と同じ。<br/>招待キーは pattern (43 文字) でも検査する
-    Form->>Form: register(event) から run()
-    Form->>Auth: signUp(email, password,<br/>confirmPassword, false, key)
-    Note right of Auth: 先に GET /api/auth/csrf を送る (詳細図 2 と同じ)
-    Auth->>SignupCtrl: POST /api/auth/signup<br/>invitationKey 付き
-    Note right of SignupCtrl: @Valid と PASSWORD_MISMATCH の検査は詳細図 2 と同じ。<br/>招待キーと business の両方があれば 400 INVALID_SIGNUP<br/>(画面は両方を送らない)
-    SignupCtrl->>InvSvc: register(key, issuer, email, signUp)
-    Note over InvSvc,Db: @Transactional (クラス全体)。Cognito の呼び出しもこのトランザクションの中
-    InvSvc->>InvRepo: lockByKeyHash(hash(key))
-    InvRepo->>Db: SELECT store_invitations ... FOR UPDATE
-    Db-->>InvRepo: 行 または 空
-    InvRepo-->>InvSvc: Optional の StoreInvitationEntity
-    InvSvc->>InvRepo: countForInvitation(id)
-    InvRepo->>Db: SELECT count store_invitation_uses
-    Db-->>InvRepo: 件数
-    InvRepo-->>InvSvc: 件数
-    InvSvc->>StoreRepo: stores.findById() と organizations.findById()
-    StoreRepo->>Db: SELECT stores、organizations
-    Db-->>StoreRepo: 行
-    StoreRepo-->>InvSvc: StoreEntity と OrganizationEntity
-    alt 8b キーが無い、取り消し済み、期限切れ、使用済み、店舗の閉鎖・停止、組織の停止
-        InvSvc--xErrs: invalid() の ApiException(400,<br/>INVITATION_INVALID)
-        Note right of Errs: ロールバック。Cognito には登録しない
-        Errs-->>Auth: business() が 400 と message を返す
-        Auth--xForm: throw AuthError
-        Form-->>User: 「招待キーが無効です。期限切れ・取り消し済み・<br/>使用済みのキーは使えません。…」
-    else キーが使える
-        InvSvc->>CogS: signUp.get() が signUp(email, password)
-        CogS->>Idp: call() が POST /<br/>SignUp
-        alt 8a Cognito が受け付けない
-            Idp-->>CogS: UsernameExistsException など
-            CogS--xErrs: translate() が ApiException<br/>(409 EMAIL_IN_USE など)
-            Note right of Errs: ロールバックし、キーの行のロックを外す
-            Errs-->>Auth: business() が status と message を返す
-            Auth--xForm: throw AuthError
-            Form-->>User: 「このメールアドレスは既に登録されています。<br/>ログインしてください。」など
-        else 登録できた
-            Idp-->>CogS: UserSub (確認コードのメールを送る)
-            CogS-->>InvSvc: subject
-            InvSvc->>MemRepo: members.findByIssuerAndSubject()<br/>(あれば invalid())
-            MemRepo->>Db: SELECT members
-            Db-->>MemRepo: 空
-            MemRepo-->>InvSvc: Optional の AuthMember (空)
-            InvSvc->>MemRepo: members.saveAndFlush(SHOP_STAFF の AuthMember)
-            MemRepo->>Db: INSERT members
-            Db-->>MemRepo: 完了
-            MemRepo-->>InvSvc: AuthMember
-            InvSvc->>MemRepo: organizationMembers.saveAndFlush(組織への所属)
-            MemRepo->>Db: INSERT organization_members
-            Db-->>MemRepo: 完了
-            MemRepo-->>InvSvc: 戻る
-            InvSvc->>MemRepo: storeMembers.save(店舗の担当、ロールなし)
-            MemRepo-->>InvSvc: 戻る (まだ DB へ送らない)
-            InvSvc->>InvRepo: uses.save(使用記録) と uses.flush()
-            InvRepo->>Db: flush で INSERT store_members、store_invitation_uses
-            Db-->>InvRepo: 完了
-            InvRepo-->>InvSvc: 戻る
-            InvSvc-->>SignupCtrl: 戻る (コミット)
-            SignupCtrl-->>Auth: 200 codeSent=true
-            Auth-->>Form: 戻る
-            Form->>Form: setEmail と setPassword<br/>onStep('confirm')
-            Form-->>User: 「確認コード」の入力欄
-        end
-    end
-```
-
-### 詳細図 4 基本フロー 10〜11、代替フロー 11a 確認コードを照合する
-
-```mermaid
-sequenceDiagram
-    actor User as 購入者
-    box rgba(47,111,219,0.10) ブラウザー React
-        participant Form as SignupForm.jsx
-        participant Auth as auth.js
-    end
-    box rgba(27,127,92,0.12) EC API Spring Boot
-        participant SignupCtrl as SignupController
-        participant Errs as ApiErrors
-        participant CogS as CognitoSignup
-    end
-    box rgba(180,120,20,0.12) 外部サービス
-        participant Idp as Amazon Cognito
-    end
-
-    Note over User,Idp: 基本フロー 10〜11 確認コードを入力して「確認して登録を完了」をクリックする
-    User->>Form: メールに届いた確認コードを入力し<br/>「確認して登録を完了」をクリック
-    Note right of Form: 6桁の数字でなければ pattern で<br/>ブラウザーが止める。通信しない
-    Form->>Form: confirm(event) から run()<br/>ボタンは「確認中…」
-    Form->>Auth: confirmSignUp(email, code)
-    Note right of Auth: 先に GET /api/auth/csrf を送る (詳細図 2 と同じ)
-    Auth->>SignupCtrl: POST /api/auth/signup/confirm
-    SignupCtrl->>CogS: confirm(email.trim(), code.trim())
-    CogS->>Idp: call() が POST /<br/>ConfirmSignUp
-    alt 11a 確認コードが無効、または有効期限切れ
-        Idp-->>CogS: CodeMismatchException<br/>または ExpiredCodeException
-        CogS--xErrs: translate() が ApiException(400,<br/>CODE_MISMATCH または CODE_EXPIRED)
-        Errs-->>Auth: business() が 400 と message を返す
-        Auth--xForm: throw AuthError
-        Form-->>User: 「確認コードが正しくありません。」<br/>または「確認コードの有効期限が切れています。<br/>コードを再送してください。」
-        opt 11a-2 確認コードを再送する
-            User->>Form: 「確認コードを再送する」をクリック
-            Form->>Form: run()
-            Form->>Auth: resendSignUpCode(email)
-            Note right of Auth: 先に GET /api/auth/csrf を送る
-            Auth->>SignupCtrl: POST /api/auth/signup/resend
-            SignupCtrl->>CogS: resend(email.trim())
-            CogS->>Idp: call() が POST /<br/>ResendConfirmationCode
-            Idp-->>CogS: 受け付けた (確認コードのメールを送る)
-            CogS-->>SignupCtrl: 戻る
-            SignupCtrl-->>Auth: 200 codeSent=true
-            Auth-->>Form: 戻る
-            Form-->>User: 「確認コードを再送しました。」
-            Note right of Form: 再送の失敗 (429 AUTH_RATE_LIMITED、<br/>409 ALREADY_CONFIRMED など) は<br/>エラーの文言を出す (図では省略)
-        end
-        Note right of Form: 11a-3 確認コードの入力欄のまま。<br/>基本フロー 10 へ戻る
-    else 確認できた
-        Idp-->>CogS: 成功
-        CogS-->>SignupCtrl: 戻る
-        SignupCtrl-->>Auth: 200 confirmed=true
-        Auth-->>Form: 戻る
-        Note right of Form: 基本フロー 12 へ (詳細図 5)
-    end
-```
-
-### 詳細図 5 基本フロー 12 ログイン状態にして元の画面を表示する
-
-```mermaid
-sequenceDiagram
-    actor User as 購入者
-    box rgba(47,111,219,0.10) ブラウザー React
-        participant App as App.jsx
-        participant Form as SignupForm.jsx
-        participant Auth as auth.js
-    end
-    box rgba(27,127,92,0.12) EC API Spring Boot
-        participant AuthCtrl as AuthController
-        participant LoginCtrl as PasswordLogin<br/>Controller
-        participant Errs as ApiErrors
-        participant CogP as CognitoPassword<br/>Login
-        participant AuthSvc as AuthService
-        participant Repo as AuthMember<br/>Repository
-    end
-    participant Db as MySQL
-    box rgba(180,120,20,0.12) 外部サービス
-        participant Idp as Amazon Cognito
-    end
-
-    Note over User,Idp: 基本フロー 12 アカウントを登録し、ログイン状態にして元の画面を表示する
-    Form->>Form: confirm() の続き。password がメモリにあるか
-    alt password が無い
-        Form->>Form: onStep('login')<br/>AuthPanel がログインの入力欄に戻す
-        Form-->>User: ログインの入力欄
-    else password がある
-        Form->>Auth: passwordLogin(email, password, returnTo)
-        Note right of Auth: 先に GET /api/auth/csrf を送る
-        Auth->>LoginCtrl: POST /api/auth/login
-        LoginCtrl->>CogP: authenticate(email.trim(), password)
-        CogP->>Idp: initiateAuth() が POST /<br/>InitiateAuth (USER_PASSWORD_AUTH)
-        alt *a ログインできない
-            Idp--xCogP: 接続できない、または想定外のエラー
-            CogP--xErrs: throw ApiException<br/>(503 AUTH_UNAVAILABLE など)
-            Errs-->>Auth: business() が status と message を返す
-            Auth--xForm: throw AuthError
-            Form-->>User: エラーの文言 (確認コードの入力欄のまま)
-        else 照合できた
-            Idp-->>CogP: AuthenticationResult
-            CogP-->>LoginCtrl: Login(user, refreshToken)
-            LoginCtrl->>AuthSvc: provision(user)
-            Note right of AuthSvc: @Transactional
-            AuthSvc->>Repo: findByIssuerAndSubject(issuer, subject)
+    User->>Form: 10 メールに届いた確認コードを入力
+    User->>Form: 11 「確認して登録を完了」をクリック
+    alt 記述なし 6 桁の数字でない
+        Form-->>User: ブラウザーが入力を求める (pattern)。通信しない
+    else ブラウザーの検査を通る
+        Form->>AuthJs: 確認コードを送るよう頼む (confirm → run → confirmSignUp)<br/>ボタンは「確認中…」
+        AuthJs->>AuthCtrl: 書き込みの前に CSRF トークンを取る (GET /api/auth/csrf)
+        AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン
+        AuthJs->>SignupCtrl: POST /api/auth/signup/confirm (email、code)
+        SignupCtrl->>CogS: 確認コードを照合するよう頼む (confirm)
+        CogS->>Cog: 12 ConfirmSignUp
+        alt 11a 確認コードが無効、または有効期限切れ
+            Cog-->>CogS: CodeMismatchException か ExpiredCodeException
+            CogS--xErrs: 400 CODE_MISMATCH か CODE_EXPIRED の例外を投げる (translate)
+            Errs-->>AuthJs: 400「確認コードが正しくありません。」か<br/>「確認コードの有効期限が切れています。コードを再送してください。」(business)
+            AuthJs--xForm: エラーを投げる (AuthError)
+            Form-->>User: 11a-1 応答の文 (setFailure)。確認コードの入力欄のまま
+            opt 11a-2 確認コードを再送する
+                User->>Form: 「確認コードを再送する」をクリック
+                Form->>AuthJs: 確認コードを送り直すよう頼む (run → resendSignUpCode)
+                AuthJs->>AuthCtrl: 書き込みの前に CSRF トークンを取る (GET /api/auth/csrf)
+                AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン
+                AuthJs->>SignupCtrl: POST /api/auth/signup/resend (email)
+                SignupCtrl->>CogS: 確認コードを送り直すよう頼む (resend)
+                CogS->>Cog: ResendConfirmationCode
+                Cog-->>CogS: 受け付けた (確認コードのメールを送る)
+                CogS-->>SignupCtrl: 終わった
+                SignupCtrl-->>AuthJs: 200 { codeSent: true }
+                AuthJs-->>Form: 送った
+                Form-->>User: 「確認コードを再送しました。」(setNotice)
+            end
+            User->>Form: 11a-3 確認コードを入力し直す (基本フロー 10 へ戻る)
+        else 確認できた
+            Cog-->>CogS: 確認済みにした
+            CogS-->>SignupCtrl: 終わった
+            SignupCtrl-->>AuthJs: 200 { confirmed: true }
+            AuthJs-->>Form: 確認できた
+            Form->>AuthJs: 12 覚えていたパスワードでログインするよう頼む (passwordLogin)
+            AuthJs->>AuthCtrl: 書き込みの前に CSRF トークンを取る (GET /api/auth/csrf)
+            AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン
+            AuthJs->>LoginCtrl: POST /api/auth/login (email、password、returnTo)
+            LoginCtrl->>CogP: メールアドレスとパスワードで認証するよう頼む (authenticate)
+            CogP->>Cog: InitiateAuth USER_PASSWORD_AUTH
+            Cog-->>CogP: ID トークン、refresh トークン
+            CogP-->>LoginCtrl: ID トークンを検証した利用者と refresh トークン (toUser)
+            LoginCtrl->>Auth: 会員を用意するよう頼む (provision)
+            Auth->>Repo: 会員を読む (findByIssuerAndSubject)
             Repo->>Db: SELECT members
-            Db-->>Repo: 行 または 空
-            Repo-->>AuthSvc: Optional の AuthMember
-            alt 企業様向け・招待キーで作った会員がいる
-                AuthSvc->>AuthSvc: markEmailVerified()<br/>コミットのときに UPDATE members
-            else 購入者 (会員がまだない)
-                AuthSvc->>Repo: saveAndFlush(購入者 USER の AuthMember)
+            Db-->>Repo: 会員の行 (なければなし)
+            Repo-->>Auth: 会員 (なければなし)
+            alt 6a・3a で作った会員がいる
+                Auth->>Db: メールの確認日時を入れてコミットする<br/>(markEmailVerified。save は呼ばない。UPDATE members)
+            else 通常の登録 (会員がまだない)
+                Auth->>Repo: 購入者 (USER) の会員を保存する (saveAndFlush)
                 Repo->>Db: INSERT members
                 Db-->>Repo: 完了
-                Repo-->>AuthSvc: AuthMember
+                Repo-->>Auth: 会員
             end
-            AuthSvc-->>LoginCtrl: 戻る
-            LoginCtrl->>AuthSvc: current()
-            AuthSvc->>Repo: findByIssuerAndSubject(issuer, subject)
+            Auth-->>LoginCtrl: 終わった
+            LoginCtrl->>Auth: 会員が使えるかを確かめる (current)
+            Auth->>Repo: 会員を読む (findByIssuerAndSubject)
             Repo->>Db: SELECT members
-            Db-->>Repo: 行
-            Repo-->>AuthSvc: AuthMember
-            AuthSvc-->>LoginCtrl: AuthMember (利用できる)
-            LoginCtrl->>LoginCtrl: changeSessionId()、更新トークンの保存、<br/>saveContext()、safeReturn(returnTo)
-            LoginCtrl-->>Auth: 200 returnTo
-            Auth-->>Form: returnTo
-            Form->>Form: onSignedIn(target)<br/>AuthPanel の complete() が window.location.replace(target)
-            Form->>App: 元の画面を読み込み直す
-            App->>Auth: useAuth() の readSession()
-            Auth->>AuthCtrl: GET /api/auth/me
-            AuthCtrl->>AuthSvc: session()
-            AuthSvc->>Repo: current() の findByIssuerAndSubject()
-            Repo->>Db: SELECT members
-            Db-->>Repo: 行
-            Repo-->>AuthSvc: AuthMember
-            AuthSvc-->>AuthCtrl: SessionView (authenticated=true)
-            AuthCtrl-->>Auth: 200 authenticated=true
-            Auth-->>App: session
-            App-->>User: 元の画面。KusakariHeader に「アカウント」
+            Db-->>Repo: 会員の行
+            Repo-->>Auth: 会員
+            Auth-->>LoginCtrl: 会員
+            LoginCtrl->>LoginCtrl: セッション ID を変え、refresh トークン、CSRF トークン、<br/>認証情報をセッションに保存する<br/>(changeSessionId、CognitoRefreshSession.store、saveContext)
+            LoginCtrl-->>AuthJs: 200 { returnTo } (safeReturn)
+            AuthJs-->>Form: 戻る先 (kusakari-auth-changed を発火)
+            Form->>Panel: 戻る先を渡す (onSignedIn → complete)
+            Panel->>App: 戻る先の URL を読み込み直す (window.location.replace)<br/>共通ヘッダーから来たなら元の画面、登録用の URL からなら「メイン」画面
+            App->>AuthJs: ログイン状態を読む (useAuth → readSession)
+            AuthJs->>AuthCtrl: GET /api/auth/me
+            AuthCtrl->>Auth: ログイン状態を作るよう頼む (session)
+            Auth-->>AuthCtrl: ログインしている (current で会員を読む)
+            AuthCtrl-->>AuthJs: 200 authenticated=true
+            AuthJs-->>App: ログインしている
+            App-->>User: 12 元の画面 (共通ヘッダーに「アカウント」)
         end
+    end
+```
+
+## 共通代替フローを直接書いた図
+
+上の図の「確認コードを送信」の通信（CSRF トークンの取得と `POST /api/auth/signup`）と、ログイン画面を開いたときの `GET /api/auth/me` に、この画面で起こる共通代替フロー \*a を書き込んだ図です。この画面の通信は `auth.js` の `readSession()` と `postAuth()` が送り、`api.js` を通らないので、00 の \*a-1 の文とは違う文が出ます。「確認して登録を完了」「確認コードを再送する」と、確認のあとのログインの通信も、`postAuth()` を通るので「確認コードを送信」と同じ形です（Cognito や MySQL に届かないときの文は呼ぶ所で違います。「ユースケース記述との差」を見てください）。
+
+共通代替フロー \*b（未ログインの場合）は、この画面には当たりません。ユースケースの事前条件がログアウト状態で、使う API（`/api/auth/me`、`/api/auth/csrf`、`/api/auth/login`、`/api/auth/signup`、`/api/auth/signup/*`）はログインしていなくても使えるためです。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as 購入者
+    box rgba(47,111,219,0.10) ブラウザー React
+        participant Panel as ログインのカード<br/>AuthPanel<br/>(AuthPanel.jsx)
+        participant Form as 登録の入力欄<br/>SignupForm<br/>(SignupForm.jsx)
+        participant AuthJs as 認証の通信<br/>readSession・postAuth<br/>(auth.js)
+    end
+    box rgba(27,127,92,0.12) EC API Spring Boot
+        participant AuthCtrl as ログイン状態API<br/>AuthController<br/>(AuthController.java)
+        participant SignupCtrl as 新規登録API<br/>SignupController<br/>(SignupController.java)
+        participant CogS as Cognito への登録<br/>CognitoSignup<br/>(CognitoSignup.java)
+        participant Auth as ログイン中の会員<br/>AuthService<br/>(AuthService.java)
+    end
+    participant Db as MySQL
+    box rgba(180,120,20,0.12) 外部サービス
+        participant Cog as Amazon Cognito
+    end
+
+    User->>Panel: ログイン画面を開く (共通ヘッダーの「ログイン」か、登録用の URL)
+    Panel->>AuthJs: ログイン状態を読む (useAuth → readSession)
+    alt *a GET /api/auth/me が届かない
+        AuthJs-xAuthCtrl: GET /api/auth/me
+        AuthJs--xPanel: fetch の例外をそのまま投げる (useAuth の catch → setError)
+        Panel-->>User: *a-1 ブラウザーが作った例外の文だけ (カードの代わりに出す)。<br/>*a-3 はブラウザーの再読み込み
+    else *a 200 以外 (中継のサーバーの 502 など)
+        AuthJs->>AuthCtrl: GET /api/auth/me
+        AuthCtrl-->>AuthJs: 200 以外の応答
+        AuthJs--xPanel: 「ログイン状態を確認できません。」を投げる (useAuth の catch → setError)
+        Panel-->>User: *a-1「ログイン状態を確認できません。」だけ。<br/>*a-3 はブラウザーの再読み込み
+    else 読めた
+        AuthJs->>AuthCtrl: GET /api/auth/me
+        AuthCtrl-->>AuthJs: 200 authenticated=false
+        AuthJs-->>Panel: ログインしていない
+        Panel-->>User: ログイン画面 (以降は上の図の 13〜22)
+    end
+
+    User->>Form: 入力して「確認コードを送信」をクリック (ブラウザーの検査を通った)
+    Form->>AuthJs: 登録を頼む (register → run → signUp)
+    alt *a GET /api/auth/csrf か POST /api/auth/signup が届かない
+        AuthJs-xAuthCtrl: GET /api/auth/csrf (または POST /api/auth/signup)
+        AuthJs--xForm: fetch の例外をそのまま投げる (postAuth は言い換えない)
+        Form-->>User: *a-1 ブラウザーが作った例外の文 (run の catch → setFailure)。<br/>*a-2 入力は残る
+    else *a CSRF トークンの応答が 200 以外
+        AuthJs->>AuthCtrl: GET /api/auth/csrf
+        AuthCtrl-->>AuthJs: 200 以外の応答
+        AuthJs--xForm: 「操作の確認情報を取得できません。画面を再読み込みしてください。」<br/>を投げる (authFetch)
+        Form-->>User: *a-1「操作の確認情報を取得できません。画面を再読み込みしてください。」<br/>(setFailure)。*a-2 入力は残る
+    else *a POST の応答が JSON でなく、200 以外 (中継のサーバーの 502 など)
+        AuthJs->>AuthCtrl: GET /api/auth/csrf
+        AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン
+        AuthJs->>SignupCtrl: POST /api/auth/signup
+        SignupCtrl-->>AuthJs: JSON でない本文 (登録できたかは分からない)
+        AuthJs--xForm: 「登録できませんでした。時間をおいて再試行してください。」<br/>を投げる (postAuth の fallback)
+        Form-->>User: *a-1「登録できませんでした。時間をおいて再試行してください。」<br/>(setFailure)。*a-2 入力は残る
+    else *a Cognito に届かない
+        AuthJs->>AuthCtrl: GET /api/auth/csrf
+        AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン
+        AuthJs->>SignupCtrl: POST /api/auth/signup
+        SignupCtrl->>CogS: Cognito に登録するよう頼む (signUp)
+        CogS-xCog: SignUp
+        CogS-->>AuthJs: 503 AUTH_UNAVAILABLE (call の RestClientException、ApiErrors.java の business)
+        AuthJs--xForm: エラーを投げる (AuthError)
+        Form-->>User: *a-1「認証サービスに接続できません。時間をおいて再試行してください。」<br/>(setFailure)。*a-2 入力は残る
+    else *a 6a の会員の保存で MySQL との通信に失敗
+        AuthJs->>AuthCtrl: GET /api/auth/csrf
+        AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン
+        AuthJs->>SignupCtrl: POST /api/auth/signup (business が真)
+        SignupCtrl->>CogS: Cognito に登録するよう頼む (signUp)
+        CogS->>Cog: SignUp
+        Cog-->>CogS: UserSub (Cognito には未確認のユーザーが残る)
+        CogS-->>SignupCtrl: subject
+        SignupCtrl->>Auth: 出店申請用アカウントを作るよう頼む (registerApplicant)
+        Auth->>Db: INSERT members
+        Db--xAuth: 失敗 (DataAccessException)。会員は作られない
+        Auth--xSignupCtrl: 例外
+        SignupCtrl-->>AuthJs: 503 DATABASE_UNAVAILABLE (ApiErrors.java の database)
+        AuthJs--xForm: エラーを投げる (AuthError)
+        Form-->>User: *a-1「保存処理を完了できませんでした。時間をおいて再試行してください。」<br/>(setFailure)。*a-2 入力は残る
+    else 送れた
+        AuthJs->>AuthCtrl: GET /api/auth/csrf
+        AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン
+        AuthJs->>SignupCtrl: POST /api/auth/signup
+        SignupCtrl-->>AuthJs: 200 { codeSent: true } (上の図の 39〜82)
+        AuthJs-->>Form: 送った
+        Form-->>User: 確認コードの入力欄
+    end
+    opt *a-3 やり直す
+        User->>Form: 残った入力のまま、もう一度「確認コードを送信」をクリック<br/>(基本フロー 7 へ戻る。Cognito への登録が済んでいたら 409 EMAIL_IN_USE になる)
     end
 ```
 
 ## ユースケース記述との差
 
-- 8・8a: 「8文字以上」の検査は、まずブラウザーが入力欄の `minLength={8}` で止め、通信しません。サーバーの `SignupRequest` の `@Size(min = 8)` を通らない値は、400 `INVALID_INPUT`「入力内容・文字数・数値の範囲を確認してください。」になります。記述の「パスワードが条件を満たしていません。8文字以上で入力してください。」は、Cognito が `InvalidPasswordException` を返したときの文言です。EC の `infra/cognito/kusakari-ec-terraform/main.tf` のパスワードポリシーは 8 文字以上だけなので、画面から操作する限り、この文言はふつう出ません。
+- 8・8a: 「8文字以上」の検査は、まずブラウザーが入力欄の `minLength={8}` で止め、通信しません。サーバーの `SignupRequest` の `@Size(min = 8)` を通らない値は、400 `INVALID_INPUT`「入力内容・文字数・数値の範囲を確認してください。」になります。記述の「パスワードが条件を満たしていません。8文字以上で入力してください。」は、Cognito が `InvalidPasswordException` を返したときの文です。
 - 8: メールアドレスの重複は EC の DB ではなく、Cognito の `SignUp`（`UsernameExistsException`）で確かめます。
-- 8a: 記述にない応答があります。Cognito が新規登録を受け付けないとき 503 `AUTH_UNAVAILABLE`「現在、新規登録を受け付けていません。」、確認コードのメールを送れないとき 503 `CODE_DELIVERY_FAILED`「確認コードを送信できませんでした。メールアドレスを確認してください。」、試行が多いとき 429 `AUTH_RATE_LIMITED` です。
+- 8a: 記述にない応答があります。Cognito が新規登録を受け付けないとき 503 `AUTH_UNAVAILABLE`「現在、新規登録を受け付けていません。」、確認コードのメールを送れないとき 503 `CODE_DELIVERY_FAILED`「確認コードを送信できませんでした。メールアドレスを確認してください。」、試行が多いとき 429 `AUTH_RATE_LIMITED` です。招待キーと企業様向けを両方送ると 400 `INVALID_SIGNUP` ですが、画面は招待キーの入力欄とチェックボックスを同時に出さないので届きません。
 - 9: 確認コードのメールは、EC のコードではなく Cognito が送ります。
-- 12: 購入者の会員（`members` の行）は、登録のときではなく、確認コードのあとのログイン（`POST /api/auth/login` の `provision()`）で作ります。企業様向けと招待キーの会員は、基本フロー 8〜9 の `POST /api/auth/signup` で作り、確認のあとのログインでメール確認日時を入れます。
+- 12: 購入者の会員（`members` の行）は、登録のときではなく、確認コードのあとのログイン（`POST /api/auth/login` の `provision()`）で作ります。企業様向けと招待キーの会員は、基本フロー 8〜9 の `POST /api/auth/signup` で作り、確認のあとのログインでメールの確認日時を入れます。
 - 3a-3: 招待キーで登録すると、`members` のほかに `organization_members`（組織への所属）、`store_members`（店舗の担当、ロールなし）、`store_invitation_uses`（キーの使用記録）を、Cognito への登録と同じトランザクションで作ります。キーの行は `SELECT ... FOR UPDATE` でロックし、使用回数の上限を超えないようにしています。
-- 11a: 記述にない応答があります。409 `ALREADY_CONFIRMED`「このアカウントは確認済みです。ログインしてください。」と、429 `AUTH_RATE_LIMITED`「試行回数が多すぎます。時間をおいて再試行してください。」です。
-- 12: 確認のあとのログインに失敗すると（503 `AUTH_UNAVAILABLE` など）、確認コードの入力欄のままエラーを出します。アカウントはもう確認済みなので、もう一度「確認して登録を完了」を押すと 409 `ALREADY_CONFIRMED` になります。「ログインに戻る」からログインし直す必要があります。記述にない枝です。
-- Cognito への登録のあとで DB への保存に失敗すると（503 `DATABASE_UNAVAILABLE` など）、Cognito に未確認のユーザーだけが残ります（`StoreInvitationService.register()` のコメントにも書かれています）。同じメールアドレスで登録し直すと 409 `EMAIL_IN_USE` になります。そのままログインして確認コードを入れると、`provision()` が購入者（`USER`）として会員を作り、企業様向けや招待キーの種類にはなりません。記述にない失敗の扱いです。
-- 共通代替フロー *a: ブラウザーから EC API に届かないときは、`postAuth()` が例外を言い換えないため、ブラウザーが出す `TypeError` の文言がそのまま表示されます（EC-B01 と同じ）。
+- 3a-1: 登録用の URL には `returnTo` が無いので、登録のあとは「メイン」画面（`/`）を表示します。共通ヘッダーの「ログイン」から開いたときは、`returnTo` の元の画面に戻ります。
+- 11a: 記述にない応答があります。409 `ALREADY_CONFIRMED`「このアカウントは確認済みです。ログインしてください。」と、429 `AUTH_RATE_LIMITED`「試行回数が多すぎます。時間をおいて再試行してください。」です。再送（11a-2）の失敗も、同じく応答の文を出します。
+- 12: `SignupForm` の `confirm()` には、覚えたパスワードが無いときにログインの入力欄へ戻す枝があります。登録から来たときも、ログインで `EMAIL_NOT_CONFIRMED` になって確認の段階へ移ったときも、パスワードを覚えているので、画面の操作ではこの枝は起こりません。図には書いていません。
+- 12: 確認のあとのログインに失敗すると（Cognito に届かない 503 `AUTH_UNAVAILABLE`「認証を確認できません。時間をおいて再試行してください。」など）、確認コードの入力欄のままエラーを出します。アカウントはもう確認済みなので、もう一度「確認して登録を完了」を押すと 409 `ALREADY_CONFIRMED` になります。「ログインに戻る」からログインし直す必要があります。記述にない枝です。
+- 共通代替フロー \*a: この画面の通信は `api.js` を通らないので、00 の \*a-1 の「サーバーに接続できません。…」は出ません。届かないときはブラウザーが作る例外の文が、CSRF トークンを取れないときは「操作の確認情報を取得できません。画面を再読み込みしてください。」が、そのまま出ます。「再取得」のボタンもありません。Cognito に届かないときの文は、`CognitoSignup`（登録・確認・再送）では「認証サービスに接続できません。時間をおいて再試行してください。」、`CognitoPasswordLogin`（確認のあとのログイン）では「認証を確認できません。時間をおいて再試行してください。」です。
+- 共通代替フロー \*a: Cognito への登録のあとで DB への保存に失敗すると（6a の `registerApplicant()`、3a の `StoreInvitationService.register()`）、Cognito に未確認のユーザーだけが残ります（`StoreInvitationService.register()` のコメントにも書かれています）。同じメールアドレスで登録し直すと 409 `EMAIL_IN_USE` になります。そのままログインして確認コードを入れると、`provision()` が購入者（`USER`）として会員を作り、企業様向けや招待キーの種類にはなりません。記述にない失敗の扱いです。
+- 関連情報「ログイン中に登録用のURLを開くと…と表示する」: ログイン中は、`AuthPanel` がアカウントの情報と「ログアウト」の上に「招待キーは新規登録のときだけ使えます。ログアウトしてから、新しいアカウントとして登録してください。」を出します。事前条件がログアウト状態なので、図には書いていません。
 
 ## 確かめられなかったこと
 
-- 確認コードのメールの送信、文面、コードの有効期限、再送の回数の上限は、Cognito の機能と User Pool の設定で決まり、コードでは確かめられません。EC の `infra/cognito/kusakari-ec-terraform/main.tf` では `auto_verified_attributes = ["email"]` ですが、実際の User Pool は kusakari-terraform で管理しており、その設定とパスワードポリシーは確かめていません。
-- 6a・8a の画面でブラウザーが出す入力の文言は、ブラウザーと言語の設定で変わります。
+- 確認コードのメールの送信、文面、コードの有効期限、再送の回数の上限は、Cognito の機能と User Pool の設定で決まり、コードでは確かめられません。実際の User Pool は kusakari-terraform で管理しており、その設定とパスワードポリシーは確かめていません。
+- 8a・6a の画面でブラウザーが出す入力の文と、\*a でブラウザーが作る例外の文は、ブラウザーと言語の設定で変わります。
+- `POST` の応答が JSON でなく、しかも 200 だったときは、`postAuth()` が成功として扱い、確認の段階へ進みます。中継のサーバーがそう返す環境があるかは確かめていません。
+- GitHub と Obsidian での図の見た目は確かめていません。
 
 ## 参照したコード
 
-- [packages/site-header/KusakariHeader.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/packages/site-header/KusakariHeader.jsx): `panelAction()`、「ログイン」ボタン
-- [frontend/src/App.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/App.jsx): `openHeaderPanel()`、`/account/login` で `LoginPage` を返す条件
-- [frontend/src/auth.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/auth.js): `login()`、`readSession()`、`authFetch()`、`postAuth()`、`signUp()`、`confirmSignUp()`、`resendSignUpCode()`、`passwordLogin()`
-- [frontend/src/components/LoginPage.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/components/LoginPage.jsx): `headings`、`invitationInUrl()` での初期の mode
-- [frontend/src/components/AuthPanel.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/components/AuthPanel.jsx): `invitationInUrl()`、`switchMode()`、`complete()`、`SignupForm` に渡す値、ログイン中の招待キーの文言
-- [frontend/src/components/SignupForm.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/components/SignupForm.jsx): `register()`、`confirm()`、`run()`、`invitationPattern`、入力欄の `required`・`minLength`・`pattern`、「確認コードを再送する」
-- [frontend/src/workspace/StoreInvitations.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/StoreInvitations.jsx): 登録用 URL（`/account/login?invite=`）
-- [backend/src/main/java/jp/kusakari/ec/auth/AuthController.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/AuthController.java): `me()`、`csrf()`
-- [backend/src/main/java/jp/kusakari/ec/auth/SignupController.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/SignupController.java): `signUp()`、`confirm()`、`resend()`、`SignupRequest`、`ConfirmRequest`
-- [backend/src/main/java/jp/kusakari/ec/auth/CognitoSignup.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/CognitoSignup.java): `signUp()`、`confirm()`、`resend()`、`call()`、`translate()`
-- [backend/src/main/java/jp/kusakari/ec/store/service/StoreInvitationService.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/store/service/StoreInvitationService.java): `register()`、`invalid()`、`hash()`
-- [backend/src/main/java/jp/kusakari/ec/store/persistence/entity/StoreInvitationEntity.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/store/persistence/entity/StoreInvitationEntity.java): `usable()`
-- [backend/src/main/java/jp/kusakari/ec/store/persistence/repository/StoreInvitationRepository.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/store/persistence/repository/StoreInvitationRepository.java): `lockByKeyHash()`
-- [backend/src/main/java/jp/kusakari/ec/store/persistence/repository/StoreInvitationUseRepository.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/store/persistence/repository/StoreInvitationUseRepository.java): `countForInvitation()`
-- [backend/src/main/java/jp/kusakari/ec/catalog/persistence/repository/StoreRepository.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/catalog/persistence/repository/StoreRepository.java): `findById()`
-- [backend/src/main/java/jp/kusakari/ec/store/persistence/repository/OrganizationRepository.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/store/persistence/repository/OrganizationRepository.java): `findById()`
-- [backend/src/main/java/jp/kusakari/ec/store/persistence/repository/OrganizationMemberRepository.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/store/persistence/repository/OrganizationMemberRepository.java): `saveAndFlush()`
-- [backend/src/main/java/jp/kusakari/ec/store/persistence/repository/StoreMemberRepository.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/store/persistence/repository/StoreMemberRepository.java): `save()`
-- [backend/src/main/java/jp/kusakari/ec/auth/AuthService.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/AuthService.java): `registerApplicant()`、`provision()`、`current()`、`session()`
-- [backend/src/main/java/jp/kusakari/ec/auth/AuthMemberRepository.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/AuthMemberRepository.java): `findByIssuerAndSubject()`
-- [backend/src/main/java/jp/kusakari/ec/auth/PasswordLoginController.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/PasswordLoginController.java): `login()`
-- [backend/src/main/java/jp/kusakari/ec/auth/CognitoPasswordLogin.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/CognitoPasswordLogin.java): `authenticate()`、`initiateAuth()`
-- [backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java): `business()`、`invalid()`、`database()`
-- [infra/cognito/kusakari-ec-terraform/main.tf](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/infra/cognito/kusakari-ec-terraform/main.tf): `password_policy`、`auto_verified_attributes`
-- [docs/decisions/2026-11-09-signup-in-login-card.md](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/docs/decisions/2026-11-09-signup-in-login-card.md): ログインのカードの中で登録する決定
+- [packages/site-header/KusakariHeader.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/packages/site-header/KusakariHeader.jsx): `panelAction`、「ログイン」ボタン
+- [frontend/src/App.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/App.jsx): `openHeaderPanel`、`/account/login` で `LoginPage` を返すところ
+- [frontend/src/workspace/navigation.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/navigation.js): `navigate`
+- [frontend/src/auth.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/auth.js): `login`、`readSession`、`authFetch`、`postAuth`、`AuthError`、`signUp`、`confirmSignUp`、`resendSignUpCode`、`passwordLogin`
+- [frontend/src/useAuth.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/useAuth.js): `useAuth`
+- [frontend/src/components/LoginPage.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/components/LoginPage.jsx): `headings`、`invitationInUrl` での最初の見出し
+- [frontend/src/components/AuthPanel.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/components/AuthPanel.jsx): `invitationInUrl`、`switchMode`、`complete`、`returnTo`、`SignupForm` に渡す値、ログイン中の招待キーの文
+- [frontend/src/components/SignupForm.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/components/SignupForm.jsx): `register`、`confirm`、`run`、`invitationPattern`、入力欄の `required`・`minLength`・`pattern`、「確認コードを再送する」
+- [frontend/src/workspace/StoreInvitations.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/StoreInvitations.jsx): 登録用の URL（`/account/login?invite=`）
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthController.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthController.java): `me`、`csrf`
+- [backend/src/main/java/jp/kusakari/ec/auth/SignupController.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/SignupController.java): `signUp`、`confirm`、`resend`、`SignupRequest`、`ConfirmRequest`
+- [backend/src/main/java/jp/kusakari/ec/auth/CognitoSignup.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/CognitoSignup.java): `signUp`、`confirm`、`resend`、`call`、`translate`
+- [backend/src/main/java/jp/kusakari/ec/store/service/StoreInvitationService.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/store/service/StoreInvitationService.java): `register`、`invalid`、`hash`
+- [backend/src/main/java/jp/kusakari/ec/store/persistence/entity/StoreInvitationEntity.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/store/persistence/entity/StoreInvitationEntity.java): `usable`
+- [backend/src/main/java/jp/kusakari/ec/store/persistence/repository/StoreInvitationRepository.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/store/persistence/repository/StoreInvitationRepository.java): `lockByKeyHash`
+- [backend/src/main/java/jp/kusakari/ec/store/persistence/repository/StoreInvitationUseRepository.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/store/persistence/repository/StoreInvitationUseRepository.java): `countForInvitation`
+- [backend/src/main/java/jp/kusakari/ec/auth/PasswordLoginController.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/PasswordLoginController.java): `login`
+- [backend/src/main/java/jp/kusakari/ec/auth/CognitoPasswordLogin.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/CognitoPasswordLogin.java): `authenticate`、`initiateAuth`、`toUser`
+- [backend/src/main/java/jp/kusakari/ec/auth/CognitoRefreshSession.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/CognitoRefreshSession.java): `store`
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthService.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthService.java): `registerApplicant`、`provision`、`current`、`session`
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthMemberRepository.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthMemberRepository.java): `findByIssuerAndSubject`
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthUrls.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthUrls.java): `safeReturn`
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthConfiguration.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthConfiguration.java): `authorizeHttpRequests`（ログインしていなくても使える API）
+- [backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java): `business`、`invalid`、`database`
+- [docs/decisions/2026-11-09-signup-in-login-card.md](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/docs/decisions/2026-11-09-signup-in-login-card.md): ログインのカードの中で登録する決定

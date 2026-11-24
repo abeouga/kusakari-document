@@ -1,201 +1,246 @@
 # EC-B02 ログアウトする
 
 - ユースケース記述: [EC-B02_ログアウトする](<../../アーカイブ/ユースケース/kusakari-ec/EC-B02_ログアウトする.md>)
-- 対象のコード: kusakari-ec の main（19a2be3、2026-11-20 時点）
+- 共通代替フロー: [00_全ユースケース共通の代替フロー](<00_全ユースケース共通の代替フロー.md>)
+- 対象のコード: kusakari-ec の main（6bad7e3、2026-11-24 時点）
 
-ログアウトは 2 段階です。EC API が自分の HTTP セッションを無効にし、Cognito のログアウト用 URL（`logoutUrl`）を返します。ブラウザーはその URL へ移り、Cognito が EC の「/」へ戻します。
+## シーケンス図
 
-## 概要図
-
-```mermaid
-sequenceDiagram
-    actor User as 利用者
-    participant Page as アカウント情報画面<br/>React
-    participant Api as EC API<br/>Spring Boot
-    participant Db as MySQL
-    participant Idp as Amazon Cognito
-
-    Note over User,Idp: 基本フロー 1〜2 アカウント情報画面を開く (EC-C01)
-    User->>Page: 共通ヘッダーの「アカウント」をクリック
-    Page->>Page: /account に切り替える<br/>(ページは読み込み直さない)
-    Page->>Api: GET /api/auth/me (Workspace)
-    Api->>Db: 会員を検索
-    Db-->>Api: 会員の行
-    Api-->>Page: 200 authenticated=true
-    Page->>Api: GET /api/auth/me<br/>(AccountPage と AuthPanel が 1 回ずつ)
-    Api->>Db: 会員を検索
-    Db-->>Api: 会員の行
-    Api-->>Page: 200 email、accountType など
-    Page-->>User: 「アカウント情報」画面<br/>メールアドレス、アカウントの種類、「ログアウト」
-    Note over User,Idp: 未ログインならログインの入力欄を出す (共通代替フロー *b を適用)
-
-    Note over User,Idp: 基本フロー 3〜4 「ログアウト」をクリックし、ログアウト処理をする
-    User->>Page: 「ログアウト」をクリック
-    Page->>Page: ボタンを「ログアウト中…」にする
-    Page->>Api: GET /api/auth/csrf
-    Note right of Api: ログイン中なので<br/>会員を DB で確かめる
-    Api-->>Page: 200 CSRF の確認情報
-    Page->>Api: POST /api/auth/logout
-    alt *a 通信に失敗した、または 200 以外の応答
-        Api--xPage: 403 FORBIDDEN (CSRF が無効) など、<br/>または応答なし
-        Page-->>User: 「ログアウトできませんでした。」<br/>または「通信できないためログアウトできませんでした。<br/>接続を確認してもう一度お試しください。」<br/>「ログアウト」をもう一度押せる
-    else ログアウトできた
-        Api->>Api: HTTP セッションを無効にし、<br/>KUSAKARI_SESSION の Cookie を消す
-        Api-->>Page: 200 logoutUrl
-        Note over User,Idp: 基本フロー 5 「メイン」画面を表示する
-        Page->>Idp: GET /logout<br/>client_id と logout_uri 付き (ページ遷移)
-        Idp-->>Page: 302 logout_uri (EC の「/」)
-        Page->>Api: GET /api/auth/me
-        Api->>Api: セッションが無いので未ログインとして返す<br/>(DB は読まない)
-        Api-->>Page: 200 authenticated=false
-        Page-->>User: 「メイン」画面<br/>共通ヘッダーに「ログイン」
-    end
-```
-
-## 詳細図
-
-### 詳細図 1 基本フロー 1〜2 アカウント情報画面を開く
+参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
+ログアウトは 2 段階です。EC API が自分の HTTP セッションを無効にして、Cognito のログアウト用の URL（`logoutUrl`）を返します。ブラウザーはその URL へ移り、Cognito が EC の「/」へ戻します。
+共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
 
 ```mermaid
 sequenceDiagram
+    autonumber
     actor User as 利用者
     box rgba(47,111,219,0.10) ブラウザー React
-        participant Header as KusakariHeader.jsx
-        participant App as App.jsx
-        participant Work as Workspace.jsx
-        participant Acct as AccountPage.jsx
-        participant Res as useResource.js
-        participant Panel as AuthPanel.jsx
-        participant Auth as auth.js
+        participant Header as 共通ヘッダー<br/>KusakariHeader<br/>(KusakariHeader.jsx)
+        participant App as 画面の切り替え<br/>App<br/>(App.jsx)
+        participant Work as マイページの枠<br/>Workspace<br/>(Workspace.jsx)
+        participant Acct as アカウント情報画面<br/>AccountPage<br/>(AccountPage.jsx)
+        participant Panel as アカウント情報とログアウト<br/>AuthPanel<br/>(AuthPanel.jsx)
+        participant UseAuth as ログイン状態の読み込み<br/>useAuth<br/>(useAuth.js)
+        participant Hook as 画面のデータの取得<br/>useResource<br/>(useResource.js)
+        participant Http as 通信<br/>request<br/>(api.js)
+        participant AuthJs as ログインの通信<br/>readSession・logout<br/>(auth.js)
+        participant Browser as ブラウザー<br/>ページの移動<br/>(auth.js の window.location.assign)
     end
     box rgba(27,127,92,0.12) EC API Spring Boot
-        participant AuthCtrl as AuthController
-        participant AuthSvc as AuthService
-        participant Repo as AuthMember<br/>Repository
+        participant Filter as セッションの確認<br/>SessionValidityFilter<br/>(SessionValidityFilter.java)
+        participant AuthCtrl as ログイン状態API<br/>AuthController<br/>(AuthController.java)
+        participant Sec as ログアウトの設定<br/>cognitoSecurity の logout<br/>(AuthConfiguration.java)
+        participant Urls as ログアウト用の URL<br/>AuthUrls<br/>(AuthUrls.java)
+        participant AuthSvc as ログイン中の会員<br/>AuthService<br/>(AuthService.java)
+        participant Repo as 会員の読み書き<br/>AuthMemberRepository<br/>(AuthMemberRepository.java)
     end
     participant Db as MySQL
+    box rgba(180,120,20,0.12) 外部サービス
+        participant Cog as Amazon Cognito
+    end
 
-    Note over User,Db: 基本フロー 1〜2 アカウント情報画面を開く (EC-C01)
-    User->>Header: 「アカウント」リンクをクリック
-    Header->>App: follow() が onNavigate(href)
-    App->>App: navigateFromHeader(url) が<br/>navigation.js の navigate('/account') を呼ぶ
-    App->>Work: path が /account なので Workspace を表示
-    Work->>Auth: useAuth() の readSession()
-    Note right of Work: トップなど Workspace 以外の画面から<br/>開いたときに送る。応答まで<br/>「ログイン状態を確認しています。」
-    Auth->>AuthCtrl: GET /api/auth/me
-    Note over AuthCtrl,Db: サーバーの処理は下の AuthPanel の要求と同じ
-    AuthCtrl-->>Auth: 200 AuthSession
-    Auth-->>Work: session
-    Note right of Work: authenticated が false なら AuthPanel の<br/>ログインの入力欄を出す (共通代替フロー *b)
-    Work->>Acct: AccountPage (tab はアカウント情報)
-    Acct->>Res: useResource('/auth/me')
-    Res->>AuthCtrl: api.js の request() が GET /api/auth/me
-    AuthCtrl-->>Res: 200 AuthSession
-    Note right of Res: この結果はアカウント情報のタブでは使わない
-    Acct->>Panel: AuthPanel を表示
-    Panel->>Auth: useAuth() の readSession()
-    Auth->>AuthCtrl: GET /api/auth/me
-    Note right of AuthCtrl: SessionValidityFilter が先に current() で会員を確かめる。<br/>ID トークンの期限が切れていれば Cognito で更新する (図では省略)
-    AuthCtrl->>AuthSvc: session()
-    AuthSvc->>Repo: current() の findByIssuerAndSubject(issuer, subject)
+    Note over User,Cog: 共通代替フロー<br/>*b 未ログインの場合: 6 (アカウント情報画面を開いたときのログインの確認) と 36 に適用<br/>*a 通信に失敗した場合: 6、7、9、15、24、29、36、41、47、51 に適用
+
+    User->>Header: 共通ヘッダーの「アカウント」をクリック (EC-C01)
+    Header->>App: リンク先を伝える (follow → onNavigate)
+    App->>Work: URL を /account に変え (navigateFromHeader → navigate)、<br/>path が /account なので Workspace を表示
+    Work->>UseAuth: ログイン状態を読むよう頼む (useAuth)<br/>トップなど Workspace 以外の画面から来たときに送る
+    UseAuth->>AuthJs: 画面を開いたときに自動で<br/>ログイン状態を読む (useEffect → readSession)
+    AuthJs->>Filter: GET /api/auth/me
+    Filter->>AuthSvc: ログイン中の会員が使えるかを確かめる (current)<br/>ID トークンの期限が切れていれば、先に Cognito で更新する (renewIdToken)
+    AuthSvc->>Repo: issuer と subject で会員を探す (findByIssuerAndSubject)
     Repo->>Db: SELECT members
     Db-->>Repo: 会員の行
-    Repo-->>AuthSvc: AuthMember
-    Note right of AuthSvc: 種類に応じて組織と店舗も読む<br/>(organizationIdOf() など。図では省略)
-    AuthSvc-->>AuthCtrl: SessionView (authenticated=true)
-    AuthCtrl-->>Auth: 200 email、name、accountType など
-    Auth-->>Panel: session
-    Panel-->>User: name または email、アカウントの種類<br/>(accountLabels)、「ログアウト」ボタン
+    Repo-->>AuthSvc: 会員
+    AuthSvc-->>Filter: 会員 (利用できる)
+    Filter->>AuthCtrl: 要求を通す (chain.doFilter)
+    AuthCtrl->>AuthSvc: ログイン状態をまとめるよう頼む (me → session)
+    AuthSvc->>Db: 会員を読み、種類に応じて組織と店舗も読む<br/>(current、organizationIdOf、storeIdsOf)
+    Db-->>AuthSvc: 会員、組織、店舗の行
+    AuthSvc-->>AuthCtrl: ログイン中 (SessionView、authenticated=true)
+    AuthCtrl-->>AuthJs: 200 authenticated=true、email、name、accountType など
+    AuthJs-->>UseAuth: ログイン状態
+    UseAuth-->>Work: ログイン状態
+    Work->>Acct: サイドバーの「マイページ」「アカウント設定」と、<br/>アカウント情報画面を表示 (AccountPage、tab は「アカウント情報」)
+    Acct->>Hook: /auth/me を取りに行くよう頼む (useResource、パスは /auth/me)
+    Hook->>Http: 画面を開いたときに自動で通信を始める (reload → request)
+    Http->>Filter: GET /api/auth/me (流れは 7〜17 と同じ)
+    AuthCtrl-->>Http: 200 authenticated=true、email など
+    Http-->>Hook: ログイン状態 (アカウント情報の画面では使わない)
+    Acct->>Panel: アカウント情報とログアウトのボタンを表示 (AuthPanel)
+    Panel->>AuthJs: ログイン状態を読む (useAuth → readSession)
+    AuthJs->>Filter: GET /api/auth/me (流れは 7〜17 と同じ)
+    AuthCtrl-->>AuthJs: 200 authenticated=true、email、name、accountType など
+    AuthJs-->>Panel: ログイン状態
+    Panel-->>User: 「アカウント情報」画面。名前 (なければメールアドレス)、<br/>アカウントの種類 (「管理者」「出店者（オーナー）」など。購入者は「利用者」)、<br/>「ログアウト」
+
+    User->>Panel: 「ログアウト」をクリック
+    Panel->>Panel: エラーの文を消し、ボタンを「ログアウト中…」にして<br/>押せなくする (setFailure('')、setLoggingOut(true))
+    Panel->>AuthJs: ログアウトするよう頼む (logout)
+    AuthJs->>Filter: GET /api/auth/csrf<br/>(authFetch が書き込みの前に送る)
+    Filter->>AuthSvc: ログイン中の会員が使えるかを確かめる (current)<br/>流れは 7〜12 と同じ
+    AuthSvc-->>Filter: 会員 (利用できる)
+    Filter->>AuthCtrl: 要求を通す (chain.doFilter)
+    AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
+    AuthJs->>Sec: POST /api/auth/logout (CSRF トークンのヘッダー付き)
+    Sec->>Sec: CSRF トークンを確かめ、HTTP セッションを無効にし、<br/>KUSAKARI_SESSION の Cookie を消す<br/>(logoutUrl("/api/auth/logout")、deleteCookies)
+    Sec->>Urls: Cognito のログアウト用の URL を作るよう頼む<br/>(logoutSuccessHandler → logout)
+    Urls-->>Sec: Cognito の /logout?client_id=…&logout_uri=EC の「/」
+    Sec-->>AuthJs: 200 logoutUrl
+    AuthJs->>Browser: Cognito のログアウト用の URL へ<br/>ページごと移る (window.location.assign)
+    Browser->>Cog: GET /logout?client_id=…&logout_uri=…
+    Cog-->>Browser: 302 EC の「/」(logout_uri)
+    Browser->>App: EC の「/」を最初から表示する
+    App->>AuthJs: ログイン状態を読む (useAuth → readSession)
+    AuthJs->>Filter: GET /api/auth/me
+    Filter->>AuthCtrl: 認証情報が無いので、そのまま通す (chain.doFilter)
+    AuthCtrl->>AuthSvc: ログイン状態をまとめるよう頼む (me → session)
+    AuthSvc->>AuthSvc: ログイン中の会員を確かめる (current)。<br/>認証情報が無いので 401 を投げ、session が受け止める
+    AuthSvc-->>AuthCtrl: 未ログイン (SessionView、authenticated=false)
+    AuthCtrl-->>AuthJs: 200 authenticated=false
+    AuthJs-->>App: ログイン状態
+    App-->>User: 「メイン」画面 (トップ)、共通ヘッダーに「ログイン」
 ```
 
-### 詳細図 2 基本フロー 3〜5 ログアウトして「メイン」画面を表示する
+## 共通代替フローを直接書いた図
+
+上の図の、アカウント情報画面を開いたときの `Workspace` の `GET /api/auth/me` と、「ログアウト」をクリックした後の `GET /api/auth/csrf`・`POST /api/auth/logout`・Cognito の `/logout` に、この画面で起こる共通代替フロー（\*a、\*b）を書き込んだ図です。`AccountPage` と `AuthPanel` が送る `GET /api/auth/me` は、`Workspace` の通信が通った直後に送るもので、失敗したときの表示は `Workspace` と同じ形（エラーの文だけ）なので省いています。
 
 ```mermaid
 sequenceDiagram
+    autonumber
     actor User as 利用者
     box rgba(47,111,219,0.10) ブラウザー React
-        participant App as App.jsx
-        participant Panel as AuthPanel.jsx
-        participant Auth as auth.js
+        participant Work as マイページの枠<br/>Workspace<br/>(Workspace.jsx)
+        participant Panel as アカウント情報とログアウト<br/>AuthPanel<br/>(AuthPanel.jsx)
+        participant AuthJs as ログインの通信<br/>readSession・logout<br/>(auth.js)
+        participant Browser as ブラウザー<br/>ページの移動<br/>(auth.js の window.location.assign)
     end
     box rgba(27,127,92,0.12) EC API Spring Boot
-        participant AuthCtrl as AuthController
-        participant Sec as Spring Security<br/>AuthConfiguration.java
-        participant Urls as AuthUrls
-        participant AuthSvc as AuthService
+        participant Filter as セッションの確認<br/>SessionValidityFilter<br/>(SessionValidityFilter.java)
+        participant AuthCtrl as ログイン状態API<br/>AuthController<br/>(AuthController.java)
+        participant Sec as ログアウトの設定<br/>cognitoSecurity の logout<br/>(AuthConfiguration.java)
     end
     box rgba(180,120,20,0.12) 外部サービス
-        participant Idp as Amazon Cognito
+        participant Cog as Amazon Cognito
     end
 
-    Note over User,Idp: 基本フロー 3〜4 「ログアウト」をクリックし、ログアウト処理をする
-    User->>Panel: 「ログアウト」をクリック
-    Panel->>Panel: onClick で setFailure('') と setLoggingOut(true)<br/>ボタンは「ログアウト中…」
-    Panel->>Auth: logout()
-    Auth->>Auth: authFetch('/api/auth/logout', POST)
-    Auth->>AuthCtrl: GET /api/auth/csrf
-    Note right of AuthCtrl: SessionValidityFilter が current() で<br/>会員を確かめる (図では省略)
-    AuthCtrl-->>Auth: 200 headerName と token
-    Auth->>Sec: POST /api/auth/logout<br/>CSRF のヘッダー付き
-    alt *a 通信に失敗した、または 200 以外の応答
-        Sec--xAuth: CSRF が無効なら accessDeniedHandler が<br/>403 FORBIDDEN、または応答なし
-        Auth--xPanel: throw Error「ログアウトできませんでした。」
-        Note right of Auth: fetch が TypeError なら「通信できないため<br/>ログアウトできませんでした。…」。<br/>CSRF の取得に失敗したら<br/>「操作の確認情報を取得できません。…」
-        Panel->>Panel: catch で setFailure(message) と<br/>setLoggingOut(false)
-        Panel-->>User: エラーの文言。「ログアウト」をもう一度押せる
-    else ログアウトできた
-        Sec->>Sec: logout() の設定どおり LogoutFilter が<br/>HTTP セッションを無効にし、KUSAKARI_SESSION を消す
-        Sec->>Urls: logoutSuccessHandler が logout()
-        Urls-->>Sec: Cognito の /logout の URL<br/>(client_id と logout_uri は EC の「/」)
-        Sec-->>Auth: 200 logoutUrl
-        Note over User,Idp: 基本フロー 5 「メイン」画面を表示する
-        Auth->>Auth: window.location.assign(logoutUrl)
-        Auth->>Idp: GET /logout (ページ遷移)
-        Note right of Idp: Cognito のセッションを終え、<br/>logout_uri へ戻す (Cognito の処理)
-        Idp-->>App: 302 logout_uri。ブラウザーが EC の「/」を開き直す
-        App->>Auth: useAuth() の readSession()
-        Auth->>AuthCtrl: GET /api/auth/me
-        AuthCtrl->>AuthSvc: session()
-        AuthSvc->>AuthSvc: current() が 401 LOGIN_REQUIRED を投げ<br/>session() の catch が受ける
-        AuthSvc-->>AuthCtrl: SessionView (authenticated=false)
-        AuthCtrl-->>Auth: 200 authenticated=false
-        Auth-->>App: session
-        App-->>User: 「メイン」画面。KusakariHeader に「ログイン」
+    User->>Work: 共通ヘッダーの「アカウント」をクリック<br/>(上の図の 1〜3 で Workspace を表示)
+    Work->>AuthJs: ログイン状態を読む (useAuth → readSession)
+    alt *a GET /api/auth/me が届かない
+        AuthJs-xFilter: GET /api/auth/me
+        AuthJs--xWork: fetch の例外 (TypeError) をそのまま投げる
+        Work-->>User: *a-1 ブラウザーが作る例外の文だけを表示 (useAuth の error)。<br/>「再取得」は無い
+    else *a ID トークンの更新で Cognito に届かない
+        AuthJs->>Filter: GET /api/auth/me
+        Filter-xCog: ID トークンを更新する<br/>(renewIdToken → refresh、InitiateAuth REFRESH_TOKEN_AUTH)
+        Filter-->>AuthJs: 503 AUTH_UNAVAILABLE (セッションは残す)
+        AuthJs--xWork: エラーを投げる (readSession)
+        Work-->>User: *a-1「ログイン状態を確認できません。」だけを表示
+    else *b サーバーのセッションが無い、または refresh トークンが失効
+        AuthJs->>Filter: GET /api/auth/me
+        Filter->>Filter: refresh トークンの失効なら、セッションを無効にする (invalidate)。<br/>/api/auth/me なので 401 にせず、要求を通す
+        Filter->>AuthCtrl: 要求を通す (chain.doFilter)
+        AuthCtrl-->>AuthJs: 200 authenticated=false (session)
+        AuthJs-->>Work: ログイン状態
+        Work->>Panel: 画面の代わりにログインの入力欄を表示 (AuthPanel)
+        Panel-->>User: *b-1「メールアドレス」「パスワード」「ログイン」
+        User->>Panel: *b-2 入力して「ログイン」をクリック<br/>(EC-B01 の図の 18〜74。returnTo は今の URL の /account)
+        Panel->>Browser: /account を読み込み直す (complete → window.location.replace)
+        Browser-->>User: 「アカウント情報」画面 (基本フロー 2 へ戻る)
+    else 読めた
+        AuthJs->>Filter: GET /api/auth/me
+        Filter->>AuthCtrl: 要求を通す (chain.doFilter)
+        AuthCtrl-->>AuthJs: 200 authenticated=true
+        AuthJs-->>Work: ログイン状態
+        Work->>Panel: アカウント情報画面を表示 (上の図の 21〜32)
+        Panel-->>User: 「アカウント情報」画面と「ログアウト」
+        User->>Panel: 「ログアウト」をクリック
+        Panel->>AuthJs: ログアウトするよう頼む (logout)。ボタンは「ログアウト中…」
+        alt *a GET /api/auth/csrf が届かない
+            AuthJs-xFilter: GET /api/auth/csrf (authFetch)
+            AuthJs--xPanel: 決まった文に置き換えて投げる (logout の catch、TypeError)
+            Panel-->>User: *a-1「通信できないためログアウトできませんでした。<br/>接続を確認してもう一度お試しください。」<br/>*a-2「ログアウト」はまた押せる (setFailure、setLoggingOut(false))
+        else *a・*b GET /api/auth/csrf が 200 以外<br/>(Cognito に届かない 503、refresh トークンが失効した 401)
+            AuthJs->>Filter: GET /api/auth/csrf (authFetch)
+            Filter-->>AuthJs: 503 AUTH_UNAVAILABLE か 401 LOGIN_REQUIRED<br/>(401 のときはサーバーのセッションを無効にする)
+            AuthJs--xPanel: エラーを投げる (authFetch。logout はそのまま投げ直す)
+            Panel-->>User: *a-1・*b-1「操作の確認情報を取得できません。<br/>画面を再読み込みしてください。」。「ログアウト」はまた押せる
+        else CSRF トークンを取れた
+            AuthJs->>Filter: GET /api/auth/csrf (authFetch)
+            Filter->>AuthCtrl: 要求を通す (chain.doFilter)
+            AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン
+            alt *a POST /api/auth/logout が届かない
+                AuthJs-xSec: POST /api/auth/logout
+                AuthJs--xPanel: 決まった文に置き換えて投げる (logout の catch、TypeError)
+                Panel-->>User: *a-1「通信できないためログアウトできませんでした。<br/>接続を確認してもう一度お試しください。」。「ログアウト」はまた押せる
+            else *a 200 以外の応答 (CSRF トークンが無効など)
+                AuthJs->>Sec: POST /api/auth/logout
+                Sec-->>AuthJs: 403 FORBIDDEN (accessDeniedHandler)
+                AuthJs--xPanel: エラーを投げる (応答の文は使わない)
+                Panel-->>User: *a-1「ログアウトできませんでした。」。「ログアウト」はまた押せる
+            else ログアウトできた
+                AuthJs->>Sec: POST /api/auth/logout
+                Sec->>Sec: セッションを無効にし、Cookie を消す
+                Sec-->>AuthJs: 200 logoutUrl
+                AuthJs->>Browser: ページごと移る (window.location.assign)
+                alt *a Cognito に届かない
+                    Browser-xCog: GET /logout?client_id=…&logout_uri=…
+                    Browser-->>User: *a-1 ブラウザーのエラーの画面<br/>(EC のセッションはもう無い)
+                else 届いた
+                    Browser->>Cog: GET /logout?client_id=…&logout_uri=…
+                    Cog-->>Browser: 302 EC の「/」
+                    Browser-->>User: 「メイン」画面、共通ヘッダーに「ログイン」<br/>(上の図の 49〜58)
+                end
+            end
+        end
+    end
+    opt *a-3 やり直す
+        alt ログアウトの通信で失敗していた
+            User->>Panel: もう一度「ログアウト」をクリック (基本フロー 3 へ戻る)
+        else 画面を開いたときか、CSRF トークンの取得で失敗していた
+            User->>Browser: ブラウザーで再読み込みする<br/>(画面にやり直しのボタンは無い。基本フロー 2 へ戻る)
+        end
     end
 ```
 
 ## ユースケース記述との差
 
-- 基本フロー 4: 記述の「ログアウト処理」は、コードでは 2 つです。EC API の `POST /api/auth/logout` が HTTP セッションを無効にして Cookie を消し、そのあとブラウザーが Cognito の `/logout` へ移って Cognito のセッションを終えます。Cognito の更新トークンは取り消しません（EC の `docs/auth-token-renewal.md` に書かれています）。
+- 基本フロー 4: 記述の「ログアウト処理」は、コードでは 2 つです。EC API の `POST /api/auth/logout` が HTTP セッションを無効にして Cookie を消し、そのあとブラウザーが Cognito の `/logout` へ移って Cognito のセッションを終えます。Cognito の refresh トークンは取り消しません（EC の `docs/auth-token-renewal.md`）。
 - 基本フロー 5: 戻る先は、どの画面からログアウトしても `AuthUrls.logout()` の `logout_uri`（EC の「/」）です。
-- 基本フロー 1〜2: アカウント情報画面を開くと `GET /api/auth/me` を最大 3 回送ります（`Workspace` の `useAuth()`、`AccountPage` の `useResource('/auth/me')`、`AuthPanel` の `useAuth()`）。`AccountPage` の `useResource('/auth/me')` の結果は、「アカウント情報」のタブでは表示に使いません。
-- 代替フロー: 記述は空ですが、通信に失敗したときと 200 以外の応答のとき、画面はエラーの文言を出して「ログアウト」をもう一度押せるようにします（共通代替フロー *a に当たります）。
-- 関連情報: 庭シミュレーション画面から移るときに保存を待つ処理は Canvas 側にあります（Canvas の `EditorPage.jsx` の `requestNavigation()` が `flush()` で保存してから `window.location.assign()` で移ります）。この図は EC の処理だけを書いています。
+- 基本フロー 1〜2: アカウント情報画面を開くと `GET /api/auth/me` を最大 3 回送ります（`Workspace` の `useAuth()`、`AccountPage` の `useResource`（`/auth/me`）、`AuthPanel` の `useAuth()`）。`Workspace` の分は、トップなど `Workspace` 以外の画面から来たときだけです。`AccountPage` の `useResource`（`/auth/me`） の結果は、「アカウント情報」の画面では使いません。
+- 基本フロー 2: 記述の EC-C01 の関連情報は「メールアドレスとアカウントの種類」ですが、画面は名前を先に出し、名前が無いときだけメールアドレスを出します。購入者（`USER`）の種類は「利用者」です。
+- 代替フロー: 記述は空ですが、通信に失敗したときと 200 以外の応答のとき、画面はエラーの文を出して「ログアウト」をもう一度押せるようにします（共通代替フロー \*a）。ログアウトの通信は `api.js` を通らないので、00 の \*a-1 の共通の文（「サーバーに接続できません。…」）ではなく、`logout()` が決めた文が出ます。
+- 共通代替フロー \*b: 使っている間にログインが切れても、`SessionNotice` のお知らせは出ません。アカウント情報画面を開いたときの `GET /api/auth/me` は 401 にならず、`Workspace` がログインの入力欄を出します。「ログアウト」の後の `GET /api/auth/csrf` が 401 になったときは、「操作の確認情報を取得できません。画面を再読み込みしてください。」が出ます。このときサーバーのセッションは無効になっているので、再読み込みするとログインの入力欄が出ます。Cognito の `/logout` へは移らないので、Cognito のセッションは残ります。
+- `POST /api/auth/logout` は `SessionValidityFilter` の対象外です。サーバーのセッションが無くても、直前の `GET /api/auth/csrf` が新しいセッションと CSRF トークンを作るので、ログアウトは 200 になります。
+- 関連情報: 庭シミュレーション画面から移るときに保存を待つ処理は Canvas 側にあります（Canvas の `EditorPage.jsx` の `requestNavigation` が `flush` で保存してから `window.location.assign` で移ります）。この図は EC の処理だけを書いています。
 
 ## 確かめられなかったこと
 
-- Cognito の `/logout` が Cognito のセッションを終えて `logout_uri` へ戻す動きは Cognito の処理で、コードでは確かめられません。`logout_uri` が User Pool のアプリクライアントの Logout URL と一致している必要があります（EC の `docs/cognito-setup.md` に登録する値があります）。
-- `LogoutFilter` がセッションを無効にする細かい手順（`SecurityContextLogoutHandler` などの標準の処理）は Spring Security の中の処理で、この図では Spring Security のソースまでは確かめていません。
+- Cognito の `/logout` が Cognito のセッションを終えて `logout_uri` へ戻す動きは Cognito の処理で、コードでは確かめられません。`logout_uri` が User Pool のアプリクライアントの Logout URL と一致している必要があります（EC の `docs/cognito-setup.md`）。
+- `LogoutFilter` がセッションを無効にする細かい手順（`SecurityContextLogoutHandler` などの標準の処理）と、`CsrfFilter` が `LogoutFilter` より先に CSRF トークンを確かめる順番は、Spring Security の中の処理で、Spring Security のソースまでは確かめていません。
+- `SessionValidityFilter` の `current()` が MySQL に届かなかったときの応答は確かめていません。`DataAccessException` はこのフィルターの `catch`（`ApiException` だけ）を通らないので、`ApiErrors.database()` の 503 にならない可能性があります。画面はどちらにしても「ログイン状態を確認できません。」か「操作の確認情報を取得できません。…」になるはずですが、動かしていません。
 
 ## 参照したコード
 
-- [packages/site-header/KusakariHeader.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/packages/site-header/KusakariHeader.jsx): 「アカウント」リンク、`follow()`
-- [frontend/src/App.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/App.jsx): `navigateFromHeader()`、`Workspace` を返す条件、`useAuth()`
-- [frontend/src/workspace/navigation.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/navigation.js): `navigate()`、`usePath()`
-- [frontend/src/workspace/Workspace.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/Workspace.jsx): `Workspace`、`buyerMenu`、未ログインのときの `AuthPanel`、`/account` で `AccountPage` を返す条件
-- [frontend/src/workspace/AccountPage.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/AccountPage.jsx): `AccountPage`、`useResource('/auth/me')`、「アカウント情報」のタブ
-- [frontend/src/workspace/useResource.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/useResource.js): `useResource()`、`reload()`
-- [frontend/src/api.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/api.js): `request()`、`send()`、`readResponse()`
-- [frontend/src/components/AuthPanel.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/components/AuthPanel.jsx): `accountLabels`、「ログアウト」ボタンの `onClick`
-- [frontend/src/auth.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/auth.js): `readSession()`、`authFetch()`、`logout()`
-- [frontend/src/useAuth.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/useAuth.js): `useAuth()`
-- [backend/src/main/java/jp/kusakari/ec/auth/AuthController.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/AuthController.java): `me()`、`csrf()`
-- [backend/src/main/java/jp/kusakari/ec/auth/AuthConfiguration.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/AuthConfiguration.java): `cognitoSecurity()` の `logout()`（`logoutUrl`、`deleteCookies`、`logoutSuccessHandler`）、`accessDeniedHandler`
-- [backend/src/main/java/jp/kusakari/ec/auth/AuthUrls.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/AuthUrls.java): `logout()`
-- [backend/src/main/java/jp/kusakari/ec/auth/SessionValidityFilter.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/SessionValidityFilter.java): `doFilterInternal()`（`/api/auth/logout` は対象外）
-- [backend/src/main/java/jp/kusakari/ec/auth/AuthService.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/AuthService.java): `session()`、`current()`
-- [backend/src/main/java/jp/kusakari/ec/auth/AuthMemberRepository.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/AuthMemberRepository.java): `findByIssuerAndSubject()`
-- [backend/src/main/resources/application-cognito.properties](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/resources/application-cognito.properties): セッションの Cookie 名 `KUSAKARI_SESSION`
-- [docs/auth-token-renewal.md](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/docs/auth-token-renewal.md): ログアウトで更新トークンを取り消さないこと
-- [docs/cognito-setup.md](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/docs/cognito-setup.md): Cognito に登録する Logout URL
-- Canvas の [frontend/src/pages/EditorPage.jsx](https://github.com/abeouga/kusakari-canvas/blob/c19d497dfef15b119f9bce8ecb5c886a36da6b7d/frontend/src/pages/EditorPage.jsx): `requestNavigation()`（関連情報の確認だけ）
+- [packages/site-header/KusakariHeader.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/packages/site-header/KusakariHeader.jsx): 「アカウント」リンク、`follow`
+- [frontend/src/App.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/App.jsx): `navigateFromHeader`、`Workspace` を返す条件、`useAuth`
+- [frontend/src/workspace/navigation.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/navigation.js): `navigate`、`usePath`
+- [frontend/src/workspace/Workspace.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/Workspace.jsx): `Workspace`、`buyerMenu`、`accountSettings`、未ログインのときの `AuthPanel`、`/account` で `AccountPage` を返す条件
+- [frontend/src/workspace/AccountPage.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/AccountPage.jsx): `AccountPage`、`useResource` の `/auth/me`、「アカウント情報」の画面
+- [frontend/src/workspace/useResource.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/useResource.js): `useResource`、`reload`
+- [frontend/src/api.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/api.js): `request`
+- [frontend/src/components/AuthPanel.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/components/AuthPanel.jsx): `accountLabels`、「ログアウト」ボタンの `onClick`、`complete`
+- [frontend/src/auth.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/auth.js): `readSession`、`authFetch`、`logout`
+- [frontend/src/useAuth.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/useAuth.js): `useAuth`
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthController.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthController.java): `me`、`csrf`
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthConfiguration.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthConfiguration.java): `cognitoSecurity` の `logout`（`logoutUrl`、`deleteCookies`、`logoutSuccessHandler`）、`accessDeniedHandler`
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthUrls.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthUrls.java): `logout`
+- [backend/src/main/java/jp/kusakari/ec/auth/SessionValidityFilter.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/SessionValidityFilter.java): `doFilterInternal`（`/api/auth/logout` は対象外、`/api/auth/me` の 401 は通す）、`renewIdToken`
+- [backend/src/main/java/jp/kusakari/ec/auth/CognitoPasswordLogin.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/CognitoPasswordLogin.java): `refresh`（ID トークンの更新、503 `AUTH_UNAVAILABLE`）
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthService.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthService.java): `session`、`current`、`organizationIdOf`、`storeIdsOf`
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthMemberRepository.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthMemberRepository.java): `findByIssuerAndSubject`
+- [backend/src/main/resources/application-cognito.properties](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/resources/application-cognito.properties): セッションの Cookie 名 `KUSAKARI_SESSION`
+- [docs/auth-token-renewal.md](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/docs/auth-token-renewal.md): ログアウトで refresh トークンを取り消さないこと
+- [docs/cognito-setup.md](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/docs/cognito-setup.md): Cognito に登録する Logout URL
+- Canvas の [frontend/src/pages/EditorPage.jsx](https://github.com/abeouga/kusakari-canvas/blob/7e9a8dd0a40f2b212ca20b3aa94f2dc984b00b7a/frontend/src/pages/EditorPage.jsx)（kusakari-canvas の main、7e9a8dd、2026-11-24 時点）: `requestNavigation`（関連情報の確認だけ）

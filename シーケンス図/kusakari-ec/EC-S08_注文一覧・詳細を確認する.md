@@ -1,184 +1,221 @@
 # EC-S08 注文一覧・詳細を確認する
 
 - ユースケース記述: [EC-S08_注文一覧・詳細を確認する](<../../アーカイブ/ユースケース/kusakari-ec/EC-S08_注文一覧・詳細を確認する.md>)
-- 対象のコード: kusakari-ec の main（19a2be3、2026-11-20 時点）
+- 共通代替フロー: [00_全ユースケース共通の代替フロー](<00_全ユースケース共通の代替フロー.md>)
+- 対象のコード: kusakari-ec の main（6bad7e3、2026-11-24 時点）
 
-## 概要図
+## シーケンス図
 
-```mermaid
-sequenceDiagram
-    actor User as 出店者
-    participant Page as 「店舗受け取り」画面<br/>React
-    participant Api as EC API<br/>Spring Boot
-    participant Db as MySQL
-
-    Note over User,Db: 共通代替フロー *b を適用 (未ログインなら画面はログインの案内を出し、API は 401 LOGIN_REQUIRED を返す)
-
-    Note over User,Db: 基本フロー 1〜2 注文一覧を表示する
-    User->>Page: 出店者メニューの「店舗受け取り」をクリック
-    Note right of Page: 1a 店舗が 2 つ以上なら、画面上部の<br/>「管理する店舗」で選ぶ。選び直すと<br/>storeId が変わり、同じ GET をやり直す
-    Page->>Api: GET /api/seller/orders?storeId=…
-    Api->>Db: 会員と、店舗でのロールを読む
-    Db-->>Api: 行
-    alt ロールがない (関連情報「ロールのない担当者は注文を見られない」)
-        Api-->>Page: 403 FORBIDDEN
-        Page-->>User: 「この操作の権限がありません。」と「再取得」
-    else ロールがある
-        Api->>Db: 店舗の注文を新しい順に読む
-        Db-->>Api: orders の行
-        loop 注文ごと
-            Api->>Db: 明細、商品の画像、支払い、返金、店舗、<br/>キャンセルした会員を読む
-            Db-->>Api: 行
-        end
-        Api-->>Page: 200 注文の配列 (明細、受取連絡先、支払方法、<br/>paymentStatus、refundStatus、cancelledBy)
-        Page->>Page: キャンセル申請中、準備待ち、受け取り待ち、<br/>そのほかの順に並べる
-        Page-->>User: 注文状態の絞り込みボタン (件数つき) と検索欄
-        alt 2a 注文がない
-            Page-->>User: 「該当する注文はありません。」
-        else 注文がある
-            loop 表示する注文ごと
-                Page-->>User: 注文番号、注文状態、合計、注文明細、受取連絡先、<br/>お支払い方法と支払い・返金の状態、キャンセル申請状態
-                Note right of Page: 引き渡し完了・キャンセルの注文は、<br/>明細と受取連絡先を「詳細」の中にたたむ
-                opt 6a 運営がキャンセルした注文 (cancelledBy が OPERATOR)
-                    Page-->>User: 「運営がキャンセルしました：(理由)」
-                end
-                opt 6b 返金に失敗した注文 (refundStatus が FAILED)
-                    Page-->>User: 「返金に失敗しました。Stripe の管理画面で<br/>返金の状態を確認し、購入者に連絡してください。」
-                end
-            end
-        end
-    end
-
-    Note over User,Db: 基本フロー 3〜4 絞り込む (取得済みの注文を使い、通信しない)
-    alt 絞り込みボタン
-        User->>Page: 「準備待ち」「受け取り待ち」「キャンセル申請」<br/>「引き渡し完了」「キャンセル」「すべて」のどれかをクリック
-    else 検索欄
-        User->>Page: 「注文番号・受取人で検索」に注文番号か受取人名を入力
-    end
-    Page->>Page: 注文状態と、注文番号・受取人名で絞る
-    alt 2a 条件に合う注文がない
-        Page-->>User: 「該当する注文はありません。」
-    else 条件に合う注文がある
-        Page-->>User: 条件に合う注文だけ
-    end
-
-    Note over User,Db: 基本フロー 5〜7 引き渡し完了・キャンセルの注文の詳細を見る (通信しない)
-    User->>Page: 対象注文の「詳細」をクリック
-    Page-->>User: たたんでいた注文明細、受取連絡先、受け取りの進み具合
-    Note over User,Page: 基本フロー 7 出店者が内容を確認する。6a・6b の表示は、<br/>「詳細」を開く前からカードに出ている
-```
-
-## 詳細図 1 基本フロー 1〜2
+参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
+共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
 
 ```mermaid
 sequenceDiagram
+    autonumber
     actor User as 出店者
     box rgba(47,111,219,0.10) ブラウザー React
-        participant Page as OrderPage<br/>PickupOrders.jsx
-        participant Card as PickupCard<br/>PickupOrders.jsx
-        participant Hook as useResource.js
-        participant Http as api.js
+        participant Work as 出店者画面の枠<br/>Workspace<br/>(Workspace.jsx)
+        participant Page as 店舗受け取り画面<br/>OrderPage<br/>(PickupOrders.jsx)
+        participant Card as 注文のカード<br/>PickupCard<br/>(PickupOrders.jsx)
+        participant Hook as 一覧の取得<br/>useResource<br/>(useResource.js)
+        participant Http as 通信<br/>request<br/>(api.js)
     end
     box rgba(27,127,92,0.12) EC API Spring Boot
-        participant Ctrl as OrderWorkflow<br/>Controller
-        participant Errs as ApiErrors
-        participant Svc as OrderWorkflow<br/>Service
-        participant Auth as AuthService
-        participant Mapper as OrderResponse<br/>Mapper
-        participant Repo as 各 Repository
+        participant Ctrl as 注文の処理API<br/>OrderWorkflowController<br/>(OrderWorkflowController.java)
+        participant Errs as エラーの応答<br/>ApiErrors<br/>(ApiErrors.java)
+        participant Svc as 注文の処理<br/>OrderWorkflowService<br/>(OrderWorkflowService.java)
+        participant Auth as ログイン中の会員<br/>AuthService<br/>(AuthService.java)
+        participant OrderRepo as 注文の読み書き<br/>OrderRepository<br/>(OrderRepository.java)
+        participant ItemRepo as 注文明細の読み込み<br/>OrderItemRepository<br/>(OrderItemRepository.java)
+        participant Mapper as 注文の応答の組み立て<br/>OrderResponseMapper<br/>(OrderResponseMapper.java)
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー *b を適用。未ログインなら Workspace.jsx が AuthPanel を出す
-    Note over User,Db: 基本フロー 1〜2 注文一覧を表示する
-    User->>Page: 出店者メニューの「店舗受け取り」をクリック<br/>(Workspace.jsx が /seller/orders で OrderPage を storeId 付きで表示)
-    Note right of Page: ロールのない店舗の ORG_ADMIN には、<br/>Workspace.jsx が OrderPage の代わりに<br/>人事の画面だけを使える旨を出す (通信しない)
-    Page->>Hook: useResource('/seller/orders?storeId=…')
-    Note right of Hook: useEffect が reload() を自動で実行する。<br/>1a で storeId が変わると path が変わり、<br/>もう一度 reload() する
-    Hook->>Http: request(path)
-    Http->>Ctrl: GET /api/seller/orders?storeId=…
-    Ctrl->>Svc: sellerOrders(storeId)
-    Note over Svc,Db: @Transactional(readOnly = true)。読むだけでロックしない
-    Svc->>Auth: requireSeller(storeId)
-    Note right of Auth: requireStoreRole(storeId, false)。<br/>current() と店舗・組織・担当を読む (図では省略)
-    alt ロールがない (運営が停止した店舗、店舗がないときも同じ)
-        Auth--xErrs: denied() が throw ApiException(403, FORBIDDEN)
-        Errs-->>Http: business() が 403 と「この操作の権限がありません。」
-        Http--xHook: readResponse() が throw ApiError(403)
-        Hook-->>Page: resource.error
-        Page-->>User: ResourceStatus がエラーの文と「再取得」を出す
-    else ロールがある
-        Auth-->>Svc: 戻る
-        Svc->>Repo: OrderRepository.findByStoreIdOrderByCreatedAtDesc(storeId)
-        Repo->>Db: SELECT orders (新しい順)
-        Db-->>Repo: 行
-        Repo-->>Svc: OrderEntity のリスト
-        loop 注文ごとに storeView(order)
-            Svc->>Repo: OrderItemRepository.findAllForOrder(id)
-            Repo->>Db: SELECT order_items
-            Db-->>Repo: 行
-            Repo-->>Svc: OrderItemEntity のリスト
-            Svc->>Mapper: toStoreView(order, items)
-            Mapper->>Repo: ProductRepository.findImageReferences()、<br/>PaymentRepository.findById()、RefundRepository.findByOrderId()、<br/>StoreRepository.findById()、AuthMemberRepository.findById()
-            Repo->>Db: SELECT products、payments、refunds、stores、members
-            Db-->>Repo: 行
-            Repo-->>Mapper: Entity
-            Mapper-->>Svc: OrderView (details、paymentStatus、refundStatus、<br/>cancelledBy は運営の会員なら OPERATOR、sales)
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、8 に適用<br/>*a 通信に失敗した場合: 8 に適用
+
+    User->>Work: 出店者メニューの「店舗受け取り」をクリック
+    Work->>Page: URL を /seller/orders に変え、<br/>選択中の店舗の ID を渡して OrderPage を表示
+    opt 1a 複数の店舗を扱う
+        Work-->>User: 画面上部の「管理する店舗」の選択欄 (SellerStoreSelect)
+        User->>Work: 1a-1 確認する店舗を選ぶ
+        Work->>Page: 選んだ店舗を覚え (setSellerStoreId)、その店舗の ID を渡す。<br/>OrderPage は作り直さず、絞り込みと検索欄はそのまま
+    end
+    Page->>Hook: 店舗の注文を取りに行くよう頼む (useResource)<br/>店舗の ID が変わるたびに取り直す
+    Hook->>Http: 自動で一覧の通信を始める (reload → request)
+    Http->>Ctrl: GET /api/seller/orders?storeId={店舗ID}
+    Ctrl->>Svc: 店舗の注文の一覧を作るよう頼む (sellerOrders)<br/>読むだけのトランザクション
+    Svc->>Auth: ログイン中の人がこの店舗で STAFF 以上の<br/>ロールを持つかを確かめる (requireSeller → requireStoreRole)
+    alt ロールがない (関連情報「ロールのない担当者は注文を見られない」)
+        Auth--xErrs: 403 FORBIDDEN の例外を投げる (denied)
+        Errs-->>Http: 403「この操作の権限がありません。」(business)
+        Http--xHook: エラーを投げる (readResponse → ApiError)
+        Hook-->>Page: エラーの文 (reload の catch → setError)
+        Page-->>User: 「この操作の権限がありません。」と「再取得」(ResourceStatus)
+    else ロールがある (オーナー、MANAGER、STAFF、運営)
+        Auth-->>Svc: 扱える
+        Svc->>OrderRepo: 店舗の注文を新しい順に読む (findByStoreIdOrderByCreatedAtDesc)
+        OrderRepo->>Db: SELECT orders (新しい順)
+        Db-->>OrderRepo: 注文の行
+        OrderRepo-->>Svc: 注文の一覧
+        loop 注文ごと (storeView)
+            Svc->>ItemRepo: 注文の明細を読む (findAllForOrder)
+            ItemRepo->>Db: SELECT order_items
+            Db-->>ItemRepo: 明細の行
+            ItemRepo-->>Svc: 明細
+            Svc->>Mapper: 店舗向けの注文の形にするよう頼む (toStoreView)
+            Mapper->>Db: 商品の画像、支払い、返金、店舗、キャンセルした会員を読む<br/>(findImageReferences、findById、findByOrderId)
+            Db-->>Mapper: products、payments、refunds、stores、members の行
+            Mapper-->>Svc: 注文 (明細、受取連絡先、お支払い方法、支払いと返金の状態、<br/>キャンセルした人が運営なら OPERATOR、販売手数料)
         end
-        Svc-->>Ctrl: OrderView のリスト
-        Ctrl-->>Http: 200 JSON
-        Http-->>Hook: data
-        Hook-->>Page: resource.data
-        Page->>Page: filter は空文字 (すべて)、query は空。<br/>shown を priority() で並べる (キャンセル申請中、<br/>準備待ち、受け取り待ち、そのほか)
-        Page-->>User: 絞り込みボタン (filters ごとの件数) と<br/>「注文番号・受取人で検索」欄
+        Svc-->>Ctrl: 注文の一覧
+        Ctrl-->>Http: 200 注文の配列
+        Http-->>Hook: 注文の一覧
+        Hook-->>Page: 注文の一覧
+        Page->>Page: 絞り込みは「すべて」、検索欄は空で、キャンセル申請中、<br/>準備待ち、受け取り待ち、そのほかの順に並べる (priority)
+        Page-->>User: 絞り込みのボタン (「準備待ち」「受け取り待ち」「キャンセル申請」<br/>「引き渡し完了」「キャンセル」「すべて」と件数) と<br/>「注文番号・受取人で検索」欄
         alt 2a 注文がない
-            Page-->>User: 「該当する注文はありません。」
+            Page-->>User: 2a-1「該当する注文はありません。」(2a-2 終わり)
         else 注文がある
-            loop shown の注文ごと
-                Page->>Card: PickupCard (order、resource)
-                Card-->>User: 注文番号、注文日時、注文状態、キャンセル申請中、合計、<br/>PaymentState (お支払い方法、支払いと返金の状態)
-                Note right of Card: ACCEPTED・READY は明細と受取人を出す。<br/>COMPLETED・CANCELLED は details 要素に<br/>たたみ、summary に商品名 × 数量と「詳細」。<br/>EC-S09・S10・S13 のボタンは図では省略
-                opt 6a order.cancelledBy が OPERATOR
-                    Card-->>User: 「運営がキャンセルしました：(cancellationResponse)」
+            loop 表示する注文ごと
+                Page->>Card: 注文を渡して表示 (PickupCard)
+                Card-->>User: 注文番号、注文日時、注文状態、「キャンセル申請中」、合計、<br/>お支払い方法と支払い・返金の状態 (PaymentState)。<br/>注文受付・受取準備完了は明細と受取連絡先も出し、<br/>引き渡し完了・キャンセルは「商品名 × 数量」と「詳細」にたたむ
+                opt 6a 運営がキャンセルした注文 (cancelledBy が OPERATOR)
+                    Card-->>User: 6a-1「運営がキャンセルしました：(理由)」
                 end
-                opt 6b order.refundStatus が FAILED
-                    Card-->>User: 「返金に失敗しました。Stripe の管理画面で<br/>返金の状態を確認し、購入者に連絡してください。」
+                opt 6b 返金に失敗した注文 (refundStatus が FAILED)
+                    Card-->>User: 6b-1「返金に失敗しました。Stripe の管理画面で<br/>返金の状態を確認し、購入者に連絡してください。」
                 end
             end
         end
     end
+
+    User->>Page: 絞り込みのボタンのどれかをクリックするか、<br/>「注文番号・受取人で検索」欄に注文番号か受取人名を入力
+    Page->>Page: 選んだ状態か入力を覚え (setFilter、setQuery)、その状態の注文のうち、<br/>注文番号と受取人名に入力 (前後の空白を除き小文字にする) を<br/>含む注文だけ残して、priority で並べる (入力欄が空ならその状態の全部)
+    alt 2a 条件に合う注文がない
+        Page-->>User: 2a-1「該当する注文はありません。」(2a-2 終わり)
+    else 条件に合う注文がある
+        Page-->>User: 条件に合う注文だけのカード (流れは 36〜39 と同じ)
+    end
+    User->>Card: 引き渡し完了・キャンセルの注文の「詳細」をクリック
+    Card-->>User: ブラウザーがたたんでいた欄を開き (details 要素)、明細 (商品名、SKU、<br/>数量、金額)、受取人、電話番号、連絡先メール、受け取りの進み具合を見せる。<br/>一覧の取得で読み込み済みなので通信しない
 ```
 
-## 詳細図 2 基本フロー 3〜7
+## 共通代替フローを直接書いた図
+
+上の図の、画面を開いて注文の一覧を取る通信に、この画面で起こる共通代替フロー（\*a、\*b）を書き込んだ図です。絞り込み、検索、「詳細」は画面の中だけで通信しないので、共通代替フローは起こりません。この図は、同じ画面を使う [EC-S09](<EC-S09_注文を受取準備完了にする.md>)・[EC-S10](<EC-S10_注文を引き渡し完了にする.md>)・[EC-S13](<EC-S13_注文キャンセル申請を処理する.md>) の、画面を開くときの共通代替フローも兼ねます。
 
 ```mermaid
 sequenceDiagram
+    autonumber
     actor User as 出店者
     box rgba(47,111,219,0.10) ブラウザー React
-        participant Page as OrderPage<br/>PickupOrders.jsx
-        participant Card as PickupCard<br/>PickupOrders.jsx
+        participant Work as 出店者画面の枠<br/>Workspace<br/>(Workspace.jsx)
+        participant UseAuth as ログイン状態の読み込み<br/>useAuth<br/>(useAuth.js)
+        participant Panel as ログイン欄<br/>AuthPanel<br/>(AuthPanel.jsx)
+        participant Page as 店舗受け取り画面<br/>OrderPage<br/>(PickupOrders.jsx)
+        participant Status as エラーの表示<br/>ResourceStatus<br/>(ResourceView.jsx)
+        participant Hook as 一覧の取得<br/>useResource<br/>(useResource.js)
+        participant Http as 通信<br/>request<br/>(api.js)
+        participant AuthJs as 通信の準備<br/>readSession・passwordLogin<br/>(auth.js)
+        participant Notice as 期限切れのお知らせ<br/>SessionNotice<br/>(SessionNotice.jsx)
+    end
+    box rgba(27,127,92,0.12) EC API Spring Boot
+        participant AuthCtrl as ログイン状態API<br/>AuthController<br/>(AuthController.java)
+        participant PwCtrl as ログインAPI<br/>PasswordLoginController<br/>(PasswordLoginController.java)
+        participant Filter as セッションの確認<br/>SessionValidityFilter<br/>(SessionValidityFilter.java)
+        participant Ctrl as 注文の処理API<br/>OrderWorkflowController<br/>(OrderWorkflowController.java)
+        participant Svc as 注文の処理<br/>OrderWorkflowService<br/>(OrderWorkflowService.java)
+    end
+    participant Db as MySQL
+    box rgba(180,120,20,0.12) 外部サービス
+        participant Cog as Amazon Cognito
     end
 
-    Note over User,Card: 基本フロー 3〜4 絞り込む (取得済みの resource.data を使い、通信しない)
-    alt 絞り込みボタン
-        User->>Page: 「準備待ち」「受け取り待ち」「キャンセル申請」<br/>「引き渡し完了」「キャンセル」「すべて」のどれかをクリック
-        Page->>Page: setFilter(key)
-    else 検索欄
-        User->>Page: 「注文番号・受取人で検索」に入力
-        Page->>Page: onChange で setQuery(入力値)
-    end
-    Page->>Page: filters の条件 (match) と、注文番号と受取人名に<br/>入力 (小文字) が含まれるかで絞り、priority() で並べる
-    alt 2a 条件に合う注文がない
-        Page-->>User: 「該当する注文はありません。」
-    else 条件に合う注文がある
-        Page->>Card: shown の注文ごとに PickupCard
-        Card-->>User: 条件に合う注文だけのカード
+    alt URL を直接開いた (再読み込みも同じ)
+        User->>Work: /seller/orders を開く
+        Work->>UseAuth: ログイン状態を読むよう頼む (useAuth → refreshSession)
+        UseAuth->>AuthJs: ログイン状態を読む (readSession)
+        alt *a ログイン状態を読めない
+            AuthJs-xAuthCtrl: GET /api/auth/me
+            AuthJs--xUseAuth: エラーを投げる (届かなければブラウザーの文、<br/>200 以外なら「ログイン状態を確認できません。」)
+            UseAuth-->>Work: エラーの文 (setError)
+            Work-->>User: *a-1 そのエラーの文だけ。「再取得」はなく、<br/>*a-3 はブラウザーの再読み込み
+        else *b ログインしていない
+            AuthJs->>AuthCtrl: GET /api/auth/me
+            AuthCtrl-->>AuthJs: 200 authenticated=false
+            AuthJs-->>UseAuth: ログインしていない
+            UseAuth-->>Work: ログインしていない
+            Work->>Panel: 画面の代わりにログイン欄を表示 (AuthPanel)
+            Panel-->>User: *b-1「メールアドレス」「パスワード」「ログイン」
+            User->>Panel: 入力して「ログイン」をクリック
+            Panel->>AuthJs: ログインを頼む (submit → passwordLogin)<br/>returnTo は今の URL
+            AuthJs->>PwCtrl: GET /api/auth/csrf のあと POST /api/auth/login
+            PwCtrl->>Cog: メールアドレスとパスワードを確かめる<br/>(InitiateAuth USER_PASSWORD_AUTH)
+            Cog-->>PwCtrl: ID トークン、refresh トークン
+            PwCtrl-->>AuthJs: 200 returnTo
+            AuthJs-->>Panel: 戻り先の URL
+            Panel-->>User: *b-2 /seller/orders を読み込み直す (complete)。<br/>この図の 1 からやり直す
+        else ログインしている
+            AuthJs->>AuthCtrl: GET /api/auth/me
+            AuthCtrl-->>AuthJs: 200 authenticated=true
+            AuthJs-->>UseAuth: ログイン中の会員
+            UseAuth-->>Work: ログイン中の会員
+            Work->>Page: OrderPage を表示
+        end
+    else メニューから開いた
+        User->>Work: 出店者メニューの「店舗受け取り」をクリック
+        Work->>Page: URL を /seller/orders に変え、OrderPage を表示。<br/>ログイン状態は読み直さない
     end
 
-    Note over User,Card: 基本フロー 5〜7 引き渡し完了・キャンセルの注文の詳細を見る (通信しない)
-    User->>Card: 対象注文の summary の「詳細」をクリック
-    Card-->>User: ブラウザーが details 要素を開き、注文明細 (商品名、SKU、数量、金額)、<br/>受取人、電話番号、連絡先メール、受け取りの進み具合を見せる
-    Note over User,Card: 基本フロー 7 出店者が確認する。この画面は GET /api/seller/orders/{id} を呼ばない。<br/>6a・6b の表示は詳細図 1 のとおり、「詳細」を開く前からカードに出ている
+    Page->>Hook: 店舗の注文を取りに行くよう頼む (useResource)
+    Hook->>Http: 自動で一覧の通信を始める (reload → request)
+    alt *a 届かない、または応答が JSON でない
+        Http-xFilter: GET /api/seller/orders?storeId={店舗ID}
+        Http--xHook: エラーを投げる (ApiError(networkErrorMessage, 0))
+        Hook->>Status: エラーの文を出す (reload の catch → setError)
+        Status-->>User: *a-1「サーバーに接続できません。<br/>接続を確認して再試行してください。」と「再取得」
+    else *b 使っている間にログインが切れた (サーバーのセッションがない、refresh トークンが失効)
+        Http->>Filter: GET /api/seller/orders?storeId={店舗ID}
+        Filter-->>Http: 401 LOGIN_REQUIRED<br/>(セッションが無いときは AuthConfiguration.java が返す)
+        Http->>Notice: 期限切れを知らせる (wasSignedIn が真なので kusakari-session-expired)
+        Http--xHook: エラーを投げる (ApiError(sessionExpiredMessage, 401))
+        Hook->>Status: エラーの文を出す (setError)
+        Notice-->>User: *b-1「ログインの有効期限が切れました。<br/>もう一度ログインしてください。」「ログインする」「閉じる」
+        User->>Notice: 「ログインする」をクリック
+        Notice->>AuthJs: ログイン画面へ移る (login)
+        AuthJs-->>User: /account/login?returnTo=/seller/orders のログイン画面<br/>(*b-2 ログインの後は店舗受け取り画面を開き直す)
+    else *a ID トークンの更新で Cognito に届かない
+        Http->>Filter: GET /api/seller/orders?storeId={店舗ID}
+        Filter-xCog: ID トークンを更新する<br/>(InitiateAuth REFRESH_TOKEN_AUTH、CognitoPasswordLogin.java)
+        Filter-->>Http: 503 AUTH_UNAVAILABLE (セッションは残す)
+        Http--xHook: エラーを投げる (ApiError 503)
+        Hook->>Status: エラーの文を出す (setError)
+        Status-->>User: *a-1「認証を確認できません。<br/>時間をおいて再試行してください。」と「再取得」
+    else 要求が Controller まで届いた
+        Http->>Filter: GET /api/seller/orders?storeId={店舗ID}
+        Filter->>Ctrl: 要求を通す (chain.doFilter)
+        Ctrl->>Svc: 店舗の注文の一覧を作るよう頼む (sellerOrders)
+        Svc->>Db: ロールを確かめ、注文と明細などを読む (上の図の 10〜29)
+        alt *a MySQL との通信に失敗
+            Db--xSvc: 失敗 (DataAccessException)
+            Svc--xCtrl: 例外
+            Ctrl-->>Http: 503 DATABASE_UNAVAILABLE (ApiErrors.java の database)
+            Http--xHook: エラーを投げる (ApiError 503)
+            Hook->>Status: エラーの文を出す (setError)
+            Status-->>User: *a-1「保存処理を完了できませんでした。<br/>時間をおいて再試行してください。」と「再取得」
+        else 読めた
+            Db-->>Svc: 行
+            Svc-->>Ctrl: 注文の一覧
+            Ctrl-->>Http: 200 注文の配列
+            Http-->>Hook: 注文の一覧
+            Hook-->>Page: 注文の一覧
+            Page-->>User: 絞り込みのボタン、検索欄、注文のカード
+        end
+    end
+    opt *a-3 やり直す
+        User->>Status: 「再取得」をクリック
+        Status->>Hook: 一覧を取り直す (reload)。流れはこの図の 30 からと同じ
+    end
 ```
 
 ## ユースケース記述との差
@@ -187,28 +224,38 @@ sequenceDiagram
 - 6a: `cancelledBy` が `OPERATOR` になるのは、注文をキャンセルした会員（`cancelled_by_member_id`）が運営（`isAdmin()`）のときです。店舗の閉鎖・組織の停止のまとめてキャンセル（`OpenOrders.cancelAll()`）のほか、運営のアカウントが出店者の画面からキャンセル申請を承認した注文（`decideCancellation()`）も同じ表示になります。
 - 基本フロー 5〜6: 「詳細」は HTML の `details` 要素で、明細と受取連絡先は一覧の取得のときに読み込み済みです。開くときに通信はしません。注文 1 件を返す `GET /api/seller/orders/{id}` はありますが、この画面からは呼びません。
 - 関連情報「ロールのない担当者は注文を見られない」: 所属店舗でロールのない担当者（`memberRole` が `NONE`）は、`requireSeller()` の 403 で「この操作の権限がありません。」と「再取得」が出ます。ORG_ADMIN でロールのない店舗（`memberRole` が `null`）では、`Workspace.jsx` が人事の画面だけを使える旨を出し、通信しません。運営が停止した店舗と、存在しない店舗でも 403 になります。
-- 基本フロー 3: 絞り込みボタンの件数は、検索欄の入力にかかわらず、取得したすべての注文で数えます。支払い待ち（`PENDING_PAYMENT`）の注文は「すべて」でだけ出ます。
-- 1a: 店舗を選び直しても、`OrderPage` は作り直さないので、絞り込みボタンと検索欄の状態は残ります。
-
-## 確かめられなかったこと
-
-- 運営のアカウントが出店者の画面からキャンセル申請を承認した注文に「運営がキャンセルしました」が出ることは、コードから読んだもので、実行して確かめていません。
+- 基本フロー 3: 絞り込みのボタンの件数は、検索欄の入力にかかわらず、取得したすべての注文で数えます。支払い待ち（`PENDING_PAYMENT`）の注文は「すべて」でだけ出ます。検索は注文番号と受取人名を空白でつないだ文字列に入力が含まれるかで決め、大文字と小文字を区別しません。
+- 1a: 店舗を選び直しても、`OrderPage` は作り直さないので、絞り込みのボタンと検索欄の状態は残ります。
+- 一覧の取得の失敗（403 と共通代替フロー）は、`ResourceStatus` がエラーの文と「再取得」を出します。取得に失敗したときは「該当する注文はありません。」は出ません（`resource.data` が空のまま）。
 
 ## 参照したコード
 
-- [frontend/src/workspace/Workspace.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/Workspace.jsx): `sellerMenu`、`storePaths`、`rolePaths`、`personnelOnly`、`/seller/orders` と `OrderPage` の対応
-- [frontend/src/workspace/PickupOrders.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/PickupOrders.jsx): `OrderPage`、`filters`、`priority`、`PickupCard`、`Progress`
-- [frontend/src/workspace/OrderPages.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/OrderPages.jsx): `orderLabels`、`cancellationLabels`、`PaymentState`
-- [frontend/src/payment.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/payment.js): `paymentMethods`、`paymentLabel`、`paymentStatusLabels`、`refundStatusLabels`
-- [frontend/src/workspace/ResourceView.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/ResourceView.jsx): `ResourceStatus`
-- [frontend/src/workspace/useResource.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/useResource.js): `useResource`、`reload`
-- [frontend/src/api.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/api.js): `request`、`readResponse`、`ApiError`
-- [backend/src/main/java/jp/kusakari/ec/commerce/controller/OrderWorkflowController.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/commerce/controller/OrderWorkflowController.java): `seller`、`sellerOrder`
-- [backend/src/main/java/jp/kusakari/ec/commerce/service/OrderWorkflowService.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/commerce/service/OrderWorkflowService.java): `sellerOrders`、`storeView`、`decideCancellation`
-- [backend/src/main/java/jp/kusakari/ec/commerce/mapper/OrderResponseMapper.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/commerce/mapper/OrderResponseMapper.java): `toStoreView`、`toView`、`figures`
-- [backend/src/main/java/jp/kusakari/ec/commerce/persistence/repository/OrderRepository.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/commerce/persistence/repository/OrderRepository.java): `findByStoreIdOrderByCreatedAtDesc`
-- [backend/src/main/java/jp/kusakari/ec/commerce/persistence/repository/OrderItemRepository.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/commerce/persistence/repository/OrderItemRepository.java): `findAllForOrder`
-- [backend/src/main/java/jp/kusakari/ec/commerce/persistence/entity/OrderEntity.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/commerce/persistence/entity/OrderEntity.java): `cancelByOperator`、`decideCancellation`
-- [backend/src/main/java/jp/kusakari/ec/store/service/OpenOrders.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/store/service/OpenOrders.java): `cancelAll`
-- [backend/src/main/java/jp/kusakari/ec/auth/AuthService.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/AuthService.java): `requireSeller`、`requireStoreRole`、`denied`
-- [backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java): `business`
+- [frontend/src/workspace/Workspace.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/Workspace.jsx): `sellerMenu`、`storePaths`、`rolePaths`、`personnelOnly`、未ログインのときの `AuthPanel`、`/seller/orders` と `OrderPage` の対応
+- [frontend/src/workspace/WorkspaceSidebar.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/WorkspaceSidebar.jsx): `MenuLink`
+- [frontend/src/workspace/Common.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/Common.jsx): `PageLink`
+- [frontend/src/components/SellerStoreSelect.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/components/SellerStoreSelect.jsx): 「管理する店舗」の選択欄
+- [frontend/src/useShop.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/useShop.js): `sellerStoreId`、`setSellerStoreId`
+- [frontend/src/workspace/PickupOrders.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/PickupOrders.jsx): `OrderPage`、`filters`、`priority`、`PickupCard`、`Progress`
+- [frontend/src/workspace/OrderPages.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/OrderPages.jsx): `orderLabels`、`cancellationLabels`、`PaymentState`
+- [frontend/src/payment.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/payment.js): `paymentLabel`、`paymentStatusLabels`、`refundStatusLabels`
+- [frontend/src/workspace/ResourceView.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/ResourceView.jsx): `ResourceStatus`（エラーの文と「再取得」）
+- [frontend/src/workspace/useResource.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/useResource.js): `useResource`、`reload`
+- [frontend/src/api.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/api.js): `request`、`send`、`readResponse`、`ApiError`、`networkErrorMessage`、`sessionExpiredMessage`
+- [frontend/src/auth.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/auth.js): `readSession`、`passwordLogin`、`wasSignedIn`、`login`
+- [frontend/src/useAuth.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/useAuth.js): `useAuth`、`refreshSession`
+- [frontend/src/components/AuthPanel.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/components/AuthPanel.jsx): `submit`、`complete`、`returnTo`
+- [frontend/src/components/SessionNotice.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/components/SessionNotice.jsx): 期限切れのお知らせ
+- [backend/src/main/java/jp/kusakari/ec/commerce/controller/OrderWorkflowController.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/commerce/controller/OrderWorkflowController.java): `seller`、`sellerOrder`
+- [backend/src/main/java/jp/kusakari/ec/commerce/service/OrderWorkflowService.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/commerce/service/OrderWorkflowService.java): `sellerOrders`、`storeView`、`decideCancellation`
+- [backend/src/main/java/jp/kusakari/ec/commerce/mapper/OrderResponseMapper.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/commerce/mapper/OrderResponseMapper.java): `toStoreView`、`toView`、`figures`
+- [backend/src/main/java/jp/kusakari/ec/commerce/persistence/repository/OrderRepository.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/commerce/persistence/repository/OrderRepository.java): `findByStoreIdOrderByCreatedAtDesc`
+- [backend/src/main/java/jp/kusakari/ec/commerce/persistence/repository/OrderItemRepository.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/commerce/persistence/repository/OrderItemRepository.java): `findAllForOrder`
+- [backend/src/main/java/jp/kusakari/ec/commerce/persistence/entity/OrderEntity.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/commerce/persistence/entity/OrderEntity.java): `cancelByOperator`、`decideCancellation`
+- [backend/src/main/java/jp/kusakari/ec/store/service/OpenOrders.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/store/service/OpenOrders.java): `cancelAll`
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthService.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthService.java): `requireSeller`、`requireStoreRole`、`denied`
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthController.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthController.java): `me`
+- [backend/src/main/java/jp/kusakari/ec/auth/PasswordLoginController.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/PasswordLoginController.java): `POST /api/auth/login`
+- [backend/src/main/java/jp/kusakari/ec/auth/SessionValidityFilter.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/SessionValidityFilter.java): `doFilterInternal`（ID トークンの更新、401、503）
+- [backend/src/main/java/jp/kusakari/ec/auth/CognitoPasswordLogin.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/CognitoPasswordLogin.java): ログインと ID トークンの更新、503 `AUTH_UNAVAILABLE`
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthConfiguration.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthConfiguration.java): `authenticationEntryPoint`（401 `LOGIN_REQUIRED`）
+- [backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java): `business`、`database`

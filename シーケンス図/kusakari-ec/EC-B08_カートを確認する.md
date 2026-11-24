@@ -1,264 +1,264 @@
 # EC-B08 カートを確認する
 
 - ユースケース記述: [EC-B08_カートを確認する](<../../アーカイブ/ユースケース/kusakari-ec/EC-B08_カートを確認する.md>)
-- 対象のコード: kusakari-ec の main（19a2be3、2026-11-20 時点）
+- 共通代替フロー: [00_全ユースケース共通の代替フロー](<00_全ユースケース共通の代替フロー.md>)
+- 対象のコード: kusakari-ec の main（6bad7e3、2026-11-24 時点）
 
-カートのデータは、アプリを開いたときに `useShop` が `GET /api/cart` で読み込みます。共通ヘッダーの「カート」をクリックしても通信せず、読み込み済みのカートを「ショッピングカート」画面に表示します。購入できなくなった明細を外す処理（2b）は、この `GET /api/cart` の中でサーバーが行います。そのため詳細図は、アプリを開いたときの読み込み（詳細図 1）と、画面の表示（詳細図 2）に分けました。
+## シーケンス図
 
-## 概要図
+参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
+共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
+
+カートは、EC の画面を開いたときに `useShop` が `GET /api/cart` で読み込みます。共通ヘッダーの「カート」をクリックしても通信せず、読み込み済みのカートを「ショッピングカート」画面に出します。購入できなくなった明細を外す処理（2b）も、画面を開いたときの `GET /api/cart` の中でサーバーが行います。そのため図は、画面を開く操作から始めています。
 
 ```mermaid
 sequenceDiagram
+    autonumber
     actor User as 購入者
-    participant Page as EC の画面<br/>React
-    participant Api as EC API<br/>Spring Boot
-    participant Db as MySQL
-
-    Note over User,Db: アプリを開いたとき（「カート」のクリックより前に自動で実行する。/cart を直接開いたときも同じ）
-    Page->>Api: GET /api/cart
-    Note over Page,Api: 未ログインなら 401 LOGIN_REQUIRED（共通代替フロー *b。図では省略）
-    Api->>Api: 購入者のアカウントかを確かめる
-    alt 関連情報 店舗側・出店申請用のアカウント
-        Api-->>Page: 403 BUYER_REQUIRED
-        Note over Page,Api: 続けて GET /api/products（図では省略）
-    else 購入者か運営
-        Api->>Db: 会員を FOR UPDATE で読み、<br/>会員のカートを探す（なければ作る）
-        Db-->>Api: カート
-        Api->>Db: カートを FOR UPDATE で読み、<br/>明細・商品・在庫・店舗・組織を読む
-        Db-->>Api: 行
-        opt 2b 戻らない理由で購入できなくなった明細がある
-            Api->>Db: その明細を削除し、<br/>カートの revision を 1 増やす
-            Db-->>Api: 件数
-        end
-        Api->>Api: 明細ごとの金額と購入できるか、<br/>合計、canCheckout を計算
-        Api-->>Page: 200 CartView<br/>（明細、合計、canCheckout、removedItems）
-        Note over Page,Api: 続けて GET /api/products、GET /api/orders（図では省略）
-    end
-    Note over Page,Api: 最後に GET /api/stores で基準地点の近くの店舗を読む（図では省略）
-
-    Note over User,Db: 基本フロー 1〜2 「カート」から「ショッピングカート」画面を開く
-    User->>Page: 共通ヘッダーの「カート」をクリック
-    Page->>Page: URL を /cart に変えて画面を切り替える（通信しない）
-    Note over User,Page: 共通代替フロー *b を適用。<br/>GET /api/auth/me の結果が未ログインなら「ログイン」画面へ移る
-    alt 関連情報 店舗側・出店申請用のアカウント
-        Page-->>User: 「店舗・出店申請用のアカウントでは購入できません。<br/>購入は購入者のアカウントでご利用ください。」と「商品を探す」
-    else 2a カートが空
-        Page-->>User: 「まだ商品が入っていません。」、「商品を探す」、<br/>「庭に設置したものから追加」
-        Note right of User: 2a-2 ユースケースを終了する
-    else 商品がある
-        loop 明細ごと
-            opt 2c 一時的に購入できない
-                Page-->>User: 「現在は購入できません」
-            end
-            opt 2d 在庫が足りない
-                Page-->>User: 「在庫不足（現在 N 点）」
-            end
-        end
-        Page-->>User: 明細（画像、名前、価格、受取店舗、数量、金額）、<br/>「庭に設置したものから追加」、<br/>「ご請求内容」（商品小計、うち消費税、合計）
-    end
-    opt 2b 外した明細がある
-        Page-->>User: 「(商品名)は購入できなくなったため<br/>カートから外しました。」と「閉じる」
-    end
-
-    Note over User,Db: 基本フロー 3 表示内容を確認する
-    opt 2b-2 「閉じる」をクリックする
-        User->>Page: 「閉じる」をクリック
-        Page-->>User: 表示を消す（通信しない）
-    end
-```
-
-## 詳細図 1 アプリを開いたときの読み込み
-
-```mermaid
-sequenceDiagram
     box rgba(47,111,219,0.10) ブラウザー React
-        participant App as App.jsx
-        participant Shop as useShop.js
-        participant Http as api.js
+        participant Header as 共通ヘッダー<br/>KusakariHeader<br/>(KusakariHeader.jsx)
+        participant App as アプリの枠<br/>App<br/>(App.jsx)
+        participant Page as ショッピングカート画面<br/>CartPage<br/>(CartPage.jsx)
+        participant Cart as カートの表示<br/>Cart<br/>(Cart.jsx)
+        participant Shop as 買い物の状態<br/>useShop<br/>(useShop.js)
+        participant Http as 通信<br/>request<br/>(api.js)
     end
     box rgba(27,127,92,0.12) EC API Spring Boot
-        participant Ctrl as CartController
-        participant Errs as ApiErrors
-        participant Session as CartSession<br/>Resolver
-        participant Auth as AuthService
-        participant Member as MemberCart<br/>Service
-        participant Svc as CartService
-        participant Catalog as CatalogService
-        participant Repo as 各 Repository
+        participant Ctrl as カートAPI<br/>CartController<br/>(CartController.java)
+        participant Errs as エラーの応答<br/>ApiErrors<br/>(ApiErrors.java)
+        participant Resolver as カートの特定<br/>CartSessionResolver<br/>(CartSessionResolver.java)
+        participant Auth as ログイン中の会員<br/>AuthService<br/>(AuthService.java)
+        participant MemberCart as 会員のカート<br/>MemberCartService<br/>(MemberCartService.java)
+        participant Svc as カートの処理<br/>CartService<br/>(CartService.java)
+        participant Catalog as 商品の販売状態<br/>CatalogService<br/>(CatalogService.java)
+        participant CartRepo as カートの読み書き<br/>CartRepository<br/>(CartRepository.java)
+        participant ItemRepo as 明細の読み書き<br/>CartItemRepository<br/>(CartItemRepository.java)
     end
     participant Db as MySQL
 
-    Note over App,Db: アプリを開いたとき（「カート」のクリックより前に自動で実行する。/cart を直接開いたときも同じ）
-    App->>Shop: useShop()
-    Shop->>Shop: useEffect が initialize() を実行し、<br/>run() の中で refresh()
-    Shop->>Http: api.cart()
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (ログイン状態の確認)、5、50 に適用<br/>*a 通信に失敗した場合: 2、5 に適用
+
+    User->>App: EC の画面 (「トップ」画面など) を開く
+    App->>App: ログイン状態を読む<br/>(useAuth → readSession、GET /api/auth/me)
+    App->>Shop: 買い物の状態を用意するよう頼む (useShop)
+    Shop->>Http: 画面を開いたときに自動でカートを読みに行く<br/>(initialize → run → refresh → api.cart → request)
     Http->>Ctrl: GET /api/cart
-    Note over Http,Ctrl: 未ログインなら AuthConfiguration の authenticationEntryPoint が Controller の前で<br/>401 LOGIN_REQUIRED を返し、refresh() が setSignedOut(true) にする（共通代替フロー *b。図では省略）
-    Ctrl->>Session: resolve(request, response)
-    Session->>Auth: requireBuyer()
-    Auth->>Auth: current() でログイン中の会員を読み、<br/>accountType を確かめる
-    alt 関連情報 店舗側・出店申請用のアカウント
-        Auth--xErrs: throw ApiException(403, BUYER_REQUIRED)
-        Errs-->>Http: business() が 403 と message
-        Http--xShop: throw ApiError(403)
-        Shop->>Shop: refresh() の catch で<br/>setRefusedBuyer(true)、setCart(null)
-        Note over Shop,Http: 続けて api.products() で GET /api/products（図では省略）
-    else 購入者（USER）か運営（ADMIN）
-        Auth-->>Session: AuthMember
-        Session->>Member: resolve(memberId)
-        Note over Member,Db: @Transactional resolve() は、このあとの CartService.read() とは別のトランザクション
-        Member->>Repo: AuthMemberRepository.lockMember(memberId)
-        Repo->>Db: SELECT ... FOR UPDATE（members）
-        Db-->>Repo: 行
-        Repo-->>Member: AuthMember
-        Member->>Repo: CartRepository.findByMemberId(memberId)
-        Repo->>Db: SELECT（carts）
-        Db-->>Repo: 行 または なし
-        Repo-->>Member: Optional の CartEntity
+    Ctrl->>Resolver: 会員のカートを特定するよう頼む (resolve)
+    Resolver->>Auth: ログイン中の人が購入できるアカウントかを確かめる (requireBuyer)
+    alt 関連情報 店舗側・出店申請用のアカウント (SHOP_OWNER、SHOP_STAFF、SHOP_OWNER_APPLICANT)
+        Auth--xErrs: 403 BUYER_REQUIRED の例外を投げる (ApiException)
+        Errs-->>Http: 403「店舗・出店申請用のアカウントでは購入できません。<br/>購入者のアカウントでご利用ください。」(business)
+        Http--xShop: エラーを投げる (readResponse → ApiError)
+        Shop->>Shop: 購入できないアカウントとして覚える<br/>(refresh の catch → setRefusedBuyer(true)、setCart(null))。<br/>続けて商品を読む (api.products、GET /api/products)
+    else 購入者 (USER) か運営者 (ADMIN)
+        Auth-->>Resolver: ログイン中の会員
+        Resolver->>MemberCart: 会員のカートの ID を求めるよう頼む (resolve)<br/>resolve 全体が 1 つのトランザクション
+        MemberCart->>Db: 会員の行をロックして読む<br/>(lockMember、SELECT ... FOR UPDATE members)
+        Db-->>MemberCart: 会員の行
+        MemberCart->>CartRepo: 会員のカートを探す (findByMemberId)
+        CartRepo->>Db: SELECT carts
+        Db-->>CartRepo: カートの行 (なければなし)
+        CartRepo-->>MemberCart: カート (なければなし)
         opt 会員のカートがまだない
-            Member->>Repo: CartRepository.saveAndFlush(cart)
-            Repo->>Db: INSERT（carts）
-            Db-->>Repo: 件数
-            Repo-->>Member: CartEntity
+            MemberCart->>CartRepo: 新しいカートを保存する (saveAndFlush)
+            CartRepo->>Db: INSERT carts
+            Db-->>CartRepo: 完了
+            CartRepo-->>MemberCart: 新しいカート
         end
-        Member-->>Session: cartId
-        Session-->>Ctrl: cartId
-        Ctrl->>Svc: read(cartId)
-        Note over Svc,Db: @Transactional(READ_COMMITTED) read() 全体が 1 つのトランザクション
-        Svc->>Repo: CartRepository.findLocked(id)
-        Repo->>Db: SELECT ... FOR UPDATE（carts）
-        Db-->>Repo: 行
-        Repo-->>Svc: CartEntity
-        Svc->>Repo: CartItemRepository.findAllForCart(id)
-        Repo->>Db: SELECT（cart_items）
-        Db-->>Repo: 行
-        Repo-->>Svc: CartItemEntity のリスト
-        Svc->>Catalog: listingsByIds(productIds)
-        Catalog->>Repo: ProductRepository.findByIdIn()、<br/>InventoryRepository / StoreRepository /<br/>OrganizationRepository.findAllById()
-        Repo->>Db: SELECT（products、inventory、stores、organizations）
-        Db-->>Repo: 行
-        Repo-->>Catalog: Entity
-        Catalog->>Catalog: unavailableReason() で買えない理由を決める
-        Catalog-->>Svc: Listing のリスト
-        loop 明細ごと
-            opt 2b 理由が REMOVED_REASONS のどれか
-                Note right of Svc: DELETED、STORE_CLOSED、<br/>STORE_SUSPENDED、<br/>ORGANIZATION_SUSPENDED
-                Svc->>Svc: removed に RemovedLine を足す
-                Svc->>Repo: CartItemRepository.delete(item)
-                Repo-->>Svc: 戻る
+        MemberCart-->>Resolver: カートの ID (ここでコミット)
+        Resolver-->>Ctrl: カートの ID
+        Ctrl->>Svc: カートを読むよう頼む (read)<br/>read 全体が 1 つのトランザクション
+        Svc->>CartRepo: カートの行をロックして読む (findLocked)
+        CartRepo->>Db: SELECT ... FOR UPDATE carts
+        Db-->>CartRepo: カートの行
+        CartRepo-->>Svc: カート
+        Svc->>ItemRepo: カートの明細を読む (findAllForCart)
+        ItemRepo->>Db: SELECT cart_items
+        Db-->>ItemRepo: 明細の行
+        ItemRepo-->>Svc: 明細のリスト
+        Svc->>Catalog: 明細の商品が今買えるか、買えない理由を<br/>調べるよう頼む (listingsByIds)
+        Catalog->>Db: 商品・在庫・店舗・組織を読む<br/>(findByIdIn、findAllById、SELECT products、inventory、stores、organizations)
+        Db-->>Catalog: 行
+        Catalog-->>Svc: 商品ごとの販売状態 (Listing、買えない理由の unavailableReason)
+        opt 2b 戻らない理由で買えなくなった明細がある<br/>(DELETED、STORE_CLOSED、STORE_SUSPENDED、ORGANIZATION_SUSPENDED)
+            loop 外す明細ごと
+                Svc->>ItemRepo: 明細を外し、外した明細を覚える (delete、RemovedLine)
             end
+            Svc->>ItemRepo: 削除を MySQL に送る (flush)
+            ItemRepo->>Db: DELETE cart_items
+            Svc->>Svc: カートの revision を 1 増やす (incrementRevision)
         end
-        alt 2b 外した明細がある
-            Svc->>Repo: CartItemRepository.flush()
-            Repo->>Db: DELETE（cart_items）
-            Db-->>Repo: 件数
-            Repo-->>Svc: 戻る
-            Svc->>Svc: cart.incrementRevision()
-            Svc->>Svc: view(cart, removed)
-        else 外した明細がない
-            Svc->>Svc: view(cart)
-        end
-        Note right of Svc: view() は findAllForCart() と listingsByIds() を<br/>もう一度呼び、明細ごとの lineTotalYen と available、<br/>totalYen、itemCount、canCheckout を計算し、<br/>DeliveryService.pickupDetails() で<br/>受取連絡先を付ける（図では省略）
-        Note over Svc,Db: read() の終わりにコミット。外したときは carts の revision の UPDATE も確定する
-        Svc-->>Ctrl: CartView
-        Ctrl-->>Http: 200 CartView
-        Http-->>Shop: cart
-        Shop->>Shop: setSignedOut(false)、setRefusedBuyer(false)、<br/>setCart(cart)
-        opt 2b removedItems がある
-            Shop->>Shop: setRemovedLines(removedItems)
-        end
-        Note over Shop,Http: 続けて api.products() と api.orders() で GET /api/products、GET /api/orders（図では省略）
+        Svc->>Svc: 明細と販売状態を読み直し、明細ごとの金額 (lineTotalYen) と<br/>買えるか (available)、合計、点数、注文に進めるか (canCheckout) を計算し、<br/>受取連絡先を付ける (view → findAllForCart、listingsByIds、pickupDetails)
+        Svc-->>Ctrl: カートの内容 (CartView)。read の終わりにコミット
+        Ctrl-->>Http: 200 カートの内容 (revision、items、subtotalYen、<br/>totalYen、itemCount、canCheckout、removedItems)
+        Http-->>Shop: カートの内容
+        Shop->>Shop: カートを覚える (setCart)。外した明細があれば覚える<br/>(setRemovedLines)。続けて商品と注文履歴を読む<br/>(api.products、api.orders、GET /api/products、GET /api/orders)
     end
-    Note over Shop,Http: 最後に initialize() が api.stores() で GET /api/stores を送る（図では省略）
+    Shop->>Shop: 最後に近くの店舗を読む (api.stores、GET /api/stores)
+
+    User->>Header: 共通ヘッダーの「カート」をクリック
+    Header->>App: URL を /cart に変え、画面を切り替える。通信しない<br/>(follow → onNavigate → navigateFromHeader → navigate)
+    App->>Page: path が /cart でログイン中なので、<br/>ショッピングカート画面を表示 (CartPage)
+    alt 関連情報 店舗側・出店申請用のアカウント (buyerBlocked)
+        Page-->>User: 「店舗・出店申請用のアカウントでは購入できません。<br/>購入は購入者のアカウントでご利用ください。」と「商品を探す」
+    else 購入者か運営者
+        Page->>Cart: 読み込み済みのカートで表示するよう頼む (Cart)
+        alt 2a カートが空 (cart.items.length が 0)
+            Cart-->>User: 2a-1「まだ商品が入っていません。」「商品を探す」<br/>「庭に設置したものから追加」(2a-2 ユースケースを終了する)
+        else 商品がある
+            loop 明細ごと (cart.items.map)
+                Cart->>Cart: 明細の注意書きを決める<br/>(2c unavailableReason があれば「現在は購入できません」、<br/>2d available が偽で unavailableReason がなければ「在庫不足（現在 N 点）」)
+            end
+            Cart->>Cart: うち消費税を計算する (Math.floor(totalYen × 10 / 110))
+            Cart-->>User: 「ショッピングカート (点数)」、明細ごとの画像・名前・価格・<br/>受取店舗・数量・金額と 2c・2d の注意書き、「庭に設置したものから追加」、<br/>「ご請求内容」(商品小計、うち消費税、合計)、<br/>「注文内容を確認する」(canCheckout が偽なら押せない)
+        end
+        opt 2b 外した明細がある (shop.removedLines)
+            Cart-->>User: 2b-1「(商品名)は購入できなくなったため<br/>カートから外しました。」と「閉じる」
+            User->>Cart: 2b-2「閉じる」をクリック
+            Cart->>Shop: 外した明細を忘れる (setRemovedLines([]))。通信しない
+            Cart-->>User: お知らせを消す (2b-3 基本フロー 3 へ進む)
+        end
+    end
 ```
 
-## 詳細図 2 基本フロー 1〜3 画面の表示
+## 共通代替フローを直接書いた図
+
+上の図の、画面を開いたときのログイン状態の確認（`GET /api/auth/me`）とカートの読み込み（`GET /api/cart`）、「カート」のクリックに、この画面で起こる共通代替フロー（\*a、\*b）を書き込んだ図です。`GET /api/cart` が Controller に届いた後の流れは上の図の 6〜44 と同じなので、まとめて書いています。`GET /api/products`、`GET /api/orders`、`GET /api/stores` の失敗は省いています。
 
 ```mermaid
 sequenceDiagram
+    autonumber
     actor User as 購入者
     box rgba(47,111,219,0.10) ブラウザー React
-        participant Header as KusakariHeader.jsx
-        participant App as App.jsx
-        participant Page as CartPage.jsx
-        participant Cart as Cart.jsx
-        participant Shop as useShop.js
+        participant Header as 共通ヘッダー<br/>KusakariHeader<br/>(KusakariHeader.jsx)
+        participant App as アプリの枠<br/>App<br/>(App.jsx)
+        participant Login as ログイン画面<br/>LoginPage<br/>(LoginPage.jsx)
+        participant Cart as カートの表示<br/>Cart<br/>(Cart.jsx)
+        participant Shop as 買い物の状態<br/>useShop<br/>(useShop.js)
+        participant Http as 通信<br/>request<br/>(api.js)
+        participant AuthJs as ログイン状態の確認<br/>readSession<br/>(auth.js)
+    end
+    box rgba(27,127,92,0.12) EC API Spring Boot
+        participant AuthCtrl as ログイン状態API<br/>AuthController<br/>(AuthController.java)
+        participant Filter as セッションの確認<br/>SessionValidityFilter<br/>(SessionValidityFilter.java)
+        participant Sec as ログインの要求<br/>AuthConfiguration<br/>(AuthConfiguration.java)
+        participant Ctrl as カートAPI<br/>CartController<br/>(CartController.java)
+    end
+    participant Db as MySQL
+    box rgba(180,120,20,0.12) 外部サービス
+        participant Cog as Amazon Cognito
     end
 
-    Note over User,Shop: 基本フロー 1〜2 「カート」から「ショッピングカート」画面を開く
+    User->>App: EC の画面を開く (URL を直接開く、再読み込みを含む)
+    App->>AuthJs: ログイン状態を読むよう頼む (useAuth → readSession)
+    alt *a GET /api/auth/me が届かない、または 200 以外
+        AuthJs-xAuthCtrl: GET /api/auth/me
+        AuthJs--xApp: エラーを投げる (fetch の例外の文、<br/>または「ログイン状態を確認できません。」)
+        App->>App: エラーの文を覚える (useAuth の setError)。<br/>session は null のまま
+    else 読めた
+        AuthJs->>AuthCtrl: GET /api/auth/me
+        AuthCtrl-->>AuthJs: 200 ログイン状態 (authenticated)
+        AuthJs-->>App: ログイン状態 (ログイン中なら wasSignedIn を真にする)
+    end
+    App->>Shop: 買い物の状態を用意するよう頼む (useShop)
+    Shop->>Http: カートを読みに行く (initialize → run → refresh → api.cart)
+    alt *a 届かない、または応答が JSON でない
+        Http-xFilter: GET /api/cart
+        Http->>Http: 通信の失敗にまとめる<br/>(send か readResponse → ApiError(networkErrorMessage, 0))
+        Http--xShop: エラーを投げる
+        Shop->>Shop: 401・403 でないので投げ直し、エラーの文を覚える<br/>(refresh → run の catch → setError)。カートは null のまま
+    else *b ログインしていない (サーバーのセッションがない)
+        Http->>Filter: GET /api/cart
+        Filter->>Sec: 認証がないまま次へ渡す (chain.doFilter)
+        Sec-->>Http: 401 LOGIN_REQUIRED「ログインしてください。」(authenticationEntryPoint)
+        Http--xShop: wasSignedIn が偽なので期限切れのお知らせは出さず、<br/>エラーを投げる (ApiError 401)
+        Shop->>Shop: 未ログインとして覚える (refresh の catch → setSignedOut(true)、<br/>setCart(null))。続けて商品を読む (GET /api/products)
+    else *a ID トークンの更新で Cognito に届かない
+        Http->>Filter: GET /api/cart
+        Filter-xCog: ID トークンを更新する<br/>(InitiateAuth REFRESH_TOKEN_AUTH、CognitoPasswordLogin.java)
+        Filter-->>Http: 503 AUTH_UNAVAILABLE「認証を確認できません。<br/>時間をおいて再試行してください。」(セッションは残す)
+        Http--xShop: エラーを投げる (ApiError 503)
+        Shop->>Shop: エラーの文を覚える (run の catch → setError)。カートは null のまま
+    else 要求が Controller まで届いた
+        Http->>Filter: GET /api/cart
+        Filter->>Ctrl: 要求を通す (chain.doFilter)
+        Ctrl->>Db: 会員のカートを特定し、明細を読んで、<br/>買えなくなった明細を外す (上の図の 6〜44)
+        alt *a MySQL との通信に失敗
+            Db--xCtrl: 失敗 (DataAccessException)。トランザクションの変更は取り消す
+            Ctrl-->>Http: 503 DATABASE_UNAVAILABLE「保存処理を完了できませんでした。<br/>時間をおいて再試行してください。」(ApiErrors.java の database)
+            Http--xShop: エラーを投げる (ApiError 503)
+            Shop->>Shop: エラーの文を覚える (run の catch → setError)。カートは null のまま
+        else 読めた
+            Db-->>Ctrl: カートの行と明細
+            Ctrl-->>Http: 200 カートの内容
+            Http-->>Shop: カートの内容
+            Shop->>Shop: カートを覚える (setCart)
+        end
+    end
+
     User->>Header: 共通ヘッダーの「カート」をクリック
-    Header->>App: follow() が onNavigate(href)
-    App->>App: navigateFromHeader(url) が navigate('/cart')
-    Note right of App: history.pushState で URL だけを変え、<br/>usePath() が path を更新する。通信しない
-    Note over User,Shop: 共通代替フロー *b を適用。useAuth() の GET /api/auth/me が未ログインなら、<br/>cartLoginRequired の useEffect が redirectToLogin() で「ログイン」画面へ移る
-    App->>Page: path が /cart なので CartPage を表示
-    alt 関連情報 店舗側・出店申請用のアカウント（shop.buyerBlocked）
-        Page-->>User: buyerOnlyMessage と「商品を探す」
-    else 購入者
-        Page->>Cart: Cart を表示
-        Note right of Cart: shop.cart は詳細図 1 で<br/>読み込み済み
-        alt 2a cart.items.length が 0
-            Cart-->>User: 「まだ商品が入っていません。」、「商品を探す」、<br/>AddFromGardenCard の「庭に設置したものから追加」
-            Note right of User: 2a-2 ユースケースを終了する
-        else 商品がある
-            loop 明細ごと（cart.items.map）
-                opt 2c line.unavailableReason がある
-                    Cart-->>User: 「現在は購入できません」
-                end
-                opt 2d line.available が false で unavailableReason がない
-                    Cart-->>User: 「在庫不足（現在 line.product.stock 点）」
-                end
-            end
-            Cart->>Cart: うち消費税 = Math.floor(totalYen × 10 / 110)
-            Cart-->>User: 「ショッピングカート (itemCount)」、明細、<br/>「庭に設置したものから追加」、「ご請求内容」
-            Note right of Cart: cart.canCheckout が false なら<br/>「注文内容を確認する」は disabled（EC-B12）
+    Header->>App: URL を /cart に変える (navigateFromHeader → navigate)
+    alt *b-1 未ログイン (session.authenticated が偽)
+        App->>App: URL を /account/login?returnTo=/cart に置き換える<br/>(cartLoginRequired → redirectToLogin)
+        App->>Login: ログイン画面を表示 (LoginPage)
+        Login-->>User: *b-1 ログイン画面
+        User->>Login: *b-2 メールアドレスとパスワードを入力し「ログイン」をクリック (EC-B01)
+        Login-->>User: returnTo の /cart を読み込み直す (AuthPanel.jsx の complete)。<br/>この図の 1 からやり直す
+    else *a ログイン状態を読めなかった (session が null)
+        App-->>User: *a-1 ログイン状態の確認のエラーの文だけ (useAuth の error)。<br/>*a-3 やり直しはブラウザーの再読み込みだけ
+    else *a カートを読めなかった (shop.cart が null で shop.error がある)
+        App->>Cart: ショッピングカート画面を表示 (CartPage → Cart)
+        Cart-->>User: *a-1「ショッピングカート」、エラーの文と「商品を探す」。<br/>再取得のボタンはない
+        opt *a-3 やり直す
+            User->>Cart: 「商品を探す」をクリックし、「トップ」画面の<br/>エラーの文の横の「再読み込み」をクリック (Catalog.jsx)
+            Cart->>Shop: カートを読み直す (shop.initialize)。この図の 10 からやり直す
         end
-        opt 2b shop.removedLines がある
-            Cart-->>User: RemovedNotice が「(name)は購入できなくなったため<br/>カートから外しました。」と「閉じる」
-        end
-    end
-
-    Note over User,Shop: 基本フロー 3 表示内容を確認する
-    opt 2b-2 「閉じる」をクリックする
-        User->>Cart: 「閉じる」をクリック
-        Cart->>Shop: setRemovedLines([])
-        Shop-->>Cart: shop.removedLines が空
-        Cart-->>User: 表示を消す（通信しない）
+    else カートを読めた
+        App->>Cart: ショッピングカート画面を表示 (CartPage → Cart)
+        Cart-->>User: カートの内容 (上の図の 53〜)
     end
 ```
 
 ## ユースケース記述との差
 
-- 記述では、基本フロー 2 で画面を表示するときにカートを読み、2b で明細を外すように読めます。コードでは「カート」のクリックでは通信しません。カートはアプリを開いたとき（`useShop` の `initialize()`）と、ほかの操作のあとの `refresh()` で読み込み済みです。2b の「外す」処理も、そのときの `GET /api/cart` の中でサーバーが行います。読み込んだあとに店舗が閉鎖されたなどの変化は、次に `GET /api/cart` を送るまで画面に出ません。
+- 記述では、基本フロー 2 で画面を表示するときにカートを読み、2b で明細を外すように読めます。コードでは「カート」のクリックでは通信しません。カートは画面を開いたとき（`useShop` の `initialize()`）と、ほかの操作のあとの `refresh()` で読み込み済みです。2b の「外す」処理も、そのときの `GET /api/cart` の中でサーバーが行います。読み込んだあとに店舗が閉鎖されたなどの変化は、次に `GET /api/cart` を送るまで画面に出ません。
 - 記述にない処理です。2b で明細を外すと、サーバーはカートの `revision` を 1 増やします。ほかの画面で開いていた古いカートの操作は、409 `CART_CHANGED` で断られます。`GET` ですが DB を書き換えます。
-- 共通代替フロー *a の「再実行を可能にする」について、カートを読み込めなかったとき（`shop.cart` が null で `shop.error` がある）の「ショッピングカート」画面には、エラーメッセージと「商品を探す」だけが出ます。再実行のボタンはありません。「商品を探す」で戻る「トップ」画面の一覧には「再読み込み」（`shop.initialize`）があります。
+- 記述にない処理です。会員のカートがまだなければ、`MemberCartService.resolve()` が `GET /api/cart` の中でカートの行を作ります。この処理は、カートを読む `CartService.read()` とは別のトランザクションです。
+- \*b について、画面を開いたときにサーバーのセッションが切れていた場合は、期限切れのお知らせ（`SessionNotice`）は出ず、ログインしていない場合と同じ扱いになります。`wasSignedIn()` は、そのページで `GET /api/auth/me` がログイン中を返したときだけ真になるためです。
+- 共通代替フロー \*a の「再実行を可能にする」について、カートを読み込めなかったとき（`shop.cart` が null で `shop.error` がある）の「ショッピングカート」画面には、エラーの文と「商品を探す」だけが出ます。再実行のボタンはありません。「商品を探す」で戻る「トップ」画面の一覧の上に「再読み込み」（`shop.initialize`）があります。`GET /api/auth/me` に失敗したときは、`App.jsx` がその文だけを出し、やり直しはブラウザーの再読み込みだけです。
 - 記述にない表示です。各明細に「この商品を庭に配置」（Canvas へのリンク）が出ます。見出しは「ショッピングカート (商品の点数)」です。
 - 記述にない処理です。「うち消費税」はサーバーから受け取らず、画面が `Math.floor(totalYen × 10 / 110)` で計算します。商品小計（`subtotalYen`）と合計（`totalYen`）はサーバーが計算し、送料がないので同じ値です。
 - 2b、2c、2d の条件は、記述とコードが一致しています。2b はサーバーの `CatalogService.REMOVED_REASONS`（`DELETED`、`STORE_CLOSED`、`STORE_SUSPENDED`、`ORGANIZATION_SUSPENDED`）、2c はそれ以外の `unavailableReason`（`STORE_CLOSING`、`STORE_UNPUBLISHED`、`ORGANIZATION_NOT_ACCEPTING`、`PRODUCT_SUSPENDED`、`HIDDEN`）、2d は `unavailableReason` が null で在庫が数量より少ない明細です。
+- 「庭に設置したものから追加」（`AddFromGardenCard`）は、クリックしてダイアログを開くまで通信しません。ダイアログの中は EC-B24 の範囲です。
 
 ## 参照したコード
 
-- [packages/site-header/KusakariHeader.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/packages/site-header/KusakariHeader.jsx): 「カート」のリンク、`follow()`
-- [frontend/src/App.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/App.jsx): `useShop()` の呼び出し、`navigateFromHeader()`、`cartLoginRequired` と `redirectToLogin()`、`CartPage` の表示、`canBuy`
-- [frontend/src/workspace/navigation.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/navigation.js): `navigate()`、`usePath()`
-- [frontend/src/useAuth.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/useAuth.js): `readSession()` の呼び出し
-- [frontend/src/auth.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/auth.js): `readSession()`（`GET /api/auth/me`）、`redirectToLogin()`、`isShopAccount()`、`buyerOnlyMessage`
-- [frontend/src/useShop.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/useShop.js): `initialize()`、`refresh()`、`run()`、`buyerBlocked`、`removedLines` と `setRemovedLines()`
-- [frontend/src/api.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/api.js): `api.cart()`、`api.products()`、`api.orders()`、`api.stores()`、`readResponse()`
-- [frontend/src/components/CartPage.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/components/CartPage.jsx): `shop.buyerBlocked` の分岐、「商品を探す」
-- [frontend/src/components/Cart.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/components/Cart.jsx): 空のカート、明細の表示（「現在は購入できません」「在庫不足」）、「ご請求内容」、`RemovedNotice`
-- [frontend/src/components/GardenItemsDialog.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/components/GardenItemsDialog.jsx): `AddFromGardenCard`（開くまでは通信しない）
-- [backend/src/main/java/jp/kusakari/ec/commerce/controller/CartController.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/commerce/controller/CartController.java): `get()`
-- [backend/src/main/java/jp/kusakari/ec/commerce/session/CartSessionResolver.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/commerce/session/CartSessionResolver.java): `resolve()`
-- [backend/src/main/java/jp/kusakari/ec/auth/AuthService.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/AuthService.java): `requireBuyer()`、`current()`
-- [backend/src/main/java/jp/kusakari/ec/auth/MemberCartService.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/MemberCartService.java): `resolve()`
-- [backend/src/main/java/jp/kusakari/ec/auth/AuthMemberRepository.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/AuthMemberRepository.java): `lockMember()`
-- [backend/src/main/java/jp/kusakari/ec/auth/AuthConfiguration.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/AuthConfiguration.java): `authenticationEntryPoint`
-- [backend/src/main/java/jp/kusakari/ec/commerce/service/CartService.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/commerce/service/CartService.java): `read()`、`view()`、`requireLockedCart()`
-- [backend/src/main/java/jp/kusakari/ec/commerce/dto/CommerceDtos.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/commerce/dto/CommerceDtos.java): `CartView`、`CartLine`、`RemovedLine`
-- [backend/src/main/java/jp/kusakari/ec/commerce/persistence/repository/CartRepository.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/commerce/persistence/repository/CartRepository.java): `findByMemberId()`、`findLocked()`
-- [backend/src/main/java/jp/kusakari/ec/commerce/persistence/repository/CartItemRepository.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/commerce/persistence/repository/CartItemRepository.java): `findAllForCart()`
-- [backend/src/main/java/jp/kusakari/ec/commerce/service/DeliveryService.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/commerce/service/DeliveryService.java): `pickupDetails()`
-- [backend/src/main/java/jp/kusakari/ec/catalog/service/CatalogService.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/catalog/service/CatalogService.java): `listingsByIds()`、`REMOVED_REASONS`、`unavailableReason()`、`storeReason()`
-- [backend/src/main/java/jp/kusakari/ec/catalog/persistence/repository/ProductRepository.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/catalog/persistence/repository/ProductRepository.java): `findByIdIn()`
-- [backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java): `business()`
+- [packages/site-header/KusakariHeader.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/packages/site-header/KusakariHeader.jsx): 「カート」のリンク、`follow`
+- [frontend/src/App.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/App.jsx): `useShop` の呼び出し、`navigateFromHeader`、`cartLoginRequired` と `redirectToLogin`、ログイン状態の確認中とエラーの表示、`CartPage` の表示
+- [frontend/src/workspace/navigation.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/navigation.js): `navigate`、`redirect`、`usePath`
+- [frontend/src/useAuth.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/useAuth.js): `useAuth`（`readSession` の呼び出しとエラー）
+- [frontend/src/auth.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/auth.js): `readSession`（`GET /api/auth/me`）、`wasSignedIn`、`redirectToLogin`、`isShopAccount`、`buyerOnlyMessage`
+- [frontend/src/useShop.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/useShop.js): `initialize`、`refresh`、`run`、`buyerBlocked`、`removedLines` と `setRemovedLines`
+- [frontend/src/api.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/api.js): `api.cart`、`api.products`、`api.orders`、`api.stores`、`request`、`send`、`readResponse`、`networkErrorMessage`
+- [frontend/src/components/CartPage.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/components/CartPage.jsx): `shop.buyerBlocked` の分岐、「商品を探す」
+- [frontend/src/components/Cart.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/components/Cart.jsx): カートを読めなかったときと空のカートの表示、明細の表示（「現在は購入できません」「在庫不足」）、「ご請求内容」、`RemovedNotice`
+- [frontend/src/components/Catalog.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/components/Catalog.jsx): `shop.error` と「再読み込み」
+- [frontend/src/components/GardenItemsDialog.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/components/GardenItemsDialog.jsx): `AddFromGardenCard`（開くまでは通信しない）
+- [frontend/src/components/LoginPage.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/components/LoginPage.jsx): `LoginPage`
+- [frontend/src/components/AuthPanel.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/components/AuthPanel.jsx): `complete`（`returnTo` の読み込み直し）
+- [backend/src/main/java/jp/kusakari/ec/commerce/controller/CartController.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/commerce/controller/CartController.java): `get`
+- [backend/src/main/java/jp/kusakari/ec/commerce/session/CartSessionResolver.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/commerce/session/CartSessionResolver.java): `resolve`
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthService.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthService.java): `requireBuyer`、`current`
+- [backend/src/main/java/jp/kusakari/ec/auth/MemberCartService.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/MemberCartService.java): `resolve`
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthMemberRepository.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthMemberRepository.java): `lockMember`
+- [backend/src/main/java/jp/kusakari/ec/commerce/service/CartService.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/commerce/service/CartService.java): `read`、`view`、`requireLockedCart`
+- [backend/src/main/java/jp/kusakari/ec/commerce/dto/CommerceDtos.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/commerce/dto/CommerceDtos.java): `CartView`、`CartLine`、`RemovedLine`
+- [backend/src/main/java/jp/kusakari/ec/commerce/persistence/repository/CartRepository.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/commerce/persistence/repository/CartRepository.java): `findByMemberId`、`findLocked`
+- [backend/src/main/java/jp/kusakari/ec/commerce/persistence/repository/CartItemRepository.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/commerce/persistence/repository/CartItemRepository.java): `findAllForCart`
+- [backend/src/main/java/jp/kusakari/ec/commerce/service/DeliveryService.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/commerce/service/DeliveryService.java): `pickupDetails`
+- [backend/src/main/java/jp/kusakari/ec/catalog/service/CatalogService.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/catalog/service/CatalogService.java): `listingsByIds`、`REMOVED_REASONS`、`unavailableReason`、`storeReason`
+- [backend/src/main/java/jp/kusakari/ec/auth/SessionValidityFilter.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/SessionValidityFilter.java): `doFilterInternal`（ID トークンの更新）
+- [backend/src/main/java/jp/kusakari/ec/auth/CognitoPasswordLogin.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/CognitoPasswordLogin.java): ID トークンの更新、503 `AUTH_UNAVAILABLE`
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthConfiguration.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthConfiguration.java): `authenticationEntryPoint`（401 `LOGIN_REQUIRED`）
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthController.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthController.java): `me`
+- [backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java): `business`、`database`

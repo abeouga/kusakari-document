@@ -1,152 +1,199 @@
 # EC-A06 商品情報を確認する
 
 - ユースケース記述: [EC-A06_商品情報を確認する](<../../アーカイブ/ユースケース/kusakari-ec/EC-A06_商品情報を確認する.md>)
-- 対象のコード: kusakari-ec の main（19a2be3、2026-11-20 時点）
+- 共通代替フロー: [00_全ユースケース共通の代替フロー](<00_全ユースケース共通の代替フロー.md>)
+- 対象のコード: kusakari-ec の main（6bad7e3、2026-11-24 時点）
 
-## 概要図
+## シーケンス図
+
+参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
+共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
 
 ```mermaid
 sequenceDiagram
+    autonumber
     actor User as 運営者
-    participant Page as 商品管理画面<br/>React
-    participant Api as EC API<br/>Spring Boot
+    box rgba(47,111,219,0.10) ブラウザー React
+        participant Work as 運営者画面の枠<br/>Workspace<br/>(Workspace.jsx)
+        participant Page as 商品管理画面<br/>ReviewPage<br/>(OperatorPages.jsx)
+        participant Row as 商品の行<br/>ProductModerationRow<br/>(OperatorPages.jsx)
+        participant Mod as 警告・停止の操作<br/>ModerationControls<br/>(Moderation.jsx)
+        participant Ev as 警告・停止の履歴<br/>ModerationEvents<br/>(Moderation.jsx)
+        participant Hook as 一覧の取得<br/>useResource<br/>(useResource.js)
+        participant Http as 通信<br/>request<br/>(api.js)
+    end
+    box rgba(27,127,92,0.12) EC API Spring Boot
+        participant Ctrl as 商品の警告・停止API<br/>ProductModerationController<br/>(ProductModerationController.java)
+        participant Svc as 商品の警告・停止の処理<br/>ProductModerationService<br/>(ProductModerationService.java)
+        participant Auth as ログイン中の会員<br/>AuthService<br/>(AuthService.java)
+        participant Hist as 履歴の読み方<br/>ModerationHistory<br/>(ModerationHistory.java)
+        participant Repo as 商品の読み書き<br/>ProductRepository<br/>(ProductRepository.java)
+    end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー *b を適用 (未ログインならログインの画面を表示する)
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、5、40 に適用<br/>*a 通信に失敗した場合: 5、40 に適用
 
-    Note over User,Db: 基本フロー 1〜2 画面を開いて商品の一覧を表示する
-    User->>Page: 運営者メニューの「商品管理」をクリック
-    Page->>Api: GET /api/operator/products
-    Api->>Api: ログイン中の会員が運営者かを検査
-    Api->>Db: 店舗、在庫、商品の警告と警告解除の履歴、<br/>商品をすべて読む
-    Db-->>Api: stores、inventory、product_moderation_events、<br/>products の行
-    Api->>Api: 商品ごとに店舗名、削除済みか、<br/>公開停止中か、今の警告をまとめる
-    Api-->>Page: 200 商品の配列
+    User->>Work: 運営者メニューの「商品管理」をクリック
+    Work->>Page: URL を /operator/products に変え、<br/>ReviewPage を商品の一覧として表示 (products)
+    Page->>Hook: 商品の一覧を取りに行くよう頼む (useResource)
+    Hook->>Http: 画面を開いたときに自動で<br/>一覧の通信を始める (reload → request)
+    Http->>Ctrl: GET /api/operator/products
+    Ctrl->>Svc: 商品の一覧を作るよう頼む (list)<br/>list 全体が読むだけのトランザクション
+    Svc->>Auth: ログイン中の人が運営者かを確かめる (requireAdmin)
+    Auth-->>Svc: 運営者である
+    Svc->>Db: 全店舗を読む (StoreRepository.findAll)
+    Db-->>Svc: 店舗の行 (店舗 ID と店舗名の対応にする)
+    Svc->>Db: 全在庫を読む (InventoryRepository.findAll)
+    Db-->>Svc: 在庫の行 (商品 ID と公開の状態の対応にする)
+    Svc->>Db: 商品の警告と警告の解除の履歴を新しい順に読む<br/>(ProductModerationEventRepository.findByEventTypeInOrderByIdDesc)
+    Db-->>Svc: 履歴の行
+    Svc->>Hist: 商品ごとに、警告と警告の解除のうち最新の行が<br/>警告なら警告中とするよう頼む (activeWarnings)
+    Hist-->>Svc: 警告中の商品と、その警告 (理由、日時)
+    Svc->>Repo: 商品を追加した人の表示名を読むよう頼む (findAllCreatorNames)
+    Repo->>Db: SELECT products JOIN members
+    Db-->>Repo: 商品 ID と表示名 (追加した人がない商品は入らない)
+    Repo-->>Svc: 商品 ID と表示名
+    Svc->>Repo: 全商品を画像ごと読むよう頼む (findAll)
+    Repo->>Db: SELECT products、product_images
+    Db-->>Repo: 全商品の行 (削除済みも含む)
+    Repo-->>Svc: 商品のリスト
+    Svc->>Svc: 商品ごとにまとめる。在庫が DELETED でなければ active<br/>(在庫の行がなければ削除済みと同じ)、停止は商品の suspended の列
+    Svc-->>Ctrl: 商品のリスト (id、name、storeId、storeName、<br/>active、suspended、warning、createdByName)
+    Ctrl-->>Http: 200 商品の配列
+    Http-->>Hook: 商品の一覧
+    Hook-->>Page: 商品の一覧
     alt 2a 商品が 1 件もない
-        Page-->>User: 「対象の商品はありません。」
+        Page-->>User: 2a-1「対象の商品はありません。」
     else 商品がある
-        Page-->>User: 商品名、店舗名、公開状態<br/>(公開可能 / 公開停止中 / 販売終了)<br/>警告中なら「警告中」のバッジと理由
+        loop 商品ごと (サーバーが返した順のまま)
+            Page->>Row: 商品の行を表示 (ProductModerationRow)
+            Row->>Row: 公開状態を決める。停止なら「公開停止中」、<br/>そうでなく active なら「公開可能」、それ以外は「販売終了」
+            Row->>Mod: 警告と警告・停止の操作を表示 (ModerationControls)
+            Mod-->>User: 警告中なら「警告中」、「運営からの警告：理由」と日時 (WarningBadge)、<br/>「警告・停止の履歴」、警告・停止の操作 (EC-A10)
+            Row-->>User: 商品名、「店舗：店舗名」、<br/>「追加した人：表示名」(なければ「初期データ」)、公開状態
+        end
     end
 
-    Note over User,Db: 基本フロー 3 対象商品の状態を確かめる (通信しない)
-
-    Note over User,Db: 基本フロー 4〜5 「警告・停止の履歴」を開く
-    User->>Page: 対象商品の「警告・停止の履歴」を開く
-    Page->>Api: GET /api/operator/products/{id}/moderation-events
-    Api->>Api: ログイン中の会員が運営者かを検査
-    Api->>Db: 商品の有無と、その商品の履歴を新しい順に読む
-    Db-->>Api: product_moderation_events の行
-    Api->>Db: 操作した運営者の会員を読む
-    Db-->>Api: members の行
-    Api-->>Page: 200 履歴の配列 (新しい順)
+    User->>Mod: 対象商品の「警告・停止の履歴」を開く
+    Mod->>Ev: 開いたことを覚え、履歴を表示する<br/>(details の onToggle → setHistoryOpen(true) → ModerationEvents)
+    Ev->>Hook: 履歴を取りに行くよう頼む (useResource)。<br/>取るのは開いたときが初めて (取得中は「読み込み中です。」)
+    Hook->>Http: 履歴の通信を始める (reload → request)
+    Http->>Ctrl: GET /api/operator/products/{商品 ID}/moderation-events
+    Ctrl->>Svc: 商品の履歴を読むよう頼む (events)<br/>全体が読むだけのトランザクション
+    Svc->>Auth: ログイン中の人が運営者かを確かめる (requireAdmin)
+    Auth-->>Svc: 運営者である
+    Svc->>Repo: 商品があるかを確かめるよう頼む (existsById)
+    Repo->>Db: SELECT products
+    Db-->>Repo: ある
+    Repo-->>Svc: ある
+    Svc->>Db: その商品の履歴を新しい順に読む<br/>(ProductModerationEventRepository.findByProductIdOrderByIdDesc)
+    Db-->>Svc: 警告・警告の解除・停止・再開の行
+    Svc->>Hist: 履歴を表示の形にするよう頼む (views)
+    Hist->>Db: 操作した運営者の会員を読む (AuthMemberRepository.findAllById)
+    Db-->>Hist: 会員の行
+    Hist-->>Svc: 履歴 (type、reason、actorName は表示名か、<br/>空ならメールアドレス、createdAt)
+    Svc-->>Ctrl: 履歴のリスト
+    Ctrl-->>Http: 200 履歴の配列
+    Http-->>Hook: 履歴
+    Hook-->>Ev: 履歴
     alt 5a 履歴がない
-        Page-->>User: 「履歴はありません。」
+        Ev-->>User: 5a-1「履歴はありません。」
     else 履歴がある
-        Page-->>User: 日時、操作 (警告 / 警告の解除 / 停止 / 再開)、<br/>操作した運営者、理由
+        Ev-->>User: 新しい順に 1 行ずつ「日時 警告／警告の解除／停止／再開<br/>（運営者名）：理由」(理由が空なら「：理由」を出さない)
     end
 ```
 
-## 詳細図
+## 共通代替フローを直接書いた図
+
+上の図の「警告・停止の履歴」を開いたときの通信（`GET /api/operator/products/{商品 ID}/moderation-events`）に、この画面で起こる共通代替フロー（\*a、\*b）を書き込んだ図です。履歴の欄はエラーの文だけを出し、「再取得」を出さないので、一覧と違う形になります。画面を開いて商品の一覧を取る通信（`GET /api/operator/products`）の \*a・\*b は、[EC-A05](<EC-A05_店舗情報を確認する.md>) の「共通代替フローを直接書いた図」と同じ流れ（URL を直接開いたときのログインの確認、`ResourceStatus` のエラーの文と「再取得」）なので省いています。
 
 ```mermaid
 sequenceDiagram
+    autonumber
     actor User as 運営者
     box rgba(47,111,219,0.10) ブラウザー React
-        participant Work as Workspace.jsx
-        participant Page as ReviewPage<br/>ProductModerationRow<br/>OperatorPages.jsx
-        participant Mod as ModerationControls<br/>ModerationEvents<br/>Moderation.jsx
-        participant Hook as useResource.js
-        participant Http as api.js
+        participant Mod as 警告・停止の操作<br/>ModerationControls<br/>(Moderation.jsx)
+        participant Ev as 警告・停止の履歴<br/>ModerationEvents<br/>(Moderation.jsx)
+        participant Hook as 一覧の取得<br/>useResource<br/>(useResource.js)
+        participant Http as 通信<br/>request<br/>(api.js)
+        participant AuthJs as ログインの通信<br/>login<br/>(auth.js)
+        participant Notice as 期限切れのお知らせ<br/>SessionNotice<br/>(SessionNotice.jsx)
     end
     box rgba(27,127,92,0.12) EC API Spring Boot
-        participant Ctrl as ProductModeration<br/>Controller
-        participant Svc as ProductModeration<br/>Service
-        participant Auth as AuthService
-        participant Hist as Moderation<br/>History
+        participant Filter as セッションの確認<br/>SessionValidityFilter<br/>(SessionValidityFilter.java)
+        participant Ctrl as 商品の警告・停止API<br/>ProductModerationController<br/>(ProductModerationController.java)
+        participant Svc as 商品の警告・停止の処理<br/>ProductModerationService<br/>(ProductModerationService.java)
     end
     participant Db as MySQL
-
-    Note over User,Db: 共通代替フロー *b を適用。Workspace は未ログインなら AuthPanel を出し、<br/>API は未ログインの要求に 401 LOGIN_REQUIRED を返す (AuthConfiguration)
-    Note over Svc,Db: Repository (Spring Data JPA のインターフェース) はライフラインにせず、<br/>Service から MySQL への矢印に Repository のメソッド名を書く
-
-    Note over User,Db: 基本フロー 1〜2 画面を開いて商品の一覧を表示する
-    User->>Work: 運営者メニューの「商品管理」をクリック
-    Note right of Work: WorkspaceSidebar.jsx の PageLink が<br/>navigate('/operator/products') を呼ぶ。<br/>session.accountType が ADMIN でなければ<br/>「この画面を利用する権限がありません。」を出す
-    Work->>Page: path が /operator/products なので<br/>ReviewPage (products は true) を表示
-    Page->>Hook: useResource('/operator/products')
-    Note right of Hook: useEffect が reload() を自動で実行する。<br/>取得中は ResourceStatus が「読み込んでいます。」を出す
-    Hook->>Http: request('/operator/products')
-    Http->>Ctrl: GET /api/operator/products
-    Ctrl->>Svc: list()
-    Note right of Svc: @Transactional(readOnly = true)
-    Svc->>Auth: requireAdmin()
-    Note right of Auth: ADMIN でなければ ApiException(403, FORBIDDEN)。<br/>画面が ADMIN 以外にこの画面を出さないので、<br/>図では枝を省略
-    Auth-->>Svc: 戻る
-    Svc->>Db: StoreRepository.findAll()
-    Db-->>Svc: 全店舗 (店舗 ID と店舗名の Map にする)
-    Svc->>Db: InventoryRepository.findAll()
-    Db-->>Svc: 全在庫 (商品 ID と publicationStatus の Map にする)
-    Svc->>Db: ProductModerationEventRepository<br/>findByEventTypeInOrderByIdDesc(WARN、CLEAR_WARNING)
-    Db-->>Svc: 警告と警告解除の行 (新しい順)
-    Svc->>Hist: activeWarnings(行, getProductId)
-    Hist-->>Svc: 最新の行が WARN の商品と、その Warning (理由、日時)
-    Svc->>Db: ProductRepository.findAll()<br/>(@EntityGraph で product_images も読む)
-    Db-->>Svc: 全商品の ProductEntity
-    Svc->>Svc: 商品ごとに Product を作る<br/>active は在庫が DELETED でないか、suspended は products の列
-    Svc-->>Ctrl: Product のリスト<br/>(id、name、storeId、storeName、active、suspended、warning)
-    Ctrl-->>Http: 200 Product の配列
-    Http-->>Hook: data
-    Hook-->>Page: resource.data
-    Note right of Page: 取得に失敗すると ResourceStatus が<br/>message と「再取得」ボタンを出す (共通代替フロー *a)
-    alt 2a 商品が 1 件もない (shown.length が 0)
-        Page-->>User: 「対象の商品はありません。」
-    else 商品がある
-        loop 商品ごと (ProductModerationRow)
-            Page->>Page: suspended なら「公開停止中」、<br/>そうでなく active なら「公開可能」、それ以外は「販売終了」
-            Page->>Mod: ModerationControls を表示 (suspended、warning)
-            Mod-->>User: WarningBadge 「警告中」「運営からの警告：理由」と日時、<br/>「警告・停止の履歴」、警告・停止の操作 (EC-A10)
-        end
-        Page-->>User: 商品名、「店舗：店舗名」、公開状態
+    box rgba(180,120,20,0.12) 外部サービス
+        participant Cog as Amazon Cognito
     end
 
-    Note over User,Db: 基本フロー 3 対象商品の状態を確かめる (通信しない)
-
-    Note over User,Db: 基本フロー 4〜5 「警告・停止の履歴」を開く
-    User->>Mod: 対象商品の「警告・停止の履歴」(details) を開く
-    Mod->>Mod: onToggle で setHistoryOpen(true)<br/>ModerationEvents を表示
-    Mod->>Hook: useResource('/operator/products/{id}/moderation-events')
-    Note right of Hook: 開いたときに初めて取得する。<br/>取得中は「読み込み中です。」を出す
-    Hook->>Http: request('/operator/products/{id}/moderation-events')
-    Http->>Ctrl: GET /api/operator/products/{id}/moderation-events
-    Ctrl->>Svc: events(id)
-    Note right of Svc: @Transactional(readOnly = true)
-    Svc->>Auth: requireAdmin()
-    Auth-->>Svc: 戻る
-    Svc->>Db: ProductRepository.existsById(id)
-    Db-->>Svc: true
-    Note right of Svc: false なら ApiException(404, PRODUCT_NOT_FOUND)。<br/>一覧にある商品から開くので図では枝を省略
-    Svc->>Db: ProductModerationEventRepository<br/>findByProductIdOrderByIdDesc(id)
-    Db-->>Svc: その商品の履歴 (新しい順)
-    Svc->>Hist: views(履歴)
-    Hist->>Db: AuthMemberRepository.findAllById(操作した運営者の ID)
-    Db-->>Hist: AuthMember のリスト
-    Hist-->>Svc: EventView のリスト<br/>(type、reason、actorName は表示名、なければメールアドレス、createdAt)
-    Svc-->>Ctrl: EventView のリスト
-    Ctrl-->>Http: 200 EventView の配列
-    Http-->>Hook: data
-    Hook-->>Mod: resource.data
-    Note right of Mod: 取得に失敗すると resource.error の文だけを出す
-    alt 5a 履歴がない (events.length が 0)
-        Mod-->>User: 「履歴はありません。」
-    else 履歴がある
-        Mod-->>User: 1 行ずつ「日時 警告 / 警告の解除 / 停止 / 再開<br/>(運営者名)：理由」
+    User->>Mod: 対象商品の「警告・停止の履歴」を開く
+    Mod->>Ev: 履歴を表示する (setHistoryOpen(true) → ModerationEvents)
+    Ev->>Hook: 履歴を取りに行くよう頼む (useResource)
+    Hook->>Http: 履歴の通信を始める (reload → request)
+    alt *a 届かない、または応答が JSON でない
+        Http-xFilter: GET /api/operator/products/{商品 ID}/moderation-events
+        Http->>Http: 通信の失敗にまとめる<br/>(send か readResponse → ApiError(networkErrorMessage, 0))
+        Http--xHook: エラーを投げる
+        Hook-->>Ev: エラーの文 (reload の catch → setError)
+        Ev-->>User: *a-1「サーバーに接続できません。<br/>接続を確認して再試行してください。」だけ (「再取得」はない)
+    else *b ログインの期限切れ (サーバーのセッションがない、refresh トークンが失効)
+        Http->>Filter: GET /api/operator/products/{商品 ID}/moderation-events
+        Filter-->>Http: 401 LOGIN_REQUIRED<br/>(セッションが無いときは AuthConfiguration.java が返す)
+        Http->>Notice: 期限切れを知らせる<br/>(wasSignedIn が真なので kusakari-session-expired)
+        Http--xHook: エラーを投げる (ApiError(sessionExpiredMessage, 401))
+        Hook-->>Ev: エラーの文 (reload の catch → setError)
+        Notice-->>User: *b-1「ログインの有効期限が切れました。<br/>もう一度ログインしてください。」「ログインする」「閉じる」<br/>(履歴の欄にも同じ文が出る)
+        User->>Notice: 「ログインする」をクリック
+        Notice->>AuthJs: ログイン画面へ移る (login)
+        AuthJs-->>User: /account/login?returnTo=/operator/products のログイン画面<br/>(ログインの後は *b-2 で商品管理画面を読み込み直す。履歴の欄は閉じた状態)
+    else *a ID トークンの更新で Cognito に届かない
+        Http->>Filter: GET /api/operator/products/{商品 ID}/moderation-events
+        Filter-xCog: ID トークンを更新する<br/>(InitiateAuth REFRESH_TOKEN_AUTH、CognitoPasswordLogin.java)
+        Filter-->>Http: 503 AUTH_UNAVAILABLE (セッションは残す)
+        Http--xHook: エラーを投げる (ApiError 503)
+        Hook-->>Ev: エラーの文 (reload の catch → setError)
+        Ev-->>User: *a-1「認証を確認できません。<br/>時間をおいて再試行してください。」だけ
+    else 要求が Controller まで届いた
+        Http->>Filter: GET /api/operator/products/{商品 ID}/moderation-events
+        Filter->>Ctrl: 要求を通す (chain.doFilter)
+        Ctrl->>Svc: 商品の履歴を読むよう頼む (events)
+        Svc->>Db: 運営者かを確かめ、商品の有無、履歴、<br/>操作した運営者を読む (上の図の 42〜53)
+        alt *a MySQL との通信に失敗
+            Db--xSvc: 失敗 (DataAccessException)
+            Svc--xCtrl: 例外
+            Ctrl-->>Http: 503 DATABASE_UNAVAILABLE (ApiErrors.java の database)
+            Http--xHook: エラーを投げる (ApiError 503)
+            Hook-->>Ev: エラーの文 (reload の catch → setError)
+            Ev-->>User: *a-1「保存処理を完了できませんでした。<br/>時間をおいて再試行してください。」だけ
+        else 読めた
+            Db-->>Svc: 行
+            Svc-->>Ctrl: 履歴のリスト
+            Ctrl-->>Http: 200 履歴の配列
+            Http-->>Hook: 履歴
+            Hook-->>Ev: 履歴
+            Ev-->>User: 履歴 (上の図の 58〜59 のとおり)
+        end
+    end
+    opt *a-3 やり直す
+        User->>Mod: 「警告・停止の履歴」を閉じて、もう一度開く
+        Mod->>Ev: 閉じると ModerationEvents を消し (setHistoryOpen(false))、<br/>開くと作り直して 3 から取り直す
     end
 ```
 
 ## ユースケース記述との差
 
-- 基本フロー 5: 履歴の取得に失敗したとき、`ModerationEvents` はエラーの文だけを出し、「再取得」ボタンを出しません。「警告・停止の履歴」を閉じて開き直すと、`ModerationEvents` を作り直して取り直します。共通代替フロー *a の「再実行を可能にする」とは、再実行の方法が違います。
-- 基本フロー 5: 「操作した運営者」は、会員の表示名です。表示名が空なら、メールアドレスを出します（`ModerationHistory.nameOf()`）。記述にはこの決まりが書かれていません。
+- 基本フロー 2: 一覧の行には、記述にない「追加した人：表示名」も出ます。商品を追加した会員の表示名で、追加した人がない商品（初期データ）は「初期データ」と出ます（`ProductRepository.findAllCreatorNames()`、`ProductModerationRow`）。
+- 基本フロー 2: 一覧は、出店者が削除した商品（「販売終了」）も含む全商品です。在庫の行がない商品も「販売終了」になります。並べ替えはしておらず、`ProductRepository.findAll()` の順のままです。
+- 基本フロー 2: 各行には、警告・停止の操作（EC-A10）のボタンも出ます。
+- 2a: 削除済みの商品も一覧に入るので、「対象の商品はありません。」が出るのは、商品の行が 1 件もないときだけです。
+- 基本フロー 5: 「操作した運営者」は会員の表示名です。表示名が空なら、メールアドレスを出します（`ModerationHistory.nameOf()`）。記述にはこの決まりが書かれていません。
+- 共通代替フロー \*a: 履歴の取得に失敗したとき、`ModerationEvents` はエラーの文だけを出し、「再取得」ボタンを出しません。「警告・停止の履歴」を閉じて開き直すと、`ModerationEvents` を作り直して取り直します。\*a-3 の「再実行を可能にする」とは、やり直し方が違います。
+- 共通代替フロー \*a: MySQL との通信に失敗したときの文は、読むだけの通信でも「保存処理を完了できませんでした。時間をおいて再試行してください。」です（`ApiErrors.database()` の文が 1 つだけのため）。
+- 履歴の API は、商品がないときに 404 `PRODUCT_NOT_FOUND` を返します。一覧にある商品から開くので、図には書いていません。
+- 運営者でない会員がこの画面を開くと、`Workspace.jsx` が「この画面を利用する権限がありません。」を出し、一覧を取りに行きません。API も `requireAdmin()` で 403 `FORBIDDEN` を返します。事前条件が運営者のログインなので、図には書いていません。
 
 ## 確かめられなかったこと
 
@@ -154,21 +201,27 @@ sequenceDiagram
 
 ## 参照したコード
 
-- [frontend/src/workspace/Workspace.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/Workspace.jsx): `operatorMenu`、`Workspace`（未ログインと ADMIN の確認、path と画面の対応）
-- [frontend/src/workspace/WorkspaceSidebar.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/WorkspaceSidebar.jsx): `WorkspaceSidebar`、`MenuLink`
-- [frontend/src/workspace/OperatorPages.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/OperatorPages.jsx): `ReviewPage`、`ProductModerationRow`
-- [frontend/src/workspace/Moderation.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/Moderation.jsx): `ModerationControls`、`WarningBadge`、`ModerationEvents`、`eventLabels`
-- [frontend/src/workspace/useResource.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/useResource.js): `useResource`、`reload`
-- [frontend/src/workspace/ResourceView.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/ResourceView.jsx): `ResourceStatus`
-- [frontend/src/api.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/api.js): `request`、`send`、`readResponse`
-- [backend/src/main/java/jp/kusakari/ec/catalog/controller/ProductModerationController.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/catalog/controller/ProductModerationController.java): `list`、`events`
-- [backend/src/main/java/jp/kusakari/ec/catalog/service/ProductModerationService.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/catalog/service/ProductModerationService.java): `list`、`events`、`Product`
-- [backend/src/main/java/jp/kusakari/ec/moderation/service/ModerationHistory.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/moderation/service/ModerationHistory.java): `activeWarnings`、`views`、`nameOf`
-- [backend/src/main/java/jp/kusakari/ec/moderation/dto/ModerationDtos.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/moderation/dto/ModerationDtos.java): `Warning`、`EventView`
-- [backend/src/main/java/jp/kusakari/ec/catalog/persistence/repository/ProductRepository.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/catalog/persistence/repository/ProductRepository.java): `findAll`（`@EntityGraph`）、`existsById`
-- [backend/src/main/java/jp/kusakari/ec/catalog/persistence/repository/InventoryRepository.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/catalog/persistence/repository/InventoryRepository.java): `findAll`（JpaRepository）
-- [backend/src/main/java/jp/kusakari/ec/catalog/persistence/repository/StoreRepository.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/catalog/persistence/repository/StoreRepository.java): `findAll`（JpaRepository）
-- [backend/src/main/java/jp/kusakari/ec/moderation/persistence/repository/ProductModerationEventRepository.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/moderation/persistence/repository/ProductModerationEventRepository.java): `findByEventTypeInOrderByIdDesc`、`findByProductIdOrderByIdDesc`
-- [backend/src/main/java/jp/kusakari/ec/auth/AuthMemberRepository.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/AuthMemberRepository.java): `findAllById`（JpaRepository）
-- [backend/src/main/java/jp/kusakari/ec/auth/AuthService.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/AuthService.java): `requireAdmin`
-- [backend/src/main/java/jp/kusakari/ec/auth/AuthConfiguration.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/AuthConfiguration.java): `authenticationEntryPoint`（401 LOGIN_REQUIRED）
+- [frontend/src/workspace/Workspace.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/Workspace.jsx): `operatorMenu`、`Workspace`（未ログインと運営者の確認、path と画面の対応）
+- [frontend/src/workspace/WorkspaceSidebar.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/WorkspaceSidebar.jsx): `MenuLink`
+- [frontend/src/workspace/Common.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/Common.jsx): `PageLink`
+- [frontend/src/workspace/OperatorPages.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/OperatorPages.jsx): `ReviewPage`（`products`、空の一覧の文言）、`ProductModerationRow`
+- [frontend/src/workspace/Moderation.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/Moderation.jsx): `ModerationControls`（`historyOpen`）、`WarningBadge`、`ModerationEvents`、`eventLabels`
+- [frontend/src/workspace/useResource.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/useResource.js): `useResource`、`reload`
+- [frontend/src/workspace/ResourceView.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/ResourceView.jsx): `ResourceStatus`
+- [frontend/src/api.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/api.js): `request`、`send`、`readResponse`、`ApiError`、`networkErrorMessage`、`sessionExpiredMessage`
+- [frontend/src/auth.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/auth.js): `authFetch`、`wasSignedIn`、`login`
+- [frontend/src/components/SessionNotice.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/components/SessionNotice.jsx): 期限切れのお知らせ
+- [backend/src/main/java/jp/kusakari/ec/catalog/controller/ProductModerationController.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/catalog/controller/ProductModerationController.java): `list`、`events`
+- [backend/src/main/java/jp/kusakari/ec/catalog/service/ProductModerationService.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/catalog/service/ProductModerationService.java): `list`、`events`、`Product`
+- [backend/src/main/java/jp/kusakari/ec/moderation/service/ModerationHistory.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/moderation/service/ModerationHistory.java): `activeWarnings`、`views`、`nameOf`
+- [backend/src/main/java/jp/kusakari/ec/moderation/dto/ModerationDtos.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/moderation/dto/ModerationDtos.java): `Warning`、`EventView`
+- [backend/src/main/java/jp/kusakari/ec/catalog/persistence/repository/ProductRepository.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/catalog/persistence/repository/ProductRepository.java): `findAll`（`@EntityGraph`）、`findAllCreatorNames`、`existsById`
+- [backend/src/main/java/jp/kusakari/ec/catalog/persistence/repository/InventoryRepository.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/catalog/persistence/repository/InventoryRepository.java): `findAll`（JpaRepository）
+- [backend/src/main/java/jp/kusakari/ec/catalog/persistence/repository/StoreRepository.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/catalog/persistence/repository/StoreRepository.java): `findAll`（JpaRepository）
+- [backend/src/main/java/jp/kusakari/ec/moderation/persistence/repository/ProductModerationEventRepository.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/moderation/persistence/repository/ProductModerationEventRepository.java): `findByEventTypeInOrderByIdDesc`、`findByProductIdOrderByIdDesc`
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthMemberRepository.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthMemberRepository.java): `findAllById`（JpaRepository）
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthService.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthService.java): `requireAdmin`
+- [backend/src/main/java/jp/kusakari/ec/auth/SessionValidityFilter.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/SessionValidityFilter.java): `doFilterInternal`（ID トークンの更新、401 `LOGIN_REQUIRED`）
+- [backend/src/main/java/jp/kusakari/ec/auth/CognitoPasswordLogin.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/CognitoPasswordLogin.java): `refresh`、503 `AUTH_UNAVAILABLE`
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthConfiguration.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthConfiguration.java): `authenticationEntryPoint`（401 `LOGIN_REQUIRED`）
+- [backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java): `database`（503 `DATABASE_UNAVAILABLE`）

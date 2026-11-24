@@ -1,367 +1,363 @@
 # EC-A11 店舗の利用を停止・再開する
 
 - ユースケース記述: [EC-A11_店舗の利用を停止・再開する](<../../アーカイブ/ユースケース/kusakari-ec/EC-A11_店舗の利用を停止・再開する.md>)
-- 対象のコード: kusakari-ec の main（19a2be3、2026-11-20 時点）
+- 共通代替フロー: [00_全ユースケース共通の代替フロー](<00_全ユースケース共通の代替フロー.md>)
+- 対象のコード: kusakari-ec の main（6bad7e3、2026-11-24 時点）
 
-## 概要図
+## シーケンス図
 
-```mermaid
-sequenceDiagram
-    actor User as 運営者
-    participant Page as 店舗管理画面<br/>React
-    participant Api as EC API<br/>Spring Boot
-    participant Db as MySQL
-
-    Note over User,Db: 共通代替フロー *a・*b を適用。失敗の応答や通信の失敗では、<br/>画面上部にエラーと「再取得」を出し、確認ダイアログを閉じる
-
-    Note over User,Db: 基本フロー 1〜2 店舗の一覧と操作のボタンを表示する (EC-A05)
-    User->>Page: 運営者メニューの「店舗管理」をクリック
-    Page->>Api: GET /api/operator/stores
-    Api->>Db: 店舗、警告の履歴、組織、未完了の注文の件数を読む
-    Db-->>Api: 行
-    Api-->>Page: 200 店舗の配列
-    Page-->>User: 閉鎖済みでない店舗に「警告する」、<br/>利用停止中でなければデンジャーエリアの「利用を停止」
-
-    Note over User,Db: 基本フロー 3〜5 確認ダイアログを開き、理由を入力する (通信しない)
-    User->>Page: デンジャーエリアの「利用を停止」をクリック
-    Page-->>User: 「利用停止の確認」ダイアログ<br/>店舗名、停止したときの影響、「理由（必須・出店者に通知します）」
-    User->>Page: 理由を入力する
-
-    Note over User,Db: 基本フロー 6〜9 利用停止を確定する
-    alt 6a 「取消」をクリックした
-        User->>Page: 「取消」をクリック
-        Page-->>User: ダイアログを閉じる。店舗の状態は変えない (通信しない)
-    else 「利用停止を確定」をクリックした
-        User->>Page: 「利用停止を確定」をクリック
-        alt 5a 理由が空
-            Page-->>User: 「理由を入力してください。」<br/>ダイアログは開いたまま (通信しない)
-        else 理由がある
-            Page->>Api: PUT /api/operator/stores/{id}/enabled<br/>enabled=false, reason
-            Api->>Db: 店舗の行をロックして読む
-            Db-->>Api: stores の行
-            alt 7a 店舗が閉鎖済みになっていた
-                Api-->>Page: 409 STORE_CLOSED
-                Page->>Api: GET /api/operator/stores
-                Api-->>Page: 200 最新の店舗の配列
-                Page-->>User: 「この店舗は閉鎖済みです。」<br/>ダイアログを閉じ、状態は「閉鎖済み」
-            else 閉鎖済みでない
-                alt すでに利用停止中
-                    Note right of Api: 何もしない。履歴も通知も足さない
-                else 利用停止していない
-                    Api->>Db: stores.suspended を true にし、<br/>履歴 SUSPEND と出店者への通知を追加
-                    Db-->>Api: 完了
-                end
-                Api-->>Page: 200 suspended=true, warning
-                Page->>Api: GET /api/operator/stores
-                Api-->>Page: 200 最新の店舗の配列
-                Page-->>User: 「停止しました。出店者に通知しました。」<br/>「運営により停止中」と「利用を再開」
-            end
-        end
-    end
-
-    Note over User,Db: 代替フロー 3a〜3d (どのダイアログも「取消」は 6a、必須の理由が空なら 5a、<br/>3a〜3c で店舗が閉鎖済みになっていたら 7a と同じ)
-    alt 3a 停止せずに警告する
-        User->>Page: 「警告する」(警告中なら「もう一度警告する」)、<br/>理由を入力して「警告する」
-        Page->>Api: PUT /api/operator/stores/{id}/warning<br/>warned=true, reason
-        Api->>Db: 店舗の行をロックし、<br/>履歴 WARN と出店者への通知を追加
-        Db-->>Api: 完了
-        Api-->>Page: 200 suspended, warning
-        Page->>Api: GET /api/operator/stores
-        Api-->>Page: 200 最新の店舗の配列
-        Page-->>User: 「警告しました。出店者に通知しました。」<br/>「警告中」のバッジと理由
-    else 3b 警告を解除する
-        User->>Page: 「警告を解除」、必要なら理由を入力して「警告を解除する」
-        Page->>Api: PUT /api/operator/stores/{id}/warning<br/>warned=false, reason
-        Api->>Db: 店舗の行をロックし、今の警告を履歴から求める
-        Db-->>Api: store_moderation_events の行
-        alt 警告していない
-            Note right of Api: 何もしない。履歴も通知も足さない
-        else 警告中
-            Api->>Db: 履歴 CLEAR_WARNING と出店者への通知を追加
-            Db-->>Api: 完了
-        end
-        Api-->>Page: 200 suspended, warning
-        Page->>Api: GET /api/operator/stores
-        Api-->>Page: 200 最新の店舗の配列
-        Page-->>User: 「警告を解除しました。出店者に通知しました。」<br/>「警告中」のバッジが消える
-    else 3c 利用を再開する
-        User->>Page: 「利用を再開」、必要なら理由を入力して「利用再開を確定」
-        Page->>Api: PUT /api/operator/stores/{id}/enabled<br/>enabled=true, reason
-        Api->>Db: 店舗の行をロックして読む
-        Db-->>Api: stores の行
-        alt 利用停止していない
-            Note right of Api: 何もしない。履歴も通知も足さない
-        else 利用停止中
-            Api->>Db: stores.suspended を false にし、<br/>履歴 RESUME と出店者への通知を追加
-            Db-->>Api: 完了
-        end
-        Api-->>Page: 200 suspended=false, warning
-        Page->>Api: GET /api/operator/stores
-        Api-->>Page: 200 最新の店舗の配列
-        Page-->>User: 「再開しました。出店者に通知しました。」<br/>更新後の状態とデンジャーエリアの「利用を停止」
-    else 3d 履歴を確認する
-        User->>Page: 対象店舗の「警告・停止の履歴」を開く
-        Page->>Api: GET /api/operator/stores/{id}/moderation-events
-        Api->>Db: 店舗の有無と、その店舗の履歴を新しい順に読み、<br/>操作した運営者の会員を読む
-        Db-->>Api: store_moderation_events と members の行
-        Api-->>Page: 200 履歴の配列 (新しい順)
-        alt 3d-2 履歴がない
-            Page-->>User: 「履歴はありません。」
-        else 履歴がある
-            Page-->>User: 日時、操作 (警告 / 警告の解除 / 停止 / 再開)、<br/>操作した運営者、理由
-        end
-    end
-```
-
-## 詳細図 1 基本フロー 1〜9
+参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
+共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
+基本フロー 3 で運営者が選ぶ操作ごとに、利用の停止（基本フロー）と 3a〜3d を `alt` で分けています。
 
 ```mermaid
 sequenceDiagram
+    autonumber
     actor User as 運営者
     box rgba(47,111,219,0.10) ブラウザー React
-        participant Page as OperatorStoresPage<br/>OperatorStores.jsx
-        participant Mod as ModerationControls<br/>Moderation.jsx
-        participant Hook as useResource.js
-        participant Http as api.js
+        participant Work as 運営者画面の枠<br/>Workspace<br/>(Workspace.jsx)
+        participant Page as 店舗管理画面<br/>OperatorStoresPage<br/>(OperatorStores.jsx)
+        participant Mod as 警告・停止の操作<br/>ModerationControls<br/>(Moderation.jsx)
+        participant Dlg as 確認ダイアログ<br/>ConfirmDialog<br/>(ConfirmDialog.jsx)
+        participant Ev as 警告・停止の履歴<br/>ModerationEvents<br/>(Moderation.jsx)
+        participant Hook as 一覧の取得と変更<br/>useResource<br/>(useResource.js)
+        participant Http as 通信<br/>request<br/>(api.js)
+        participant AuthJs as 通信の準備<br/>authFetch<br/>(auth.js)
     end
     box rgba(27,127,92,0.12) EC API Spring Boot
-        participant SCtrl as StoreController
-        participant Ctrl as StoreModeration<br/>Controller
-        participant Errs as ApiErrors
-        participant Svc as StoreModeration<br/>Service
-        participant Auth as AuthService
-        participant Notice as Notification<br/>Service
+        participant AuthCtrl as ログイン状態API<br/>AuthController<br/>(AuthController.java)
+        participant SCtrl as 店舗API<br/>StoreController<br/>(StoreController.java)
+        participant Ctrl as 店舗の警告・停止API<br/>StoreModerationController<br/>(StoreModerationController.java)
+        participant Errs as エラーの応答<br/>ApiErrors<br/>(ApiErrors.java)
+        participant Svc as 店舗の警告・停止の処理<br/>StoreModerationService<br/>(StoreModerationService.java)
+        participant Auth as ログイン中の会員<br/>AuthService<br/>(AuthService.java)
+        participant Hist as 履歴の読み方<br/>ModerationHistory<br/>(ModerationHistory.java)
+        participant Notices as 出店者への通知<br/>NotificationService<br/>(NotificationService.java)
+        participant Repo as 店舗の読み書き<br/>StoreRepository<br/>(StoreRepository.java)
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー *b を適用 (未ログインの扱いは EC-A05 の詳細図 1 と同じ)
-    Note over Svc,Db: Repository はライフラインにせず、Service から MySQL への矢印にメソッド名を書く
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、5、25、27、71、97、124、149、一覧の取り直しの 38・59・86・113・141 に適用<br/>*a 通信に失敗した場合: 5、25、27、71、97、124、149、一覧の取り直しの 38・59・86・113・141 に適用
 
-    Note over User,Db: 基本フロー 1〜2 店舗の一覧と操作のボタンを表示する
-    User->>Page: 運営者メニューの「店舗管理」をクリック<br/>(Workspace.jsx が OperatorStoresPage を表示)
-    Page->>Hook: useResource('/operator/stores')
-    Note right of Hook: useEffect が reload() を自動で実行する
-    Hook->>Http: request('/operator/stores')
+    User->>Work: 運営者メニューの「店舗管理」をクリック
+    Work->>Page: URL を /operator/sellers に変え、<br/>OperatorStoresPage を表示
+    Page->>Hook: 店舗の一覧を取りに行くよう頼む (useResource)
+    Hook->>Http: 画面を開いたときに自動で<br/>一覧の通信を始める (reload → request)
     Http->>SCtrl: GET /api/operator/stores
-    Note over SCtrl,Db: list() から StoreService.list() の流れは EC-A05 の詳細図 1 と同じ。図では省略
-    SCtrl-->>Http: 200 Profile の配列
-    Http-->>Hook: data
-    Hook-->>Page: resource.data
-    Page->>Mod: closedAt が空の店舗ごとに ModerationControls を表示<br/>(suspended は !store.enabled、warning)
-    Mod-->>User: 「警告する」、「警告・停止の履歴」、<br/>suspended でなければデンジャーエリアの「利用を停止」
+    SCtrl-->>Http: 200 店舗の配列<br/>(作り方は EC-A05 の図の 6〜24 と同じ)
+    Http-->>Hook: 店舗の一覧
+    Hook-->>Page: 店舗の一覧
+    Page->>Mod: 閉鎖済みでない店舗ごとに、警告と停止の操作を表示<br/>(ModerationControls。停止中かは enabled の逆)
+    Mod-->>User: 「警告する」(警告中なら「もう一度警告する」と「警告を解除」、<br/>「警告中」と「運営からの警告：理由」)、「警告・停止の履歴」、<br/>停止中なら「利用を再開」、停止中でなければデンジャーエリアの「利用を停止」
 
-    Note over User,Db: 基本フロー 3〜5 確認ダイアログを開き、理由を入力する (通信しない)
-    User->>Mod: デンジャーエリアの「利用を停止」をクリック
-    Mod->>Mod: open('suspend')<br/>setReason('')、setMissing(false)、setPending('suspend')
-    Mod-->>User: ConfirmDialog「利用停止の確認」<br/>対象：店舗名、suspendText、「理由（必須・出店者に通知します）」
-    User->>Mod: 理由を入力する (onChange で setReason。maxLength は 500)
-
-    Note over User,Db: 基本フロー 6〜9 利用停止を確定する
-    alt 6a 「取消」をクリックした
-        User->>Mod: 「取消」をクリック (ConfirmDialog の onCancel)
-        Mod->>Mod: setPending(null)
-        Mod-->>User: ダイアログを閉じる。通信しない
-    else 「利用停止を確定」をクリックした
-        User->>Mod: 「利用停止を確定」をクリック (onConfirm)
-        Mod->>Mod: confirm()
-        alt 5a reason.trim() が空
-            Mod->>Mod: setMissing(true)
-            Mod-->>User: 「理由を入力してください。」<br/>ダイアログは開いたまま。通信しない
-        else 理由がある
-            Mod->>Hook: run(send, '停止しました。出店者に通知しました。')
-            Hook->>Http: send() が write() を呼び<br/>request('/operator/stores/{id}/enabled',<br/>'PUT', enabled=false と reason)
-            Note right of Http: authFetch() が PUT の前に<br/>GET /api/auth/csrf でトークンを取る。図では省略
-            Http->>Ctrl: PUT /api/operator/stores/{id}/enabled
-            Ctrl->>Ctrl: @Valid が EnabledRequest を検査 (reason は 500 文字まで)
-            Ctrl->>Svc: enabled() が enable(id, false, reason)
-            Note over Svc,Db: クラスの @Transactional で、enable() 全体が 1 つのトランザクション
-            Svc->>Auth: requireAdmin()
-            Auth-->>Svc: 戻る (ADMIN でなければ 403 FORBIDDEN)
-            Svc->>Db: lock() が StoreRepository.lock(id)<br/>@Lock(PESSIMISTIC_WRITE) で SELECT … FOR UPDATE
-            Db-->>Svc: StoreEntity (なければ 404 STORE_NOT_FOUND)
-            alt 7a closedAt がある (閉鎖済み)
-                Svc--xErrs: lock() が throw ApiException(409,<br/>STORE_CLOSED, 「この店舗は閉鎖済みです。」)
-                Note over Svc,Db: 例外で抜けるので、店舗の状態は変えない
-                Errs-->>Http: business() が 409 と code、message の JSON を返す
-                Http--xHook: readResponse() が throw ApiError(409)
-                Hook->>Http: 409 なので reload() が request('/operator/stores')
-                Http->>SCtrl: GET /api/operator/stores
-                SCtrl-->>Http: 200 最新の Profile の配列 (closedAt あり)
-                Http-->>Hook: data
-                Hook-->>Mod: run() が false を返す (resource.error を設定)
-                Mod->>Mod: setPending(null)
-                Page-->>User: ResourceStatus に「この店舗は閉鎖済みです。」と「再取得」<br/>状態は「閉鎖済み」。警告・停止の操作は出ない
-            else 閉鎖済みでない
-                Svc->>Svc: ModerationHistory.reasonFor(SUSPEND, reason)<br/>前後の空白を除く
-                Note right of Svc: 空なら ApiException(400, REASON_REQUIRED)。<br/>画面の 5a が先に止めるので、画面からは届かない
-                alt すでに利用停止中 (isSuspended() が true)
-                    Note right of Svc: 何もしない。履歴も通知も足さない
-                else 利用停止していない
-                    Svc->>Svc: store.changeSuspended(true)
-                    Svc->>Db: record() が StoreModerationEventRepository.save()<br/>store_moderation_events に SUSPEND を INSERT
-                    Db-->>Svc: 保存した行
-                    Svc->>Notice: toStore(店舗 ID, MODERATION,<br/>「店舗の利用が停止されました」, 店舗名 / 理由)
-                    Note over Notice,Db: 組織のオーナーと、店舗でロールのある担当者のうち<br/>有効な会員ごとに notifications へ INSERT。中は図では省略
-                    Notice-->>Svc: 戻る
+    alt 基本フロー 利用を停止する
+        User->>Mod: 対象店舗のデンジャーエリアの「利用を停止」をクリック
+        Mod->>Dlg: 理由を空にして確認ダイアログを表示<br/>(open('suspend') → ConfirmDialog)
+        Dlg-->>User: 「利用停止の確認」、「対象：店舗名」、「この店舗の利用を停止します。<br/>商品は購入者向けの画面に表示されなくなり、出店者は商品・在庫・注文を<br/>操作できなくなります。確定済みの注文はキャンセルされません。」、<br/>「理由（必須・出店者に通知します）」欄、「利用停止を確定」、「取消」
+        User->>Dlg: 理由を入力 (onChange → setReason。500 文字まで)
+        alt 6a 「取消」をクリックした
+            User->>Dlg: 「取消」をクリック<br/>(Esc キー、「閉じる」、ダイアログの外側のクリックも同じ)
+            Dlg->>Mod: 取り消したことを伝える (onCancel)
+            Mod-->>User: 6a-1 ダイアログを閉じる (setPending(null))。<br/>通信せず、店舗の状態は変わらない
+        else 「利用停止を確定」をクリックした
+            User->>Dlg: 「利用停止を確定」をクリック
+            Dlg->>Mod: 確定したことを伝える (onConfirm → confirm)
+            alt 5a 理由が空 (reason.trim() が空)
+                Mod-->>User: 5a-1「理由を入力してください。」(setMissing(true))。<br/>ダイアログは開いたまま、通信しない
+                User->>Dlg: 5a-2 理由を入力し直す (基本フロー 5 へ戻る)
+            else 理由がある
+                Mod->>Hook: 停止を実行し、成功の文を渡す (run)<br/>「停止しました。出店者に通知しました。」
+                Hook->>Http: 停止の通信を始める<br/>(write → request、本文は { enabled: false, reason })
+                Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (authFetch)
+                AuthJs->>AuthCtrl: GET /api/auth/csrf
+                AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
+                AuthJs->>Ctrl: PUT /api/operator/stores/{店舗 ID}/enabled<br/>(CSRF トークンのヘッダー付き)
+                Ctrl->>Svc: 店舗の利用を停止するよう頼む (enabled → enable)<br/>enable 全体が 1 つのトランザクション
+                Svc->>Auth: ログイン中の人が運営者かを確かめる (requireAdmin)
+                Auth-->>Svc: 運営者である
+                Svc->>Repo: 店舗をロックして読むよう頼む (lock)
+                Repo->>Db: SELECT ... FOR UPDATE stores
+                Db-->>Repo: 店舗の行
+                Repo-->>Svc: 店舗
+                alt 7a 店舗が閉鎖済みになっていた (closedAt がある)
+                    Svc--xErrs: 409 STORE_CLOSED の例外を投げる (lock → ApiException)
+                    Errs-->>Http: 409「この店舗は閉鎖済みです。」(business)
+                    Http--xHook: エラーを投げる (readResponse → ApiError)
+                    Hook->>Http: 409 なので一覧を取り直す (reload)。流れは 5〜7 と同じ
+                    Http-->>Hook: 最新の店舗の一覧 (閉鎖済み)
+                    Hook-->>Mod: 失敗を返す (run が false、エラーの文を設定)
+                    Mod-->>User: 7a-1 ダイアログを閉じ (setPending(null))、「この店舗は閉鎖済みです。」と<br/>状態「閉鎖済み」の店舗 (警告・停止の操作は出なくなる)
+                else 閉鎖済みでない
+                    Svc->>Hist: 理由の前後の空白を除くよう頼む (reasonFor)<br/>(空なら 400 REASON_REQUIRED。画面の 5a が先に止める)
+                    Hist-->>Svc: 前後の空白を除いた理由
+                    alt すでに停止中 (isSuspended が真)
+                        Svc->>Svc: 何もしない。履歴も通知も足さない
+                    else 停止していない
+                        Svc->>Svc: 店舗を停止中にする (changeSuspended(true))
+                        Svc->>Db: 履歴に停止 (SUSPEND) を足す<br/>(record → StoreModerationEventRepository.save、store_moderation_events)
+                        Db-->>Svc: 保存した行
+                        Svc->>Notices: 店舗の出店者に知らせるよう頼む (toStore)<br/>題名「店舗の利用が停止されました」、本文「店舗名 / 理由」(noticeBody)
+                        Notices->>Db: 組織のオーナーと、店舗でロールのある担当者のうち<br/>利用中の会員ごとに通知を保存する (notifications)
+                        Db-->>Notices: 完了
+                        Notices-->>Svc: 終わった
+                    end
+                    Svc->>Db: 変更を送ってから、店舗の履歴を新しい順に読む<br/>(state → flush、findByStoreIdOrderByIdDesc)
+                    Db-->>Svc: 履歴
+                    Svc->>Hist: 今の警告を求めるよう頼む (activeWarning)
+                    Hist-->>Svc: 今の警告 (なければなし)
+                    Svc-->>Ctrl: 停止中かと今の警告 (State)。enable を抜けるとコミット
+                    Ctrl-->>Http: 200 { suspended: true, warning }
+                    Http-->>Hook: 変更後の値 (画面では使わない)
+                    Hook->>Http: 一覧を取り直す (reload)。流れは 5〜7 と同じ
+                    Http-->>Hook: 最新の店舗の一覧
+                    Hook-->>Mod: 成功を返す (run が true、成功の文を設定)
+                    Mod->>Mod: 履歴の欄を作り直す印を進め、ダイアログを閉じる<br/>(setVersion、setPending(null))
+                    Mod-->>User: 「停止しました。出店者に通知しました。」、状態は「運営により停止中」<br/>(stateOf。閉鎖中の店舗は閉鎖中のまま)、デンジャーエリアの代わりに「利用を再開」
                 end
-                Svc->>Db: state() が events.flush()<br/>まだ送っていない変更 (stores.suspended など) を送る
-                Db-->>Svc: 完了
-                Svc->>Db: currentWarning() が findByStoreIdOrderByIdDesc(id)
-                Db-->>Svc: 履歴 (新しい順)
-                Svc->>Svc: ModerationHistory.activeWarning(履歴)
-                Svc-->>Ctrl: State(suspended, warning)
-                Note over Svc,Db: enable() を抜けるときにコミット
-                Ctrl-->>Http: 200 suspended=true, warning
-                Http-->>Hook: data (画面では使わない)
-                Hook->>Http: reload() が request('/operator/stores')
-                Http->>SCtrl: GET /api/operator/stores
-                SCtrl-->>Http: 200 最新の Profile の配列
-                Http-->>Hook: data
-                Hook-->>Mod: run() が true を返す (data と notice を更新済み)
-                Mod->>Mod: setVersion(v + 1)、setPending(null)
-                Page-->>User: ResourceStatus に「停止しました。出店者に通知しました。」<br/>状態は stateOf() で「運営により停止中」
-                Mod-->>User: ダイアログを閉じ、「利用を再開」を出す。<br/>デンジャーエリアは消える
             end
         end
+    else 3a 停止せずに警告する
+        User->>Mod: 3a-1「警告する」(警告中なら「もう一度警告する」) をクリック
+        Mod->>Dlg: 理由を空にして確認ダイアログを表示 (open('warn'))
+        Dlg-->>User: 3a-2「警告の確認」、「対象：店舗名」、「出店者に理由を通知します。<br/>公開・利用の状態は変わりません。」、「理由（必須・出店者に通知します）」欄、<br/>「警告する」、「取消」
+        User->>Dlg: 3a-3 理由を入力して「警告する」をクリック<br/>(「取消」は 6a、理由が空なら 5a と同じ)
+        Dlg->>Mod: 確定したことを伝える (onConfirm → confirm)
+        Mod->>Hook: 警告を実行し、成功の文を渡す (run)<br/>「警告しました。出店者に通知しました。」
+        Hook->>Http: 警告の通信を始める<br/>(write → request、本文は { warned: true, reason })
+        Http->>Ctrl: PUT /api/operator/stores/{店舗 ID}/warning<br/>(CSRF トークンの取得は 24〜26 と同じ)
+        Ctrl->>Svc: 店舗に警告するよう頼む (warning → warn)
+        Svc->>Repo: 運営者かを確かめ、店舗をロックして読む (requireAdmin、lock)<br/>流れと 7a は 29〜41 と同じ
+        Repo-->>Svc: 店舗
+        Svc->>Hist: 理由の前後の空白を除くよう頼む (reasonFor)
+        Hist-->>Svc: 理由
+        Svc->>Db: 3a-4 履歴に警告 (WARN) を足す (record → save)。<br/>警告中でも毎回足す
+        Db-->>Svc: 保存した行
+        Svc->>Notices: 店舗の出店者に知らせるよう頼む (toStore)<br/>題名「店舗に運営から警告がありました」、本文「店舗名 / 理由」
+        Notices->>Db: 利用中の出店者ごとに通知を保存する
+        Db-->>Notices: 完了
+        Notices-->>Svc: 終わった
+        Svc-->>Ctrl: 停止中かと今の警告 (state)
+        Ctrl-->>Http: 200 { suspended, warning }
+        Http-->>Hook: 変更後の値
+        Hook->>Http: 一覧を取り直す (reload)。流れは 5〜7 と同じ
+        Http-->>Hook: 最新の店舗の一覧
+        Hook-->>Mod: 成功を返す (run が true)
+        Mod-->>User: 3a-5 ダイアログを閉じ、「警告しました。出店者に通知しました。」、<br/>「警告中」と「運営からの警告：理由」と日時
+    else 3b 警告を解除する
+        User->>Mod: 3b-1「警告を解除」(警告中だけに出る) をクリック
+        Mod->>Dlg: 理由を空にして確認ダイアログを表示 (open('clear'))
+        Dlg-->>User: 3b-2「警告の解除の確認」、「対象：店舗名」、「警告を解除し、出店者に通知します。」、<br/>「理由（任意・出店者に通知します）」欄、「警告を解除する」、「取消」
+        User->>Dlg: 3b-3 必要なら理由を入力して「警告を解除する」をクリック
+        Dlg->>Mod: 確定したことを伝える (onConfirm → confirm)
+        Mod->>Hook: 警告の解除を実行し、成功の文を渡す (run)<br/>「警告を解除しました。出店者に通知しました。」
+        Hook->>Http: 警告の解除の通信を始める<br/>(write → request、本文は { warned: false, reason })
+        Http->>Ctrl: PUT /api/operator/stores/{店舗 ID}/warning<br/>(CSRF トークンの取得は 24〜26 と同じ)
+        Ctrl->>Svc: 店舗の警告を解除するよう頼む (warning → warn)
+        Svc->>Repo: 運営者かを確かめ、店舗をロックして読む (requireAdmin、lock)<br/>流れと 7a は 29〜41 と同じ
+        Repo-->>Svc: 店舗
+        Svc->>Db: 今の警告を求めるため、店舗の履歴を新しい順に読む<br/>(currentWarning → findByStoreIdOrderByIdDesc、activeWarning)
+        Db-->>Svc: 履歴
+        alt 警告していない
+            Svc->>Svc: 何もしない。履歴も通知も足さない
+        else 警告中
+            Svc->>Db: 3b-4 履歴に警告の解除 (CLEAR_WARNING) を足す (record → save)
+            Db-->>Svc: 保存した行
+            Svc->>Notices: 店舗の出店者に知らせるよう頼む (toStore)<br/>題名「店舗への運営の警告が解除されました」、<br/>本文は「店舗名」か「店舗名 / 理由」
+            Notices->>Db: 利用中の出店者ごとに通知を保存する
+            Db-->>Notices: 完了
+            Notices-->>Svc: 終わった
+        end
+        Svc-->>Ctrl: 停止中かと今の警告 (state。警告はなし)
+        Ctrl-->>Http: 200 { suspended, warning: null }
+        Http-->>Hook: 変更後の値
+        Hook->>Http: 一覧を取り直す (reload)。流れは 5〜7 と同じ
+        Http-->>Hook: 最新の店舗の一覧
+        Hook-->>Mod: 成功を返す (run が true)
+        Mod-->>User: 3b-5 ダイアログを閉じ、「警告を解除しました。出店者に通知しました。」、<br/>「警告中」のバッジが消える
+    else 3c 利用を再開する
+        User->>Mod: 3c-1「利用を再開」(停止中だけに出る) をクリック
+        Mod->>Dlg: 理由を空にして確認ダイアログを表示 (open('resume'))
+        Dlg-->>User: 3c-2「利用再開の確認」、「対象：店舗名」、<br/>「利用停止を解除し、再び利用できるようにします。」、<br/>「理由（任意・出店者に通知します）」欄、「利用再開を確定」、「取消」
+        User->>Dlg: 3c-3 必要なら理由を入力して「利用再開を確定」をクリック
+        Dlg->>Mod: 確定したことを伝える (onConfirm → confirm)
+        Mod->>Hook: 再開を実行し、成功の文を渡す (run)<br/>「再開しました。出店者に通知しました。」
+        Hook->>Http: 再開の通信を始める<br/>(write → request、本文は { enabled: true, reason })
+        Http->>Ctrl: PUT /api/operator/stores/{店舗 ID}/enabled<br/>(CSRF トークンの取得は 24〜26 と同じ)
+        Ctrl->>Svc: 店舗の利用を再開するよう頼む (enabled → enable)
+        Svc->>Repo: 運営者かを確かめ、店舗をロックして読む (requireAdmin、lock)<br/>流れと 7a は 29〜41 と同じ
+        Repo-->>Svc: 店舗
+        Svc->>Hist: 理由の前後の空白を除くよう頼む (reasonFor)
+        Hist-->>Svc: 理由 (空でもよい)
+        alt 停止していない (isSuspended が偽)
+            Svc->>Svc: 何もしない。履歴も通知も足さない
+        else 停止中
+            Svc->>Svc: 店舗の停止を解く (changeSuspended(false))
+            Svc->>Db: 3c-4 履歴に再開 (RESUME) を足す (record → save)
+            Db-->>Svc: 保存した行
+            Svc->>Notices: 店舗の出店者に知らせるよう頼む (toStore)<br/>題名「店舗の利用停止が解除されました」、<br/>本文は「店舗名」か「店舗名 / 理由」
+            Notices->>Db: 利用中の出店者ごとに通知を保存する
+            Db-->>Notices: 完了
+            Notices-->>Svc: 終わった
+        end
+        Svc-->>Ctrl: 停止中かと今の警告 (state)
+        Ctrl-->>Http: 200 { suspended: false, warning }
+        Http-->>Hook: 変更後の値
+        Hook->>Http: 一覧を取り直す (reload)。流れは 5〜7 と同じ
+        Http-->>Hook: 最新の店舗の一覧
+        Hook-->>Mod: 成功を返す (run が true)
+        Mod-->>User: 3c-5 ダイアログを閉じ、「再開しました。出店者に通知しました。」、<br/>更新後の状態 (stateOf) と、デンジャーエリアの「利用を停止」
+    else 3d 履歴を確認する
+        User->>Mod: 3d-1 対象店舗の「警告・停止の履歴」を開く
+        Mod->>Ev: 開いたことを覚え、履歴を表示する<br/>(details の onToggle → setHistoryOpen(true) → ModerationEvents)
+        Ev->>Hook: 履歴を取りに行くよう頼む (useResource)。<br/>取るのは開いたときが初めて (取得中は「読み込み中です。」)
+        Hook->>Http: 履歴の通信を始める (reload → request)
+        Http->>Ctrl: GET /api/operator/stores/{店舗 ID}/moderation-events
+        Ctrl->>Svc: 店舗の履歴を読むよう頼む (events)<br/>全体が読むだけのトランザクション
+        Svc->>Auth: ログイン中の人が運営者かを確かめる (requireAdmin)
+        Auth-->>Svc: 運営者である
+        Svc->>Repo: 店舗があるかを確かめるよう頼む (existsById)
+        Repo->>Db: SELECT stores
+        Db-->>Repo: ある
+        Repo-->>Svc: ある
+        Svc->>Db: その店舗の履歴を新しい順に読む<br/>(StoreModerationEventRepository.findByStoreIdOrderByIdDesc)
+        Db-->>Svc: 警告・警告の解除・停止・再開の行
+        Svc->>Hist: 履歴を表示の形にするよう頼む (views)
+        Hist->>Db: 操作した運営者の会員を読む (AuthMemberRepository.findAllById)
+        Db-->>Hist: 会員の行
+        Hist-->>Svc: 履歴 (type、reason、actorName は表示名か、<br/>空ならメールアドレス、createdAt)
+        Svc-->>Ctrl: 履歴のリスト
+        Ctrl-->>Http: 200 履歴の配列
+        Http-->>Hook: 履歴
+        Hook-->>Ev: 履歴
+        alt 履歴がない
+            Ev-->>User: 3d-2「履歴はありません。」
+        else 履歴がある
+            Ev-->>User: 3d-2 新しい順に 1 行ずつ「日時 警告／警告の解除／停止／再開<br/>（運営者名）：理由」(理由が空なら「：理由」を出さない)
+        end
     end
-    Note over User,Db: *a 通信の失敗やエラーの応答では、api.js が ApiError を投げ、run() の catch が<br/>404・409 なら一覧を取り直して resource.error を出す。confirm() はダイアログを閉じる
 ```
 
-## 詳細図 2 代替フロー 3a〜3d
+## 共通代替フローを直接書いた図
+
+上の図の「利用停止を確定」の通信（CSRF トークンの取得と `PUT /api/operator/stores/{店舗 ID}/enabled`）に、この画面で起こる共通代替フロー（\*a、\*b）を書き込んだ図です。3a〜3c の「警告する」「警告を解除する」「利用再開を確定」も、同じ `ModerationControls` の `confirm()` と `useResource.js` の `run()` を通るので、パスと文が違うだけで同じ流れです。画面を開いて店舗の一覧を取る通信の \*a・\*b は [EC-A05](<EC-A05_店舗情報を確認する.md>) の図と、3d の履歴の通信の \*a・\*b は [EC-A06](<EC-A06_商品情報を確認する.md>) の図（エラーの文だけを出し、「再取得」がない）と同じなので省いています。
 
 ```mermaid
 sequenceDiagram
+    autonumber
     actor User as 運営者
     box rgba(47,111,219,0.10) ブラウザー React
-        participant Mod as ModerationControls<br/>ModerationEvents<br/>Moderation.jsx
-        participant Hook as useResource.js
-        participant Http as api.js
+        participant Mod as 警告・停止の操作<br/>ModerationControls<br/>(Moderation.jsx)
+        participant Dlg as 確認ダイアログ<br/>ConfirmDialog<br/>(ConfirmDialog.jsx)
+        participant Status as エラーの表示<br/>ResourceStatus<br/>(ResourceView.jsx)
+        participant Hook as 一覧の取得と変更<br/>useResource<br/>(useResource.js)
+        participant Http as 通信<br/>request<br/>(api.js)
+        participant AuthJs as 通信の準備<br/>authFetch<br/>(auth.js)
+        participant Notice as 期限切れのお知らせ<br/>SessionNotice<br/>(SessionNotice.jsx)
     end
     box rgba(27,127,92,0.12) EC API Spring Boot
-        participant SCtrl as StoreController
-        participant Ctrl as StoreModeration<br/>Controller
-        participant Svc as StoreModeration<br/>Service
-        participant Hist as Moderation<br/>History
-        participant Notice as Notification<br/>Service
+        participant AuthCtrl as ログイン状態API<br/>AuthController<br/>(AuthController.java)
+        participant Filter as セッションの確認<br/>SessionValidityFilter<br/>(SessionValidityFilter.java)
+        participant Ctrl as 店舗の警告・停止API<br/>StoreModerationController<br/>(StoreModerationController.java)
+        participant Svc as 店舗の警告・停止の処理<br/>StoreModerationService<br/>(StoreModerationService.java)
     end
     participant Db as MySQL
+    box rgba(180,120,20,0.12) 外部サービス
+        participant Cog as Amazon Cognito
+    end
 
-    Note over User,Db: 3a〜3c は、ダイアログの「取消」は 6a、必須の理由が空なら 5a と同じ (通信しない)。<br/>サーバーでは詳細図 1 と同じく requireAdmin()、lock(id) の SELECT … FOR UPDATE と閉鎖済みの検査 (7a)、<br/>reasonFor()、state() を 1 つのトランザクションで通る。図では省略
-    alt 3a 停止せずに警告する
-        User->>Mod: 「警告する」(warning があれば「もう一度警告する」) をクリック
-        Mod-->>User: open('warn')。ConfirmDialog「警告の確認」<br/>対象：店舗名、公開・利用の状態は変わらないこと、<br/>「理由（必須・出店者に通知します）」
-        User->>Mod: 理由を入力して「警告する」をクリック
-        Mod->>Hook: confirm() が run(send, '警告しました。出店者に通知しました。')
-        Hook->>Http: write() が request('/operator/stores/{id}/warning',<br/>'PUT', warned=true と reason)
-        Http->>Ctrl: PUT /api/operator/stores/{id}/warning
-        Ctrl->>Svc: warning() が warn(id, true, reason)
-        Note right of Svc: warned が true なので、警告中でも毎回記録する
-        Svc->>Db: record() が save()<br/>store_moderation_events に WARN を INSERT
-        Db-->>Svc: 保存した行
-        Svc->>Notice: toStore(店舗 ID, MODERATION,<br/>「店舗に運営から警告がありました」, 店舗名 / 理由)
-        Notice-->>Svc: 戻る
-        Svc-->>Ctrl: State(suspended, warning)
-        Ctrl-->>Http: 200 suspended, warning
-        Http-->>Hook: data
-        Hook->>Http: reload() が request('/operator/stores')
-        Http->>SCtrl: GET /api/operator/stores
-        SCtrl-->>Http: 200 最新の Profile の配列
-        Http-->>Hook: data
-        Hook-->>Mod: run() が true を返す
-        Mod-->>User: 「警告しました。出店者に通知しました。」<br/>WarningBadge「警告中」と「運営からの警告：理由」
-    else 3b 警告を解除する
-        User->>Mod: 「警告を解除」(warning があるときだけ出る) をクリック
-        Mod-->>User: open('clear')。ConfirmDialog「警告の解除の確認」<br/>対象：店舗名、「理由（任意・出店者に通知します）」
-        User->>Mod: 必要なら理由を入力して「警告を解除する」をクリック
-        Mod->>Hook: confirm() が run(send, '警告を解除しました。出店者に通知しました。')
-        Hook->>Http: write() が request('/operator/stores/{id}/warning',<br/>'PUT', warned=false と reason)
-        Http->>Ctrl: PUT /api/operator/stores/{id}/warning
-        Ctrl->>Svc: warning() が warn(id, false, reason)
-        Svc->>Db: currentWarning() が findByStoreIdOrderByIdDesc(id)
-        Db-->>Svc: 履歴 (新しい順)
-        Svc->>Hist: activeWarning(履歴)
-        Hist-->>Svc: 今の Warning (なければ null)
-        alt 警告していない (null)
-            Note right of Svc: 何もしない。履歴も通知も足さない
-        else 警告中
-            Svc->>Db: record() が save()<br/>store_moderation_events に CLEAR_WARNING を INSERT
-            Db-->>Svc: 保存した行
-            Svc->>Notice: toStore(店舗 ID, MODERATION,<br/>「店舗への運営の警告が解除されました」, 店舗名 または 店舗名 / 理由)
-            Notice-->>Svc: 戻る
+    User->>Dlg: 理由を入力して「利用停止を確定」をクリック
+    Dlg->>Mod: 確定したことを伝える (onConfirm → confirm)
+    Mod->>Hook: 停止を実行し、成功の文を渡す (run)
+    Hook->>Http: 停止の通信を始める (write → request)
+    Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (authFetch)
+    alt *a CSRF トークンを取れない (届かない、または 200 以外)
+        AuthJs-xAuthCtrl: GET /api/auth/csrf
+        AuthJs--xHttp: エラーを投げる
+        Http->>Http: 通信の失敗にまとめる<br/>(send の catch → ApiError(networkErrorMessage, 0))
+        Http--xHook: エラーを投げる
+        Hook->>Status: エラーの文を出す (run の catch → setError)<br/>0 なので一覧は取り直さない
+        Hook-->>Mod: 失敗を返す (run が false)
+        Mod->>Dlg: ダイアログを閉じる (setPending(null))
+        Status-->>User: *a-1「サーバーに接続できません。<br/>接続を確認して再試行してください。」と「再取得」
+    else CSRF トークンを取れた
+        AuthJs->>AuthCtrl: GET /api/auth/csrf
+        AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン
+        alt *a PUT が届かない、または応答が JSON でない (止まったかは分からない)
+            AuthJs-xFilter: PUT /api/operator/stores/{店舗 ID}/enabled
+            Http->>Http: 通信の失敗にまとめる<br/>(send か readResponse → ApiError(networkErrorMessage, 0))
+            Http--xHook: エラーを投げる
+            Hook->>Status: エラーの文を出す (run の catch → setError)<br/>0 なので一覧は取り直さない
+            Hook-->>Mod: 失敗を返す (run が false)
+            Mod->>Dlg: ダイアログを閉じる (setPending(null))
+            Status-->>User: *a-1「サーバーに接続できません。<br/>接続を確認して再試行してください。」と「再取得」
+        else *b ログインの期限切れ (サーバーのセッションがない、refresh トークンが失効)
+            AuthJs->>Filter: PUT /api/operator/stores/{店舗 ID}/enabled
+            Filter-->>Http: 401 LOGIN_REQUIRED<br/>(セッションが無いときは AuthConfiguration.java が返す)
+            Http->>Notice: 期限切れを知らせる<br/>(wasSignedIn が真なので kusakari-session-expired)
+            Http--xHook: エラーを投げる (ApiError(sessionExpiredMessage, 401))
+            Hook->>Status: エラーの文を出す (run の catch → setError)
+            Hook-->>Mod: 失敗を返す (run が false)
+            Mod->>Dlg: ダイアログを閉じる (setPending(null))
+            Notice-->>User: *b-1「ログインの有効期限が切れました。<br/>もう一度ログインしてください。」「ログインする」「閉じる」
+            User->>Notice: 「ログインする」をクリック
+            Notice->>AuthJs: ログイン画面へ移る (login)
+            AuthJs-->>User: /account/login?returnTo=/operator/sellers のログイン画面<br/>(ログインの後は *b-2 で店舗管理画面に戻る。店舗の状態は変わっていない)
+        else *a ID トークンの更新で Cognito に届かない
+            AuthJs->>Filter: PUT /api/operator/stores/{店舗 ID}/enabled
+            Filter-xCog: ID トークンを更新する<br/>(InitiateAuth REFRESH_TOKEN_AUTH、CognitoPasswordLogin.java)
+            Filter-->>Http: 503 AUTH_UNAVAILABLE (セッションは残す)
+            Http--xHook: エラーを投げる (ApiError 503)
+            Hook->>Status: エラーの文を出す (run の catch → setError)
+            Hook-->>Mod: 失敗を返す (run が false)
+            Mod->>Dlg: ダイアログを閉じる (setPending(null))
+            Status-->>User: *a-1「認証を確認できません。<br/>時間をおいて再試行してください。」と「再取得」
+        else 要求が Controller まで届いた
+            AuthJs->>Filter: PUT /api/operator/stores/{店舗 ID}/enabled
+            Filter->>Ctrl: 要求を通す (chain.doFilter)
+            Ctrl->>Svc: 店舗の利用を停止するよう頼む (enable)
+            Svc->>Db: 運営者かを確かめ、店舗をロックして読み、<br/>停止して履歴と通知を保存し、コミットする (上の図の 29〜56)
+            alt *a MySQL との通信に失敗
+                Db--xSvc: 失敗 (DataAccessException)。<br/>トランザクションの変更はすべて取り消す
+                Svc--xCtrl: 例外
+                Ctrl-->>Http: 503 DATABASE_UNAVAILABLE (ApiErrors.java の database)
+                Http--xHook: エラーを投げる (ApiError 503)
+                Hook->>Status: エラーの文を出す (run の catch → setError)
+                Hook-->>Mod: 失敗を返す (run が false)
+                Mod->>Dlg: ダイアログを閉じる (setPending(null))
+                Status-->>User: *a-1「保存処理を完了できませんでした。<br/>時間をおいて再試行してください。」と「再取得」
+            else 停止できた
+                Db-->>Svc: 完了
+                Svc-->>Ctrl: 停止中かと今の警告
+                Ctrl-->>Http: 200 変更後の値
+                Http-->>Hook: 変更後の値
+                Hook-->>Mod: 一覧を取り直して成功を返す (reload、run が true)
+                Mod-->>User: ダイアログを閉じ、「停止しました。出店者に通知しました。」<br/>と「運営により停止中」
+            end
         end
-        Svc-->>Ctrl: State(suspended, warning)
-        Ctrl-->>Http: 200 suspended, warning=null
-        Http-->>Hook: data
-        Hook->>Http: reload() が request('/operator/stores')
-        Http->>SCtrl: GET /api/operator/stores
-        SCtrl-->>Http: 200 最新の Profile の配列
-        Http-->>Hook: data
-        Hook-->>Mod: run() が true を返す
-        Mod-->>User: 「警告を解除しました。出店者に通知しました。」<br/>「警告中」のバッジが消える
-    else 3c 利用を再開する
-        User->>Mod: 「利用を再開」(suspended のときだけ出る) をクリック
-        Mod-->>User: open('resume')。ConfirmDialog「利用再開の確認」<br/>対象：店舗名、resumeText、「理由（任意・出店者に通知します）」
-        User->>Mod: 必要なら理由を入力して「利用再開を確定」をクリック
-        Mod->>Hook: confirm() が run(send, '再開しました。出店者に通知しました。')
-        Hook->>Http: write() が request('/operator/stores/{id}/enabled',<br/>'PUT', enabled=true と reason)
-        Http->>Ctrl: PUT /api/operator/stores/{id}/enabled
-        Ctrl->>Svc: enabled() が enable(id, true, reason)
-        alt 利用停止していない (isSuspended() が false)
-            Note right of Svc: 何もしない。履歴も通知も足さない
-        else 利用停止中
-            Svc->>Svc: store.changeSuspended(false)
-            Svc->>Db: record() が save()<br/>store_moderation_events に RESUME を INSERT
-            Db-->>Svc: 保存した行
-            Svc->>Notice: toStore(店舗 ID, MODERATION,<br/>「店舗の利用停止が解除されました」, 店舗名 または 店舗名 / 理由)
-            Notice-->>Svc: 戻る
-        end
-        Svc-->>Ctrl: State(suspended, warning)
-        Ctrl-->>Http: 200 suspended=false, warning
-        Http-->>Hook: data
-        Hook->>Http: reload() が request('/operator/stores')
-        Http->>SCtrl: GET /api/operator/stores
-        SCtrl-->>Http: 200 最新の Profile の配列
-        Http-->>Hook: data
-        Hook-->>Mod: run() が true を返す
-        Mod-->>User: 「再開しました。出店者に通知しました。」<br/>stateOf() による更新後の状態と、デンジャーエリアの「利用を停止」
-    else 3d 履歴を確認する
-        User->>Mod: 対象店舗の「警告・停止の履歴」(details) を開く
-        Mod->>Mod: onToggle で setHistoryOpen(true)<br/>ModerationEvents を表示
-        Mod->>Hook: useResource('/operator/stores/{id}/moderation-events')
-        Note right of Hook: 開いたときに初めて取得する
-        Hook->>Http: request('/operator/stores/{id}/moderation-events')
-        Http->>Ctrl: GET /api/operator/stores/{id}/moderation-events
-        Ctrl->>Svc: events(id)
-        Note right of Svc: @Transactional(readOnly = true)。<br/>requireAdmin() は図では省略
-        Svc->>Db: StoreRepository.existsById(id)
-        Db-->>Svc: true (false なら 404 STORE_NOT_FOUND)
-        Svc->>Db: StoreModerationEventRepository<br/>findByStoreIdOrderByIdDesc(id)
-        Db-->>Svc: その店舗の履歴 (新しい順)
-        Svc->>Hist: views(履歴)
-        Hist->>Db: AuthMemberRepository.findAllById(操作した運営者の ID)
-        Db-->>Hist: AuthMember のリスト
-        Hist-->>Svc: EventView のリスト (actorName は表示名、なければメールアドレス)
-        Svc-->>Ctrl: EventView のリスト
-        Ctrl-->>Http: 200 EventView の配列
-        Http-->>Hook: data
-        Hook-->>Mod: resource.data
-        alt 3d-2 履歴がない (events.length が 0)
-            Mod-->>User: 「履歴はありません。」
-        else 履歴がある
-            Mod-->>User: 1 行ずつ「日時 警告 / 警告の解除 / 停止 / 再開<br/>(運営者名)：理由」
+    end
+    opt *a-3 やり直す
+        alt 一覧を取り直す
+            User->>Status: 「再取得」をクリック
+            Status->>Hook: 一覧を取り直す (reload)。停止の通信は送り直さない
+        else 停止をやり直す
+            User->>Mod: もう一度デンジャーエリアの「利用を停止」をクリック<br/>(open が理由を空にするので、理由を入力し直す。基本フロー 3 へ戻る)
         end
     end
 ```
 
 ## ユースケース記述との差
 
+- 基本フロー 2: 「警告する」ボタンは、利用停止中の店舗にも出ます。記述は「利用停止中でない店舗には、『警告する』ボタンと…」としています。閉鎖済みの店舗には、警告・停止の操作も「警告・停止の履歴」も出ません（記述の関連情報のとおり）。
 - 基本フロー 7・9: 閉鎖中の店舗も利用停止できます（記述の関連情報のとおり）。ところが画面の状態は `stateOf()` が閉鎖中を先に見るので、閉鎖中の店舗を利用停止しても「閉鎖中（…）」のままで、「運営により停止中」になりません。ボタンは「利用を再開」に変わります。
-- 共通代替フロー *a: 通信に失敗したときやエラーの応答のとき、`confirm()` は結果にかかわらず `setPending(null)` でダイアログを閉じます。エラーは画面上部の `ResourceStatus` に出ます。もう一度ボタンを押すと `open()` が理由を空にするので、入力した理由は残りません。*a-2 の「入力内容を保持したまま、再実行を可能にする」と違います。7a でもダイアログは閉じます。
+- 共通代替フロー \*a: 通信に失敗したときやエラーの応答のとき、`confirm()` は結果にかかわらず `setPending(null)` でダイアログを閉じます。エラーは画面上部の `ResourceStatus` に出ます。もう一度ボタンを押すと `open()` が理由を空にするので、入力した理由は残りません。\*a-2 の「入力内容を保持したまま、再実行を可能にする」と違います。7a でもダイアログは閉じます。\*a-3 の「再取得」は一覧を取り直すだけで、停止の通信は送り直しません。
 - 関連情報「すでに利用停止中の店舗の停止、利用停止していない店舗の再開、警告していない店舗の警告の解除は、何もせず」: サーバーは何もせずに 200 を返します。画面は 200 を成功として扱うので、このときも「停止しました。出店者に通知しました。」などを出します。通知を送っていないのに「通知しました」と出ます。
 - 7a: 閉鎖済みの検査は `StoreModerationService.lock()` にあり、利用停止だけでなく、警告・警告の解除・利用再開でも同じ 409 `STORE_CLOSED` になります。記述は基本フロー 7 の代替フローとしてだけ書いています。
-- 3d: 閉鎖済みの店舗には `ModerationControls` を出さないので、「警告・停止の履歴」も開けません。API の `GET /api/operator/stores/{id}/moderation-events` は閉鎖済みの店舗でも履歴を返します。記述は閉鎖済みの店舗の履歴について書いていません。
+- 3d: 閉鎖済みの店舗には `ModerationControls` を出さないので、「警告・停止の履歴」も開けません。API の `GET /api/operator/stores/{店舗 ID}/moderation-events` は閉鎖済みの店舗でも履歴を返します。記述は閉鎖済みの店舗の履歴について書いていません。
+- 3d: 履歴の取得に失敗したときは、履歴の欄にエラーの文だけを出し、「再取得」を出しません。閉じて開き直すと取り直します（[EC-A06](<EC-A06_商品情報を確認する.md>) と同じ）。
 - 関連情報「通知は、組織のオーナーと、その店舗でロールを割り振られた担当者に届く」: `NotificationService.toStore()` は、そのうち利用停止されていない会員（`AuthMember.isEnabled()`）にだけ送ります。
-- 5a: 理由の検査は画面（`reason.trim()`）とサーバー（`ModerationHistory.reasonFor()` の 400 `REASON_REQUIRED`）の両方にあります。画面の検査が先に止めるので、画面からサーバーの検査には届きません。
+- 5a: 理由の検査は画面（`reason.trim()`）とサーバー（`ModerationHistory.reasonFor()` の 400 `REASON_REQUIRED`「理由を入力してください。」）の両方にあります。画面の検査が先に止めるので、画面からサーバーの検査には届きません。理由の 500 文字の制限もサーバー（`@Size`、400 `INVALID_INPUT`）と画面の欄の両方にあります。
+- 操作の API は、店舗がないときに 404 `STORE_NOT_FOUND`「店舗が見つかりません。」を返します（画面は一覧を取り直します）。一覧にある店舗から操作するので、図には書いていません。
+- 運営者でない会員がこの画面を開くと、`Workspace.jsx` が「この画面を利用する権限がありません。」を出します。API も `requireAdmin()` で 403 `FORBIDDEN` を返します。事前条件が運営者のログインなので、図には書いていません。
 
 ## 確かめられなかったこと
 
@@ -369,24 +365,32 @@ sequenceDiagram
 
 ## 参照したコード
 
-- [frontend/src/workspace/Workspace.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/Workspace.jsx): `operatorMenu`、`Workspace`（`/operator/sellers` と `OperatorStoresPage` の対応）
-- [frontend/src/workspace/OperatorStores.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/OperatorStores.jsx): `OperatorStoresPage`（`closedAt` がない店舗だけに `ModerationControls` を出す）
-- [frontend/src/workspace/SellerStores.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/SellerStores.jsx): `stateOf`
-- [frontend/src/workspace/Moderation.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/Moderation.jsx): `targets`、`ModerationControls`（`open`、`confirm`、`send`、`done`、`titles`）、`WarningBadge`、`ModerationEvents`
-- [frontend/src/components/ConfirmDialog.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/components/ConfirmDialog.jsx): `ConfirmDialog`（`onConfirm`、`onCancel`）
-- [frontend/src/workspace/useResource.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/useResource.js): `useResource`、`reload`、`run`、`write`
-- [frontend/src/workspace/ResourceView.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/ResourceView.jsx): `ResourceStatus`
-- [frontend/src/api.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/api.js): `request`、`send`、`readResponse`、`ApiError`
-- [frontend/src/auth.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/auth.js): `authFetch`（`/api/auth/csrf`）
-- [backend/src/main/java/jp/kusakari/ec/store/controller/StoreController.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/store/controller/StoreController.java): `list`
-- [backend/src/main/java/jp/kusakari/ec/store/controller/StoreModerationController.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/store/controller/StoreModerationController.java): `EnabledRequest`、`enabled`、`warning`、`events`
-- [backend/src/main/java/jp/kusakari/ec/store/service/StoreModerationService.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/store/service/StoreModerationService.java): `enable`、`warn`、`events`、`record`、`currentWarning`、`state`、`lock`
-- [backend/src/main/java/jp/kusakari/ec/moderation/service/ModerationHistory.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/moderation/service/ModerationHistory.java): `reasonFor`、`activeWarning`、`views`、`noticeBody`
-- [backend/src/main/java/jp/kusakari/ec/moderation/dto/ModerationDtos.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/moderation/dto/ModerationDtos.java): `State`、`WarningRequest`、`EventView`
-- [backend/src/main/java/jp/kusakari/ec/catalog/persistence/repository/StoreRepository.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/catalog/persistence/repository/StoreRepository.java): `lock`、`existsById`（JpaRepository）
-- [backend/src/main/java/jp/kusakari/ec/catalog/persistence/entity/StoreEntity.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/catalog/persistence/entity/StoreEntity.java): `changeSuspended`、`suspended`、`closedAt`
-- [backend/src/main/java/jp/kusakari/ec/moderation/persistence/repository/StoreModerationEventRepository.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/moderation/persistence/repository/StoreModerationEventRepository.java): `findByStoreIdOrderByIdDesc`、`save`（JpaRepository）
-- [backend/src/main/java/jp/kusakari/ec/auth/AuthMemberRepository.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/AuthMemberRepository.java): `findAllById`（JpaRepository）
-- [backend/src/main/java/jp/kusakari/ec/notification/service/NotificationService.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/notification/service/NotificationService.java): `toStore`
-- [backend/src/main/java/jp/kusakari/ec/auth/AuthService.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/AuthService.java): `requireAdmin`
-- [backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java): `business`
+- [frontend/src/workspace/Workspace.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/Workspace.jsx): `operatorMenu`、`Workspace`（`/operator/sellers` と `OperatorStoresPage` の対応）
+- [frontend/src/workspace/WorkspaceSidebar.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/WorkspaceSidebar.jsx): `MenuLink`
+- [frontend/src/workspace/Common.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/Common.jsx): `PageLink`
+- [frontend/src/workspace/OperatorStores.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/OperatorStores.jsx): `OperatorStoresPage`（`closedAt` がない店舗だけに `ModerationControls` を出す）
+- [frontend/src/workspace/SellerStores.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/SellerStores.jsx): `stateOf`
+- [frontend/src/workspace/Moderation.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/Moderation.jsx): `targets`、`ModerationControls`（`open`、`confirm`、`send`、`done`、`titles`）、`WarningBadge`、`ModerationEvents`、`eventLabels`
+- [frontend/src/components/ConfirmDialog.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/components/ConfirmDialog.jsx): `ConfirmDialog`（`onConfirm`、`onCancel`、`busy`）
+- [frontend/src/components/Dialog.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/components/Dialog.jsx): `Dialog`（Esc キー、外側のクリック、「閉じる」）
+- [frontend/src/workspace/useResource.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/useResource.js): `useResource`、`reload`、`run`、`write`
+- [frontend/src/workspace/ResourceView.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/ResourceView.jsx): `ResourceStatus`（エラーの文と「再取得」）
+- [frontend/src/api.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/api.js): `request`、`send`、`readResponse`、`ApiError`、`networkErrorMessage`、`sessionExpiredMessage`
+- [frontend/src/auth.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/auth.js): `authFetch`（`GET /api/auth/csrf`）、`wasSignedIn`、`login`
+- [frontend/src/components/SessionNotice.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/components/SessionNotice.jsx): 期限切れのお知らせ
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthController.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthController.java): `csrf`
+- [backend/src/main/java/jp/kusakari/ec/store/controller/StoreController.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/store/controller/StoreController.java): `list`
+- [backend/src/main/java/jp/kusakari/ec/store/controller/StoreModerationController.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/store/controller/StoreModerationController.java): `EnabledRequest`、`enabled`、`warning`、`events`
+- [backend/src/main/java/jp/kusakari/ec/store/service/StoreModerationService.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/store/service/StoreModerationService.java): `enable`、`warn`、`events`、`record`、`currentWarning`、`state`、`lock`
+- [backend/src/main/java/jp/kusakari/ec/moderation/service/ModerationHistory.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/moderation/service/ModerationHistory.java): `reasonFor`、`activeWarning`、`views`、`noticeBody`、`nameOf`
+- [backend/src/main/java/jp/kusakari/ec/moderation/dto/ModerationDtos.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/moderation/dto/ModerationDtos.java): `State`、`WarningRequest`、`EventView`
+- [backend/src/main/java/jp/kusakari/ec/catalog/persistence/repository/StoreRepository.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/catalog/persistence/repository/StoreRepository.java): `lock`、`existsById`（JpaRepository）
+- [backend/src/main/java/jp/kusakari/ec/catalog/persistence/entity/StoreEntity.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/catalog/persistence/entity/StoreEntity.java): `changeSuspended`、`suspended`、`closedAt`
+- [backend/src/main/java/jp/kusakari/ec/moderation/persistence/repository/StoreModerationEventRepository.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/moderation/persistence/repository/StoreModerationEventRepository.java): `findByStoreIdOrderByIdDesc`、`save`（JpaRepository）
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthMemberRepository.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthMemberRepository.java): `findAllById`（JpaRepository）
+- [backend/src/main/java/jp/kusakari/ec/notification/service/NotificationService.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/notification/service/NotificationService.java): `toStore`
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthService.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthService.java): `requireAdmin`
+- [backend/src/main/java/jp/kusakari/ec/auth/SessionValidityFilter.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/SessionValidityFilter.java): `doFilterInternal`（ID トークンの更新、401 `LOGIN_REQUIRED`）
+- [backend/src/main/java/jp/kusakari/ec/auth/CognitoPasswordLogin.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/CognitoPasswordLogin.java): `refresh`、503 `AUTH_UNAVAILABLE`
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthConfiguration.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthConfiguration.java): `authenticationEntryPoint`（401 `LOGIN_REQUIRED`）
+- [backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java): `business`、`invalid`、`database`

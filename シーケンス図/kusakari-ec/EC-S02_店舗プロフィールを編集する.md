@@ -1,313 +1,344 @@
 # EC-S02 店舗プロフィールを編集する
 
 - ユースケース記述: [EC-S02_店舗プロフィールを編集する](<../../アーカイブ/ユースケース/kusakari-ec/EC-S02_店舗プロフィールを編集する.md>)
-- 対象のコード: kusakari-ec の main（19a2be3、2026-11-20 時点）
+- 共通代替フロー: [00_全ユースケース共通の代替フロー](<00_全ユースケース共通の代替フロー.md>)
+- 対象のコード: kusakari-ec の main（6bad7e3、2026-11-24 時点）
 
-## 概要図
+## シーケンス図
+
+参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
+共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
 
 ```mermaid
 sequenceDiagram
+    autonumber
     actor User as 出店者
-    participant Page as 店舗プロフィール画面<br/>React
-    participant Api as EC API<br/>Spring Boot
+    box rgba(47,111,219,0.10) ブラウザー React
+        participant Work as 出店者画面の枠<br/>Workspace<br/>(Workspace.jsx)
+        participant Stores as 店舗一覧画面<br/>SellerStoresPage<br/>(SellerStores.jsx)
+        participant Select as 店舗の選択欄<br/>SellerStoreSelect<br/>(SellerStoreSelect.jsx)
+        participant Shop as 選んでいる店舗<br/>useShop<br/>(useShop.js)
+        participant Page as 店舗プロフィール画面<br/>ProfilePage<br/>(PartnerForms.jsx)
+        participant Hook as プロフィールの取得と保存<br/>useResource<br/>(useResource.js)
+        participant Http as 通信<br/>request<br/>(api.js)
+        participant AuthJs as 通信の準備<br/>authFetch<br/>(auth.js)
+    end
+    box rgba(27,127,92,0.12) EC API Spring Boot
+        participant AuthCtrl as ログイン状態API<br/>AuthController<br/>(AuthController.java)
+        participant Ctrl as 店舗API<br/>StoreController<br/>(StoreController.java)
+        participant Errs as エラーの応答<br/>ApiErrors<br/>(ApiErrors.java)
+        participant Svc as 店舗の処理<br/>StoreService<br/>(StoreService.java)
+        participant Auth as ログイン中の会員<br/>AuthService<br/>(AuthService.java)
+        participant Mod as 店舗への運営の警告<br/>StoreModerationService<br/>(StoreModerationService.java)
+        participant Repo as 店舗の読み書き<br/>StoreRepository<br/>(StoreRepository.java)
+        participant OrgRepo as 組織の読み込み<br/>OrganizationRepository<br/>(OrganizationRepository.java)
+    end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー *a、*b を適用 (00_全ユースケース共通の代替フロー を参照)
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 5 (URL を直接開いたときのログインの確認)、8、42、プロフィールの取り直しの 66・73・84・100 に適用<br/>*a 通信に失敗した場合: 8、40、42、プロフィールの取り直しの 66・73・84・100 に適用
 
-    Note over User,Db: 基本フロー 1 「店舗プロフィール」画面を開く
     alt 1b 「店舗一覧」から開く
-        User->>Page: 「店舗一覧」画面で対象店舗の<br/>「店舗情報を編集」をクリック
-        Note right of Page: その店舗を管理する店舗にして<br/>/seller/profile へ移る。通信しない
-    else メニューから開く
-        User->>Page: 出店者画面のメニュー<br/>「店舗プロフィール」をクリック (EC-C03)
+        User->>Stores: 「店舗一覧」画面で対象の店舗の「店舗情報を編集」をクリック<br/>(閉鎖済みの店舗にはこのボタンを出さない)
+        Stores->>Shop: その店舗を選んでいる店舗にする (edit → setSellerStoreId)<br/>選んだ店舗は localStorage にも残す
+        Stores->>Work: URL を /seller/profile に変える (navigate)
+    else 基本フロー 1 メニューから開く
+        User->>Work: 出店者メニューの「店舗プロフィール」をクリック
+    end
+    Work->>Page: URL を /seller/profile にし、選んでいる店舗の<br/>ProfilePage を表示 (key={storeId})
+
+    Page->>Hook: 店舗のプロフィールを取りに行くよう頼む (useResource)
+    Hook->>Http: 画面を開いたときに自動で<br/>プロフィールの通信を始める (reload → request)
+    Http->>Ctrl: GET /api/stores/{id}
+    Ctrl->>Svc: 店舗のプロフィールを作るよう頼む (get)<br/>読むだけのトランザクション
+    Svc->>Repo: 店舗を読む (require → findById)
+    Repo->>Db: SELECT stores
+    Db-->>Repo: 店舗の行
+    Repo-->>Svc: 店舗
+    Svc->>Auth: ログイン中の人が店舗側の立場で<br/>この店舗を見られるかを確かめる (canViewAsStaff)
+    Auth->>Db: 会員と、オーナーの組織か店舗の担当かを読む<br/>(current、canManageView)
+    Db-->>Auth: 会員、組織、担当の行
+    Auth-->>Svc: 見られる
+    Svc->>OrgRepo: 会社名を読む (view → findById)<br/>(その前に publiclyVisible が公開中かを確かめるが、見られるので結果は使わない)
+    OrgRepo->>Db: SELECT organizations
+    Db-->>OrgRepo: 組織の行
+    OrgRepo-->>Svc: 組織 (会社名)
+    Svc->>Mod: 店舗に今出ている運営の警告を求めるよう頼む (warnings)
+    Mod->>Db: 警告と警告の解除の履歴を読む<br/>(findByStoreIdInAndEventTypeInOrderByIdDesc、SELECT store_moderation_events)
+    Db-->>Mod: 履歴の行
+    Mod-->>Svc: 今出ている警告 (activeWarnings。なければなし)
+    Svc-->>Ctrl: 警告を付けたプロフィール (withWarning)
+    Ctrl-->>Http: 200 プロフィール (revision、company、name、contact、<br/>email、address、hours、story、warning)
+    Http-->>Hook: プロフィール
+    Hook-->>Page: プロフィール
+    Page-->>User: 警告があれば「警告中」と「運営からの警告：理由」、「会社名：…」、<br/>店舗名・担当者・問い合わせメール・所在地・営業時間・店舗紹介の入力欄、<br/>「店舗情報を保存」
+
+    opt 1a 複数の店舗を扱う (管理できる店舗が 2 つ以上なら、画面上部に選択欄が出る)
+        User->>Select: 「管理する店舗」の選択欄で、編集する店舗を選ぶ
+        Select->>Shop: 選んだ店舗にする (onChange → setSellerStoreId)
+        Shop-->>Work: 選んでいる店舗が変わったので画面を描き直す (sellerStoreId)
+        Work->>Page: key={storeId} が変わるので ProfilePage を作り直す<br/>(基本フロー 2 へ。流れは 6〜30 と同じ)
     end
 
-    Note over User,Db: 基本フロー 2 現在のプロフィールを表示する
-    Page->>Api: GET /api/stores/{id}
-    Api->>Db: 店舗の行を読む (stores)
-    Api->>Db: 会員と、店舗を扱える立場かを読む
-    Api->>Db: 会社名を読む (organizations)
-    Api->>Db: 今出ている警告を読む (store_moderation_events)
-    Db-->>Api: 行
-    Api-->>Page: 200 店舗プロフィール<br/>(revision、company、warning を含む)
-    Page-->>User: 会社名、6 つの入力欄、「店舗情報を保存」<br/>警告があれば「警告中」と理由
-
-    opt 1a 複数の店舗を扱う (店舗が 2 つ以上なら上部に選択欄が出る)
-        User->>Page: 「管理する店舗」の選択欄で店舗を選ぶ
-        Page->>Api: GET /api/stores/{選んだ店舗の id}
-        Api->>Db: 基本フロー 2 と同じく読む
-        Db-->>Api: 行
-        Api-->>Page: 200 店舗プロフィール
-        Page-->>User: 選んだ店舗のプロフィール
-    end
-
-    Note over User,Db: 基本フロー 3〜4 入力欄を編集して「店舗情報を保存」をクリックする
-    User->>Page: 入力欄を編集し「店舗情報を保存」をクリック
-    Note right of Page: 5a のうち、店舗名・所在地・営業時間が空なら<br/>ブラウザーが送信を止める。文字数の上限を<br/>超えては入力できない。どちらも通信しない
-    Note over Page,Api: 書き込みの前に GET /api/auth/csrf を送る。図では省略
-    Page->>Api: PUT /api/seller/stores/{id}<br/>6 項目と、表示したときの revision
-
-    Note over User,Db: 基本フロー 5 入力内容を検証する
-    Api->>Api: 入力を検査 (@NotBlank、@Size、@Email)
-    alt 5a 入力が不正 (空白だけ、メールの形が違う、文字数の超過)
-        Api-->>Page: 400 INVALID_INPUT
-        Page-->>User: 「入力内容・文字数・数値の範囲を<br/>確認してください。」 入力欄はそのまま
-    else 検査を通る
-        Api->>Db: 会員と、店舗での立場を読む
-        Db-->>Api: 行
-        alt 6b 権限がない (STAFF、ロールなし、運営が停止した店舗、<br/>閉鎖済みで担当から外れた MANAGER)
-            Api-->>Page: 403 FORBIDDEN
-            Page-->>User: 「この操作の権限がありません。」
-        else オーナーか MANAGER
-            Api->>Db: 店舗の行を読む (stores)
-            Db-->>Api: 行
-            alt 6c 閉鎖済み (closed_at がある)
-                Api-->>Page: 409 STORE_CLOSED
-                Page->>Api: GET /api/stores/{id}
-                Api-->>Page: 200 最新のプロフィール
-                Page-->>User: 「この店舗は閉鎖済みです。」
-            else 6a 表示した後にほかの人が更新した (revision が違う)
-                Api-->>Page: 409 STORE_CHANGED
-                Page->>Api: GET /api/stores/{id}
-                Api-->>Page: 200 最新のプロフィール
-                Page-->>User: 「店舗情報が更新されています。」<br/>最新のプロフィールを入力欄に表示
-            else revision が同じ
-                opt 店舗名を変えた
-                    Api->>Db: 同じ組織に同じ店舗名があるか読む
-                    Db-->>Api: あり か なし
-                end
-                alt 同じ組織に同じ店舗名がある (記述にない)
-                    Api-->>Page: 409 STORE_NAME_EXISTS
-                    Page->>Api: GET /api/stores/{id}
-                    Api-->>Page: 200 最新のプロフィール
-                    Page-->>User: 「同じ名前の店舗がすでにあります。」<br/>入力欄はそのまま
-                else 基本フロー 6 保存できる
-                    Api->>Db: 店舗の行を更新し、revision を 1 増やす<br/>(UPDATE stores ... WHERE revision = 読んだ値)
-                    Api->>Db: 会社名を読む (organizations)
-                    Db-->>Api: OK
-                    Api-->>Page: 200 保存後のプロフィール
-                    Page->>Api: GET /api/stores/{id}
-                    Api-->>Page: 200 最新のプロフィール
-                    Page-->>User: 「保存しました。」、保存した内容の入力欄
+    User->>Page: 入力欄を編集し、「店舗情報を保存」をクリック
+    alt 5a 店舗名・所在地・営業時間が空 (画面で止まる)
+        Page-->>User: 5a-1 ブラウザーが送信を止め、空の入力欄に標準のメッセージを出す<br/>(Input の required)。通信しない。文字数は maxLength で上限を超えて入力できない
+    else 画面の検査を通る
+        Page->>Hook: 6 項目と、表示したときの revision で保存するよう頼む<br/>(save → values → run)
+        Hook->>Http: プロフィールを書き換える通信を送る (write → request)
+        Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (authFetch)
+        AuthJs->>AuthCtrl: GET /api/auth/csrf
+        AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
+        AuthJs->>Ctrl: PUT /api/seller/stores/{id}<br/>(CSRF トークンのヘッダー付き)
+        Ctrl->>Ctrl: 入力を検査する (@Valid の StoreService.Input。<br/>@NotBlank、@NotNull、@Size、@Email)
+        alt 5a 入力が不正 (空白だけ、メールの形が違う、文字数の超過)
+            Ctrl--xErrs: 入力の違反の例外を投げる (MethodArgumentNotValidException)
+            Errs-->>Http: 400「入力内容・文字数・数値の範囲を<br/>確認してください。」(invalid、INVALID_INPUT)
+            Http--xHook: エラーを投げる (readResponse → ApiError)
+            Hook-->>Page: 失敗を返す (run が false、エラーの文を設定)。400 なので取り直さない
+            Page-->>User: 5a-1「入力内容・文字数・数値の範囲を確認してください。」<br/>入力欄は入力のまま (5a-2 基本フロー 3 へ戻る)
+        else 検査を通る
+            Ctrl->>Svc: 店舗のプロフィールを保存するよう頼む (save)<br/>save 全体が 1 つのトランザクション
+            Svc->>Auth: オーナーか、その店舗の MANAGER かを確かめる<br/>(requireManager → requireStoreRole)
+            Auth->>Db: 会員、店舗、オーナーの組織か、店舗の担当とロールを読む
+            Db-->>Auth: 会員、店舗、組織、担当の行
+            alt 6b 権限がない (STAFF、ロールなし、運営が停止した店舗、閉鎖で担当から外れた MANAGER)
+                Auth--xErrs: 403 FORBIDDEN の例外を投げる (denied)
+                Errs-->>Http: 403「この操作の権限がありません。」(business)
+                Http--xHook: エラーを投げる (readResponse → ApiError)
+                Hook-->>Page: 失敗を返す (run が false、エラーの文を設定)。403 なので取り直さない
+                Page-->>User: 6b-1「この操作の権限がありません。」。変更は確定しない
+            else オーナーか MANAGER
+                Auth-->>Svc: 扱える
+                Svc->>Repo: 店舗を読む (require → findById)
+                Repo->>Db: SELECT stores
+                Db-->>Repo: 店舗の行
+                Repo-->>Svc: 店舗
+                alt 6c 閉鎖済み (closedAt がある)
+                    Svc--xErrs: 409 STORE_CLOSED の例外を投げる (requireNotClosed)
+                    Errs-->>Http: 409「この店舗は閉鎖済みです。」(business)
+                    Http--xHook: エラーを投げる (readResponse → ApiError)
+                    Hook->>Http: 409 なので最新のプロフィールを取り直す (reload)<br/>流れは 8〜29 と同じ
+                    Http-->>Hook: 最新のプロフィール
+                    Hook-->>Page: 失敗を返す (run が false、エラーの文を設定)
+                    Page-->>User: 6c-1「この店舗は閉鎖済みです。」。変更は確定しない
+                else 6a 表示した後にほかの人が更新した (revision が違う)
+                    Svc--xErrs: 409 STORE_CHANGED の例外を投げる (ApiException)
+                    Errs-->>Http: 409「店舗情報が更新されています。」(business)
+                    Http--xHook: エラーを投げる (readResponse → ApiError)
+                    Hook->>Http: 409 なので最新のプロフィールを取り直す (reload)<br/>流れは 8〜29 と同じ
+                    Http-->>Hook: 最新のプロフィール (新しい revision)
+                    Hook-->>Page: 失敗を返す (run が false、エラーの文を設定)
+                    Page-->>User: 6a-1「店舗情報が更新されています。」と、6a-2 最新のプロフィールの入力欄<br/>(revision が変わったので form key={p.revision} を作り直す。6a-3 基本フロー 3 へ戻る)
+                else revision が同じ
+                    opt 店舗名を変えた (前後の空白を除いて今の名前と比べる)
+                        Svc->>Repo: 同じ組織に同じ名前の店舗があるかを読む<br/>(existsByOrganizationIdAndName)
+                        Repo->>Db: SELECT stores
+                        Db-->>Repo: 行 (なければなし)
+                        Repo-->>Svc: ある か ない
+                    end
+                    alt 同じ組織に同じ名前の店舗がある (記述なし)
+                        Svc--xErrs: 409 STORE_NAME_EXISTS の例外を投げる (ApiException)
+                        Errs-->>Http: 409「同じ名前の店舗がすでにあります。」(business)
+                        Http--xHook: エラーを投げる (readResponse → ApiError)
+                        Hook->>Http: 409 なので最新のプロフィールを取り直す (reload)<br/>流れは 8〜29 と同じ
+                        Http-->>Hook: 最新のプロフィール (revision は同じ)
+                        Hook-->>Page: 失敗を返す (run が false、エラーの文を設定)
+                        Page-->>User: 「同じ名前の店舗がすでにあります。」<br/>revision が同じなので form を作り直さず、入力欄は入力のまま
+                    else 基本フロー 6 保存できる
+                        Svc->>Svc: 入力を店舗に書き込む (updateProfile。<br/>問い合わせメール以外は前後の空白を除く)
+                        Svc->>Repo: 書き込んだ店舗を送る (flush)
+                        Repo->>Db: UPDATE stores ... WHERE id と revision<br/>(@Version で revision を 1 増やす)
+                        Db-->>Repo: 1 行を更新
+                        Repo-->>Svc: 終わった
+                        Svc->>OrgRepo: 会社名を読む (view → findById)
+                        OrgRepo->>Db: SELECT organizations
+                        Db-->>OrgRepo: 組織の行
+                        OrgRepo-->>Svc: 組織 (会社名)
+                        Svc-->>Ctrl: 保存後のプロフィール。コミットする
+                        Ctrl-->>Http: 200 保存後のプロフィール
+                        Http-->>Hook: 保存後のプロフィール
+                        Hook->>Http: 最新のプロフィールを取り直す (reload)<br/>流れは 8〜29 と同じ
+                        Http-->>Hook: 最新のプロフィール (1 増えた revision)
+                        Hook-->>Page: 成功を返す (run が true、「保存しました。」を設定)
+                        Page-->>User: 「保存しました。」と、保存した内容の入力欄<br/>(revision が増えたので form key={p.revision} を作り直す)
+                    end
                 end
             end
         end
     end
 ```
 
-## 詳細図 1 基本フロー 1（代替フロー 1a、1b）
+## 共通代替フローを直接書いた図
+
+上の図の、画面を開いてプロフィールを取る通信（`GET /api/stores/{id}`）と、保存の通信（CSRF トークンの取得と `PUT /api/seller/stores/{id}`）に、この画面で起こる共通代替フロー（\*a、\*b）を書き込んだ図です。`GET /api/stores/{id}` はログインしていなくても呼べる API なので、サーバーのセッションがないときは 401 にならず、購入者向けの公開の内容が返ります（「ユースケース記述との差」を見てください）。409 の後などの取り直し（`reload`）の失敗は、開いたときの取得の失敗と同じ表示になるので省いています。
 
 ```mermaid
 sequenceDiagram
+    autonumber
     actor User as 出店者
     box rgba(47,111,219,0.10) ブラウザー React
-        participant Menu as PageLink<br/>Common.jsx
-        participant Stores as SellerStoresPage<br/>SellerStores.jsx
-        participant Select as SellerStoreSelect.jsx
-        participant Shop as useShop.js
-        participant Nav as navigation.js
-        participant App as App.jsx
-        participant Work as Workspace.jsx
-        participant Page as ProfilePage<br/>PartnerForms.jsx
-    end
-
-    Note over User,Page: 共通代替フロー *a、*b を適用。図では省略
-    Note over Shop,App: 管理できる店舗の一覧 shop.sellerStores は、useShop() の<br/>reloadSellerStores() が GET /api/seller/stores で取得済み。図では省略
-
-    Note over User,Page: 基本フロー 1 「店舗プロフィール」画面を開く
-    alt 1b 「店舗一覧」から開く
-        User->>Stores: 対象店舗の「店舗情報を編集」をクリック
-        Note right of Stores: 閉鎖済み (closedAt あり) の店舗には<br/>このボタンを出さない
-        Stores->>Shop: edit(store) が setSellerStoreId(store.id)
-        Shop->>Shop: chosenSellerStoreId を更新し、<br/>localStorage に保存
-        Stores->>Nav: navigate('/seller/profile')
-    else メニューから開く
-        User->>Menu: サイドバーの「店舗プロフィール」をクリック<br/>(WorkspaceSidebar.jsx の MenuLink)
-        Menu->>Nav: follow() が navigate('/seller/profile')
-    end
-    Nav->>App: pushState と popstate。<br/>usePath() が path を更新する
-    App->>Work: Workspace に shop と path を渡す
-    Work->>Work: canSell(session) と、選んだ店舗の<br/>memberRole を確かめる
-    Note right of Work: 店舗の読み込み中、管理できる店舗が無いとき、<br/>ロールのない ORG_ADMIN の店舗では、<br/>案内の文を出す。図では省略
-    Work->>Page: path が /seller/profile なので<br/>ProfilePage key={storeId} を表示
-    Note over Page: 基本フロー 2 の通信は詳細図 2
-
-    opt 1a 複数の店舗を扱う (shop.sellerStores が 2 つ以上)
-        Work-->>User: 画面上部に「管理する店舗」の選択欄
-        User->>Select: 選択欄で店舗を選ぶ
-        Select->>Shop: onChange が setSellerStoreId(id)
-        Shop-->>App: sellerStoreId が変わり、App が再描画する
-        App->>Work: 新しい shop を渡す
-        Work->>Page: key={storeId} が変わるので<br/>ProfilePage を作り直す
-        Note over Page: 新しい storeId で基本フロー 2 へ (詳細図 2)
-    end
-```
-
-## 詳細図 2 基本フロー 2
-
-```mermaid
-sequenceDiagram
-    actor User as 出店者
-    box rgba(47,111,219,0.10) ブラウザー React
-        participant Page as ProfilePage<br/>PartnerForms.jsx
-        participant Hook as useResource.js
-        participant Http as api.js
+        participant Work as 出店者画面の枠<br/>Workspace<br/>(Workspace.jsx)
+        participant UseAuth as ログイン状態の読み込み<br/>useAuth<br/>(useAuth.js)
+        participant Panel as ログイン欄<br/>AuthPanel<br/>(AuthPanel.jsx)
+        participant Page as 店舗プロフィール画面<br/>ProfilePage<br/>(PartnerForms.jsx)
+        participant Status as エラーの表示<br/>ResourceStatus<br/>(ResourceView.jsx)
+        participant Hook as プロフィールの取得と保存<br/>useResource<br/>(useResource.js)
+        participant Http as 通信<br/>request<br/>(api.js)
+        participant AuthJs as 通信の準備<br/>authFetch<br/>(auth.js)
+        participant Notice as 期限切れのお知らせ<br/>SessionNotice<br/>(SessionNotice.jsx)
     end
     box rgba(27,127,92,0.12) EC API Spring Boot
-        participant Ctrl as Store<br/>Controller
-        participant Svc as StoreService
-        participant Auth as AuthService
-        participant Mod as StoreModeration<br/>Service
-        participant Repo as Store<br/>Repository
-        participant Org as Organization<br/>Repository
+        participant AuthCtrl as ログイン状態API<br/>AuthController<br/>(AuthController.java)
+        participant PwCtrl as ログインAPI<br/>PasswordLoginController<br/>(PasswordLoginController.java)
+        participant Filter as セッションの確認<br/>SessionValidityFilter<br/>(SessionValidityFilter.java)
+        participant Ctrl as 店舗API<br/>StoreController<br/>(StoreController.java)
+        participant Svc as 店舗の処理<br/>StoreService<br/>(StoreService.java)
     end
     participant Db as MySQL
-
-    Note over User,Db: どの要求も、ログイン中なら SessionValidityFilter が会員を確かめる。図では省略
-
-    Note over User,Db: 基本フロー 2 現在のプロフィールを表示する
-    Page->>Hook: useResource('/stores/' + storeId)
-    Note right of Hook: useEffect が reload() を自動で実行する
-    Hook->>Http: request('/stores/{storeId}')
-    Http->>Ctrl: GET /api/stores/{id}
-    Ctrl->>Svc: get(id)
-    Note over Svc,Db: @Transactional(readOnly = true)
-    Svc->>Repo: require(id) の findById(id)
-    Repo->>Db: SELECT stores
-    Db-->>Repo: 行
-    Repo-->>Svc: StoreEntity
-    Svc->>Auth: canViewAsStaff(store)
-    Note right of Auth: current() で会員を読み、canManageView() で<br/>オーナーの組織か、店舗の担当 (store_members)<br/>かを読む。図では省略
-    Auth-->>Svc: true
-    Svc->>Svc: publiclyVisible(store)
-    Note right of Svc: 運営が停止した店舗は canManageView() が false で、<br/>公開もされていないので 404 STORE_NOT_FOUND。図では省略
-    Svc->>Org: view(store) の findById(organizationId)
-    Org->>Db: SELECT organizations
-    Db-->>Org: 行
-    Org-->>Svc: OrganizationEntity (会社名)
-    Svc->>Mod: warnings(List.of(id))
-    Mod->>Db: findByStoreIdInAndEventTypeInOrderByIdDesc()<br/>SELECT store_moderation_events
-    Db-->>Mod: 行
-    Mod-->>Svc: 店舗ごとの今の警告
-    Svc->>Svc: withWarning(view(store), warning)
-    Svc-->>Ctrl: Profile
-    Ctrl-->>Http: 200 Profile (revision、company、name、contact、<br/>email、address、hours、story、warning)
-    Http-->>Hook: data
-    Hook-->>Page: resource.data
-    Page-->>User: WarningBadge (警告があれば「警告中」と<br/>「運営からの警告：理由」)、「会社名：…」、<br/>6 つの入力欄、「店舗情報を保存」
-```
-
-## 詳細図 3 基本フロー 3〜6
-
-```mermaid
-sequenceDiagram
-    actor User as 出店者
-    box rgba(47,111,219,0.10) ブラウザー React
-        participant Page as ProfilePage<br/>PartnerForms.jsx
-        participant Hook as useResource.js
-        participant Http as api.js
+    box rgba(180,120,20,0.12) 外部サービス
+        participant Cog as Amazon Cognito
     end
-    box rgba(27,127,92,0.12) EC API Spring Boot
-        participant Ctrl as Store<br/>Controller
-        participant Errs as ApiErrors
-        participant Svc as StoreService
-        participant Auth as AuthService
-        participant Repo as Store<br/>Repository
-        participant Org as Organization<br/>Repository
+
+    alt URL を直接開いた (/seller/profile を開いた、再読み込みした)
+        User->>UseAuth: /seller/profile の URL を開く
+        alt *a ログイン状態を読めない
+            UseAuth-xAuthCtrl: GET /api/auth/me (readSession)
+            UseAuth-->>Work: 失敗の文 (fetch の例外の文。共通のメッセージにはならない)
+            Work-->>User: *a-1 その文だけを表示。「再取得」はなく、やり直しはブラウザーの再読み込み
+        else *b ログインしていない
+            UseAuth->>AuthCtrl: GET /api/auth/me (readSession)
+            AuthCtrl-->>UseAuth: 200 authenticated=false
+            UseAuth-->>Work: ログインしていない
+            Work->>Panel: 画面の代わりにログイン欄を表示 (AuthPanel)
+            Panel-->>User: *b-1「メールアドレス」「パスワード」「ログイン」
+            User->>Panel: 入力して「ログイン」をクリック
+            Panel->>PwCtrl: ログインする (submit → passwordLogin)<br/>GET /api/auth/csrf の後に POST /api/auth/login。returnTo は今の URL
+            PwCtrl->>Cog: メールアドレスとパスワードを確かめる<br/>(InitiateAuth USER_PASSWORD_AUTH、CognitoPasswordLogin.java)
+            Cog-->>PwCtrl: ID トークンと refresh トークン
+            PwCtrl-->>Panel: 200 戻り先 (returnTo)
+            Panel-->>User: *b-2 /seller/profile を読み込み直す (complete → window.location.replace)<br/>この図の最初からやり直す
+        else ログインしている
+            UseAuth->>AuthCtrl: GET /api/auth/me (readSession)
+            AuthCtrl-->>UseAuth: 200 authenticated=true
+            UseAuth-->>Work: ログイン中の会員
+        end
+    else メニューから開いた (ログイン状態は読み直さない)
+        User->>Work: 出店者メニューの「店舗プロフィール」をクリック
     end
-    participant Db as MySQL
-
-    Note over User,Db: 基本フロー 3〜4 入力欄を編集して「店舗情報を保存」をクリックする
-    User->>Page: 入力欄を編集し「店舗情報を保存」をクリック
-    Note right of Page: 5a のうち空の必須項目は、Input の required で<br/>ブラウザーが送信を止める。文字数は maxLength で<br/>超えて入力できない。save() は呼ばれない
-    Page->>Page: onSubmit の save(event)。<br/>values(form) で 6 項目を集める
-    Page->>Hook: run(action)
-    Hook->>Http: write('/seller/stores/{storeId}', 'PUT',<br/>6 項目と resource.data.revision)
-    Note right of Http: send() の authFetch() (auth.js) が先に<br/>GET /api/auth/csrf を送る。図では省略
-    Http->>Ctrl: PUT /api/seller/stores/{id}
-
-    Note over User,Db: 基本フロー 5 入力内容を検証する
-    Ctrl->>Ctrl: @Valid で StoreService.Input を検査<br/>(@NotBlank、@NotNull、@Size、@Email)
-    alt 5a 入力が不正 (空白だけ、メールの形が違うなど)
-        Ctrl--xErrs: MethodArgumentNotValidException
-        Errs-->>Http: invalid() が 400 INVALID_INPUT
-        Http--xHook: readResponse() が throw ApiError(400)
-        Hook-->>Page: run() が false。error を設定する
-        Page-->>User: 「入力内容・文字数・数値の範囲を<br/>確認してください。」 入力欄はそのまま
-    else 検査を通る
-        Ctrl->>Svc: save(id, in)
-        Note over Svc,Db: クラスの @Transactional で save() 全体が 1 つのトランザクション
-        Svc->>Auth: requireManager(id)
-        Note right of Auth: requireStoreRole(id, true) が current() で会員を読み、<br/>オーナーの組織か、店舗の MANAGER かを確かめる
-        alt 6b 権限がない (STAFF、ロールなし、運営が停止した店舗、<br/>閉鎖済みで担当から外れた MANAGER)
-            Auth--xErrs: denied() が throw ApiException(403, FORBIDDEN)
-            Errs-->>Http: business() が 403 と message
-            Http--xHook: throw ApiError(403)
-            Hook-->>Page: run() が false。error を設定する
-            Page-->>User: 「この操作の権限がありません。」
-        else オーナーか MANAGER
-            Auth-->>Svc: 戻る
-            Svc->>Repo: require(id) の findById(id)
-            Repo->>Db: SELECT stores
-            Db-->>Repo: 行
-            Repo-->>Svc: StoreEntity
-            alt 6c 閉鎖済み (closedAt がある)
-                Svc--xErrs: requireNotClosed() が<br/>throw ApiException(409, STORE_CLOSED)
-                Errs-->>Http: business() が 409 と message
-                Http--xHook: throw ApiError(409)
-                Hook->>Http: 409 なので reload()
-                Note over Http,Db: GET /api/stores/{id} の流れは詳細図 2 と同じ。図では省略
-                Http-->>Hook: 最新のプロフィール
-                Hook-->>Page: run() が false。data と error を更新する
-                Page-->>User: 「この店舗は閉鎖済みです。」
-            else 6a s.getRevision() が in.revision() と違う
-                Svc--xErrs: throw ApiException(409, STORE_CHANGED)
-                Errs-->>Http: business() が 409 と message
-                Http--xHook: throw ApiError(409)
-                Hook->>Http: 409 なので reload()
-                Note over Http,Db: GET /api/stores/{id} の流れは詳細図 2 と同じ。図では省略
-                Http-->>Hook: 最新のプロフィール
-                Hook-->>Page: run() が false。data と error を更新する
-                Page->>Page: revision が変わったので<br/>form key={p.revision} を作り直す
-                Page-->>User: 「店舗情報が更新されています。」<br/>最新のプロフィールを入力欄に表示
-            else revision が同じ
-                Svc->>Svc: in.name().trim()
-                opt 店舗名を変えた
-                    Svc->>Repo: existsByOrganizationIdAndName(organizationId, name)
-                    Repo->>Db: SELECT stores
-                    Db-->>Repo: 行 または 空
-                    Repo-->>Svc: true か false
+    Work->>Page: 選んでいる店舗の ProfilePage を表示
+    Page->>Hook: 店舗のプロフィールを取りに行くよう頼む (useResource)
+    Hook->>Http: 自動で通信を始める (reload → request)
+    alt *a GET が届かない、または応答が JSON でない
+        Http-xFilter: GET /api/stores/{id}
+        Http->>Http: 通信の失敗にまとめる<br/>(send か readResponse → ApiError(networkErrorMessage, 0))
+        Http--xHook: エラーを投げる
+        Hook->>Status: エラーの文を出す (reload の catch → setError)
+        Status-->>User: *a-1「サーバーに接続できません。<br/>接続を確認して再試行してください。」と「再取得」。入力欄は出ない
+    else *b refresh トークンが失効している
+        Http->>Filter: GET /api/stores/{id}
+        Filter->>Cog: ID トークンを更新する (InitiateAuth REFRESH_TOKEN_AUTH)
+        Cog-->>Filter: 失効している (NotAuthorizedException)
+        Filter-->>Http: セッションを消し、401 LOGIN_REQUIRED
+        Http->>Notice: 期限切れを知らせる<br/>(wasSignedIn が真なので kusakari-session-expired)
+        Http--xHook: エラーを投げる (ApiError(sessionExpiredMessage, 401))
+        Hook->>Status: エラーの文を出す (reload の catch → setError)
+        Notice-->>User: *b-1「ログインの有効期限が切れました。もう一度ログインしてください。」<br/>「ログインする」「閉じる」(「ログインする」の後は *b-2 で /seller/profile に戻る)
+    else *a ID トークンの更新で Cognito に届かない
+        Http->>Filter: GET /api/stores/{id}
+        Filter-xCog: ID トークンを更新する<br/>(InitiateAuth REFRESH_TOKEN_AUTH、CognitoPasswordLogin.java)
+        Filter-->>Http: 503 AUTH_UNAVAILABLE (セッションは残す)
+        Http--xHook: エラーを投げる (ApiError 503)
+        Hook->>Status: エラーの文を出す (reload の catch → setError)
+        Status-->>User: *a-1「認証を確認できません。<br/>時間をおいて再試行してください。」と「再取得」
+    else *a MySQL との通信に失敗
+        Http->>Filter: GET /api/stores/{id}
+        Filter->>Ctrl: 要求を通す (chain.doFilter)
+        Ctrl->>Svc: 店舗のプロフィールを作るよう頼む (get)
+        Svc->>Db: 店舗、会員、組織、警告を読む (上の図の 10〜25)
+        Db--xSvc: 失敗 (DataAccessException)
+        Svc--xCtrl: 例外
+        Ctrl-->>Http: 503 DATABASE_UNAVAILABLE (ApiErrors.java の database)
+        Http--xHook: エラーを投げる (ApiError 503)
+        Hook->>Status: エラーの文を出す (reload の catch → setError)
+        Status-->>User: *a-1「保存処理を完了できませんでした。<br/>時間をおいて再試行してください。」と「再取得」
+    else 読めた
+        Http->>Filter: GET /api/stores/{id}
+        Filter->>Ctrl: 要求を通す (chain.doFilter)
+        Ctrl-->>Http: 200 プロフィール (上の図の 9〜27)
+        Http-->>Hook: プロフィール
+        Hook-->>Page: プロフィール
+        Page-->>User: 会社名と 6 つの入力欄、「店舗情報を保存」
+        User->>Page: 入力欄を編集し、「店舗情報を保存」をクリック
+        Page->>Hook: 保存するよう頼む (save → run)
+        Hook->>Http: 書き換える通信を送る (write → request)
+        Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (authFetch)
+        alt *a CSRF トークンを取れない (届かない、または 200 以外)
+            AuthJs-xAuthCtrl: GET /api/auth/csrf
+            AuthJs--xHttp: エラーを投げる
+            Http->>Http: 通信の失敗にまとめる<br/>(send の catch → ApiError(networkErrorMessage, 0))
+            Http--xHook: エラーを投げる
+            Hook->>Status: エラーの文を出す (run の catch → setError)<br/>0 なので取り直さない
+            Status-->>User: *a-1「サーバーに接続できません。<br/>接続を確認して再試行してください。」と「再取得」<br/>*a-2 入力欄は入力のまま
+        else CSRF トークンを取れた
+            AuthJs->>AuthCtrl: GET /api/auth/csrf
+            AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン
+            alt *a PUT が届かない、または応答が JSON でない (保存されたかは分からない)
+                AuthJs-xFilter: PUT /api/seller/stores/{id}
+                Http->>Http: 通信の失敗にまとめる<br/>(send か readResponse → ApiError(networkErrorMessage, 0))
+                Http--xHook: エラーを投げる
+                Hook->>Status: エラーの文を出す (run の catch → setError)<br/>0 なので取り直さない
+                Status-->>User: *a-1「サーバーに接続できません。<br/>接続を確認して再試行してください。」と「再取得」<br/>*a-2 入力欄は入力のまま
+            else *b ログインの期限切れ (サーバーのセッションがない、refresh トークンが失効)
+                AuthJs->>Filter: PUT /api/seller/stores/{id}
+                Filter-->>Http: 401 LOGIN_REQUIRED<br/>(セッションが無いときは AuthConfiguration.java が返す)
+                Http->>Notice: 期限切れを知らせる<br/>(wasSignedIn が真なので kusakari-session-expired)
+                Http--xHook: エラーを投げる (ApiError(sessionExpiredMessage, 401))
+                Hook->>Status: エラーの文を出す (run の catch → setError)
+                Notice-->>User: *b-1「ログインの有効期限が切れました。<br/>もう一度ログインしてください。」「ログインする」「閉じる」
+                alt ログインする
+                    User->>Notice: 「ログインする」をクリック
+                    Notice->>AuthJs: ログイン画面へ移る (login)
+                    AuthJs-->>User: /account/login?returnTo=/seller/profile のログイン画面<br/>(*b-2 ログインの後は店舗プロフィール画面を開き直す。入力は残らない)
+                else 閉じる
+                    User->>Notice: 「閉じる」をクリック
+                    Notice-->>User: お知らせを閉じる (setExpired(false))。入力欄は入力のまま。<br/>ログインはしていない
                 end
-                alt 同じ組織に同じ店舗名がある (記述にない)
-                    Svc--xErrs: throw ApiException(409, STORE_NAME_EXISTS)
-                    Errs-->>Http: business() が 409 と message
-                    Http--xHook: throw ApiError(409)
-                    Hook->>Http: 409 なので reload()
-                    Http-->>Hook: 最新のプロフィール (revision は同じ)
-                    Hook-->>Page: run() が false。data と error を更新する
-                    Page-->>User: 「同じ名前の店舗がすでにあります。」<br/>form を作り直さないので入力欄はそのまま
-                else 基本フロー 6 保存できる
-                    Svc->>Svc: s.updateProfile(name, contact, email,<br/>address, hours, story) (StoreEntity)
-                    Svc->>Repo: flush()
-                    Repo->>Db: UPDATE stores ... WHERE id = ? AND revision = ?<br/>(@Version で revision を 1 増やす)
-                    Note right of Db: 読んでから UPDATE までにほかの更新が入ると、<br/>OptimisticLockingFailureException を<br/>ApiErrors.conflict() が 409 DATA_CHANGED にする。図では省略
-                    Db-->>Repo: 1 行
-                    Repo-->>Svc: 戻る
-                    Svc->>Org: view(s) の findById(organizationId)
-                    Org->>Db: SELECT organizations
-                    Db-->>Org: 行
-                    Org-->>Svc: 会社名
-                    Svc-->>Ctrl: Profile (コミット)
-                    Ctrl-->>Http: 200 Profile
-                    Http-->>Hook: data
-                    Hook->>Http: reload() が request('/stores/{storeId}')
-                    Note over Http,Db: GET /api/stores/{id} の流れは詳細図 2 と同じ。図では省略
-                    Http-->>Hook: 最新のプロフィール
-                    Hook-->>Page: run() が true。data と notice「保存しました。」
-                    Page->>Page: revision が増えたので<br/>form key={p.revision} を作り直す
-                    Page-->>User: 「保存しました。」、保存した内容の入力欄
+            else *a ID トークンの更新で Cognito に届かない
+                AuthJs->>Filter: PUT /api/seller/stores/{id}
+                Filter-xCog: ID トークンを更新する<br/>(InitiateAuth REFRESH_TOKEN_AUTH、CognitoPasswordLogin.java)
+                Filter-->>Http: 503 AUTH_UNAVAILABLE (セッションは残す)
+                Http--xHook: エラーを投げる (ApiError 503)
+                Hook->>Status: エラーの文を出す (run の catch → setError)<br/>503 なので取り直さない
+                Status-->>User: *a-1「認証を確認できません。<br/>時間をおいて再試行してください。」と「再取得」<br/>*a-2 入力欄は入力のまま
+            else 要求が Controller まで届いた
+                AuthJs->>Filter: PUT /api/seller/stores/{id}
+                Filter->>Ctrl: 要求を通す (chain.doFilter)
+                Ctrl->>Svc: 店舗のプロフィールを保存するよう頼む (save)
+                Svc->>Db: 立場を確かめ、店舗を読み、revision と店舗名を確かめて<br/>書き換え、コミットする (上の図の 49〜97)
+                alt *a MySQL との通信に失敗
+                    Db--xSvc: 失敗 (DataAccessException)。<br/>トランザクションの変更はすべて取り消す
+                    Svc--xCtrl: 例外
+                    Ctrl-->>Http: 503 DATABASE_UNAVAILABLE (ApiErrors.java の database)
+                    Http--xHook: エラーを投げる (ApiError 503)
+                    Hook->>Status: エラーの文を出す (run の catch → setError)<br/>503 なので取り直さない
+                    Status-->>User: *a-1「保存処理を完了できませんでした。<br/>時間をおいて再試行してください。」と「再取得」<br/>*a-2 入力欄は入力のまま
+                else 保存した
+                    Db-->>Svc: 完了
+                    Svc-->>Ctrl: 保存後のプロフィール
+                    Ctrl-->>Http: 200 保存後のプロフィール
+                    Http-->>Hook: 保存後のプロフィール
+                    Hook-->>Page: 取り直して成功を返す (reload、run が true)
+                    Page-->>User: 「保存しました。」と、保存した内容の入力欄
                 end
             end
+        end
+    end
+    opt *a-3 やり直す
+        alt プロフィールを取り直す
+            User->>Status: 「再取得」をクリック
+            Status->>Hook: プロフィールを取り直す (reload)。保存の通信は送り直さない
+        else 保存をやり直す
+            User->>Page: 入力のまま、もう一度「店舗情報を保存」をクリック<br/>(基本フロー 4 へ戻る)
         end
     end
 ```
@@ -315,42 +346,52 @@ sequenceDiagram
 ## ユースケース記述との差
 
 - 5a のうち、店舗名・所在地・営業時間が空のときは、`ResourceView.jsx` の `Input` の `required` でブラウザーが送信を止めます。表示されるのはブラウザーの標準のメッセージで、通信しません。文字数の上限は `maxLength` で、超えて入力できません。サーバーまで届く 5a は、空白だけの入力や、問い合わせメールの形の違い（`@Email`）です。問い合わせメールの入力欄は `type="text"` なので、形を確かめるのはサーバーだけです。画面には `ApiErrors.invalid()` の「入力内容・文字数・数値の範囲を確認してください。」が出ます。
-- 6b の STAFF とロールなしの担当者にも、`Workspace.jsx` は「店舗プロフィール」画面と「店舗情報を保存」ボタンを出します。保存したときに、`AuthService.requireManager()` が 403 `FORBIDDEN` で止めます。
-- 6c の「この店舗は閉鎖済みです。」（409 `STORE_CLOSED`）が出るのは、オーナー（と運営）だけです。閉鎖済みになると、`StoreClosureService.settle()` が `storeMembers.deleteAllAtStore()` で店舗の担当を外します。そのため MANAGER の保存は、`requireManager()` で 403 `FORBIDDEN`「この操作の権限がありません。」になります。
-- 6a の後の再確認は、エラーの文と、取り直した最新のプロフィールを入力欄に出すことで行います。ほかの確認の操作はありません。
-- 記述にない処理として、店舗名を変えたときに同じ組織に同じ名前の店舗があると、409 `STORE_NAME_EXISTS`「同じ名前の店舗がすでにあります。」で保存しません。このとき `revision` は変わらないので、`<form key={p.revision}>` が作り直されず、入力欄は出店者の入力のままです。
-- 記述にない処理として、`revision` を確かめてから `UPDATE` するまでにほかの更新が入ると、`StoreEntity` の `@Version` の確認で `OptimisticLockingFailureException` になり、`ApiErrors.conflict()` が 409 `DATA_CHANGED`「データが競合しました。最新の内容を確認してください。」を返します。
-- 記述にない処理として、運営が停止した店舗は、`GET /api/stores/{id}` が 404 `STORE_NOT_FOUND`「店舗が見つかりません。」になり、入力欄を出しません。保存も `requireStoreRole()` が 403 にします。事前条件には閉鎖済みだけが書かれています。
-- 1a の選択欄は、管理できる店舗が 2 つ以上のときだけ、「店舗プロフィール」画面の上部に出ます。選んだ店舗は `useShop.js` が `localStorage` に残すので、次に開いたときも同じ店舗を表示します。
-
-## 確かめられなかったこと
-
-- `revision` の確認と `UPDATE` のあいだの競合で 409 `DATA_CHANGED` になることは、コードから読んだだけで、動かして確かめていません。
-- 5a でブラウザーが出すメッセージの文は、ブラウザーごとに違うので、図には書いていません。
+- 関連情報では担当者・問い合わせメール・店舗紹介は任意ですが、画面の `Input` は `required` を店舗名・所在地・営業時間だけに付けるので、記述どおりです。サーバーの `StoreService.Input` も、担当者・問い合わせメール・店舗紹介は `@NotNull` だけで、空の文字列を受け付けます。保存のときは、問い合わせメール以外の前後の空白を `StoreEntity.updateProfile()` が取り除きます。
+- 6b の STAFF とロールなしの担当者にも、`Workspace.jsx` は「店舗プロフィール」画面と「店舗情報を保存」ボタンを出します（`GET /api/stores/{id}` は `canViewAsStaff()` で担当者なら見られる）。保存したときに、`AuthService.requireManager()` が 403 `FORBIDDEN` で止めます。
+- 6c の「この店舗は閉鎖済みです。」（409 `STORE_CLOSED`）が出るのは、オーナー（と運営）だけです。閉鎖済みになると、`StoreClosureService.settle()` が `storeMembers.deleteAllAtStore()` で店舗の担当を外します。そのため MANAGER の保存は、`requireManager()` で 403 `FORBIDDEN`「この操作の権限がありません。」になります。図では 6b の枝に入れています。
+- 6a の後の再確認は、エラーの文と、取り直した最新のプロフィールを入力欄に出すことで行います。ほかの確認の操作はありません。入力欄が最新の値に変わるのは、`<form key={p.revision}>` が新しい `revision` で作り直されるためで、出店者が入力していた内容は消えます。
+- 記述にない分岐として、店舗名を変えたときに同じ組織に同じ名前の店舗があると、409 `STORE_NAME_EXISTS`「同じ名前の店舗がすでにあります。」で保存しません。このとき `revision` は変わらないので、`<form key={p.revision}>` が作り直されず、入力欄は出店者の入力のままです。
+- 記述にない分岐として、`revision` を確かめてから `UPDATE` するまでにほかの更新が入ると、`StoreEntity` の `@Version` の確認で `OptimisticLockingFailureException` になり、`ApiErrors.conflict()` が 409 `DATA_CHANGED`「データが競合しました。最新の内容を確認してください。」を返します。画面は 409 なので取り直します。間が短いので、図には書いていません。
+- 記述にない分岐として、運営が停止した店舗は、`GET /api/stores/{id}` が 404 `STORE_NOT_FOUND`「店舗が見つかりません。」になり、入力欄を出しません（`canManageView()` が運営だけに見せ、公開もされていないため）。保存も `requireStoreRole()` が 403 にします。事前条件には閉鎖済みだけが書かれているので、図には書いていません。
+- 1a の選択欄は、管理できる店舗が 2 つ以上のときだけ、「店舗プロフィール」画面の上部に出ます（`Workspace.jsx` の `storePaths`）。記述では基本フロー 2 の前ですが、コードでは選択欄は画面と一緒に出るので、図では表示の後に置いています。選んだ店舗は `useShop.js` が `localStorage` に残すので、次に開いたときも同じ店舗を表示します。
+- 1b の「店舗情報を編集」は、閉鎖済みの店舗（`closedAt` がある）には出ません。
+- 基本フロー 1 の前に、`useShop.js` の `reloadSellerStores()` が `GET /api/seller/stores` で管理できる店舗を読みます。読み込み中は「管理する店舗を確認しています。」、管理できる店舗がないときは「管理できる店舗がまだありません。」と「店舗一覧を開く」を出します。ORG_ADMIN でロールのない店舗では、画面の代わりに「(店舗名)では担当のロールがないため、人事（アカウント・招待キー）の画面だけを使えます。」を出し、通信しません。どれも事前条件の外なので、図には書いていません。
+- 共通代替フロー: `GET /api/stores/{id}` は、ログインしていなくても呼べる API です（`AuthConfiguration.java` の `permitAll`）。そのため、使っている間にサーバーのセッションがなくなったときは 401 になりません。`canViewAsStaff()` が false になり、店舗が公開中なら購入者向けの内容（警告なし）が 200 で返って入力欄が出ます。公開していない店舗なら 404「店舗が見つかりません。」です。どちらの場合も、保存の `PUT` で 401 になり、期限切れのお知らせが出ます。refresh トークンの失効は、`SessionValidityFilter` が API の種類によらず 401 を返すので、画面を開いたときにもお知らせが出ます。
+- 共通代替フロー: 401 のときは、期限切れのお知らせ（`SessionNotice`）に加えて、`ResourceStatus` も「ログインの有効期限が切れました。もう一度ログインしてください。」と「再取得」を出します。
+- 関連情報「閉鎖済みの店舗の担当者・問い合わせメールは、閉鎖済みになってから90日後に消す」は、このユースケースの流れの外なので、図には書いていません。
 
 ## 参照したコード
 
-- [frontend/src/workspace/WorkspaceSidebar.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/WorkspaceSidebar.jsx): `MenuLink`
-- [frontend/src/workspace/Common.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/Common.jsx): `PageLink` の `follow()`
-- [frontend/src/workspace/navigation.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/navigation.js): `navigate()`、`usePath()`
-- [frontend/src/App.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/App.jsx): `useShop()` と `usePath()` の結果を `Workspace` に渡す
-- [frontend/src/workspace/Workspace.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/Workspace.jsx): `sellerMenu`、`storePaths`、`rolePaths`、`Workspace`（`ProfilePage` と `SellerStoreSelect` の表示）
-- [frontend/src/workspace/SellerStores.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/SellerStores.jsx): `SellerStoresPage` の `edit()`
-- [frontend/src/components/SellerStoreSelect.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/components/SellerStoreSelect.jsx): `SellerStoreSelect` の `onChange`
-- [frontend/src/useShop.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/useShop.js): `setSellerStoreId()`、`reloadSellerStores()`、`sellerStoreId`
-- [frontend/src/workspace/PartnerForms.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/PartnerForms.jsx): `ProfilePage` の `save()`、`<form key={p.revision}>`
-- [frontend/src/workspace/ResourceView.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/ResourceView.jsx): `Input`（`required`、`maxLength`）、`values()`、`ResourceStatus`
-- [frontend/src/workspace/Moderation.jsx](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/Moderation.jsx): `WarningBadge`
-- [frontend/src/workspace/useResource.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/workspace/useResource.js): `useResource` の `reload()`、`run()`、`write()`
-- [frontend/src/api.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/api.js): `request()`、`send()`、`readResponse()`
-- [frontend/src/auth.js](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/frontend/src/auth.js): `authFetch()`
-- [backend/src/main/java/jp/kusakari/ec/store/controller/StoreController.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/store/controller/StoreController.java): `get()`、`save()`
-- [backend/src/main/java/jp/kusakari/ec/store/service/StoreService.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/store/service/StoreService.java): `Input`、`get()`、`save()`、`requireNotClosed()`、`view()`、`withWarning()`
-- [backend/src/main/java/jp/kusakari/ec/store/service/StoreModerationService.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/store/service/StoreModerationService.java): `warnings()`
-- [backend/src/main/java/jp/kusakari/ec/store/service/StoreClosureService.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/store/service/StoreClosureService.java): `settle()`（閉鎖済みにして担当を外す）
-- [backend/src/main/java/jp/kusakari/ec/auth/AuthService.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/AuthService.java): `current()`、`canViewAsStaff()`、`canManageView()`、`requireManager()`、`requireStoreRole()`
-- [backend/src/main/java/jp/kusakari/ec/auth/SessionValidityFilter.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/auth/SessionValidityFilter.java): `doFilterInternal()`
-- [backend/src/main/java/jp/kusakari/ec/catalog/persistence/repository/StoreRepository.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/catalog/persistence/repository/StoreRepository.java): `existsByOrganizationIdAndName()`
-- [backend/src/main/java/jp/kusakari/ec/catalog/persistence/entity/StoreEntity.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/catalog/persistence/entity/StoreEntity.java): `updateProfile()`、`@Version revision`
-- [backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java): `business()`、`invalid()`、`conflict()`
-- [backend/src/main/resources/db/migration/V1__schema.sql](https://github.com/abeouga/kusakari-ec/blob/19a2be307ee71a2cd87e538236c3c8c42929c5b3/backend/src/main/resources/db/migration/V1__schema.sql): `stores`（`uk_stores_org_name`、`revision`）
+- [frontend/src/workspace/Workspace.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/Workspace.jsx): `sellerMenu`、`storePaths`、`rolePaths`、`Workspace`（未ログインの `AuthPanel`、`ProfilePage` と `SellerStoreSelect` の表示）
+- [frontend/src/workspace/WorkspaceSidebar.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/WorkspaceSidebar.jsx): `MenuLink`
+- [frontend/src/workspace/Common.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/Common.jsx): `PageLink` の `follow`
+- [frontend/src/workspace/navigation.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/navigation.js): `navigate`、`usePath`
+- [frontend/src/App.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/App.jsx): `useShop` と `usePath` の結果を `Workspace` に渡す、`SessionNotice`
+- [frontend/src/workspace/SellerStores.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/SellerStores.jsx): `SellerStoresPage` の `edit`、「店舗情報を編集」
+- [frontend/src/components/SellerStoreSelect.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/components/SellerStoreSelect.jsx): `SellerStoreSelect` の `onChange`
+- [frontend/src/useShop.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/useShop.js): `setSellerStoreId`、`reloadSellerStores`、`sellerStoreId`
+- [frontend/src/workspace/PartnerForms.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/PartnerForms.jsx): `ProfilePage` の `save`、`<form key={p.revision}>`
+- [frontend/src/workspace/ResourceView.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/ResourceView.jsx): `Input`（`required`、`maxLength`）、`values`、`ResourceStatus`（エラーの文と「再取得」）
+- [frontend/src/workspace/Moderation.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/Moderation.jsx): `WarningBadge`
+- [frontend/src/workspace/useResource.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/useResource.js): `useResource`、`reload`、`run`、`write`
+- [frontend/src/api.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/api.js): `request`、`send`、`readResponse`、`ApiError`、`networkErrorMessage`、`sessionExpiredMessage`
+- [frontend/src/auth.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/auth.js): `readSession`、`authFetch`（`GET /api/auth/csrf`）、`passwordLogin`、`wasSignedIn`、`login`
+- [frontend/src/useAuth.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/useAuth.js): `useAuth`
+- [frontend/src/components/AuthPanel.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/components/AuthPanel.jsx): `submit`、`complete`、`returnTo`
+- [frontend/src/components/SessionNotice.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/components/SessionNotice.jsx): 期限切れのお知らせ
+- [backend/src/main/java/jp/kusakari/ec/store/controller/StoreController.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/store/controller/StoreController.java): `get`、`save`
+- [backend/src/main/java/jp/kusakari/ec/store/service/StoreService.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/store/service/StoreService.java): `Input`、`get`、`publiclyVisible`、`save`、`requireNotClosed`、`require`、`view`、`withWarning`
+- [backend/src/main/java/jp/kusakari/ec/store/service/StoreModerationService.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/store/service/StoreModerationService.java): `warnings`
+- [backend/src/main/java/jp/kusakari/ec/moderation/persistence/repository/StoreModerationEventRepository.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/moderation/persistence/repository/StoreModerationEventRepository.java): `findByStoreIdInAndEventTypeInOrderByIdDesc`
+- [backend/src/main/java/jp/kusakari/ec/moderation/service/ModerationHistory.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/moderation/service/ModerationHistory.java): `activeWarnings`
+- [backend/src/main/java/jp/kusakari/ec/store/service/StoreClosureService.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/store/service/StoreClosureService.java): `settle`（閉鎖済みにして担当を外す）
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthService.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthService.java): `current`、`canViewAsStaff`、`canManageView`、`requireManager`、`requireStoreRole`、`denied`
+- [backend/src/main/java/jp/kusakari/ec/catalog/persistence/repository/StoreRepository.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/catalog/persistence/repository/StoreRepository.java): `existsByOrganizationIdAndName`
+- [backend/src/main/java/jp/kusakari/ec/store/persistence/repository/OrganizationRepository.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/store/persistence/repository/OrganizationRepository.java): `findById`（JpaRepository）
+- [backend/src/main/java/jp/kusakari/ec/catalog/persistence/entity/StoreEntity.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/catalog/persistence/entity/StoreEntity.java): `updateProfile`、`@Version revision`
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthController.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthController.java): `GET /api/auth/me`、`csrf`
+- [backend/src/main/java/jp/kusakari/ec/auth/PasswordLoginController.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/PasswordLoginController.java): `POST /api/auth/login`
+- [backend/src/main/java/jp/kusakari/ec/auth/CognitoPasswordLogin.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/CognitoPasswordLogin.java): ログインと ID トークンの更新、503 `AUTH_UNAVAILABLE`
+- [backend/src/main/java/jp/kusakari/ec/auth/SessionValidityFilter.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/SessionValidityFilter.java): `doFilterInternal`、`renewIdToken`（401 `LOGIN_REQUIRED`）
+- [backend/src/main/java/jp/kusakari/ec/auth/AuthConfiguration.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthConfiguration.java): `permitAll` の API（`GET /api/stores/*`）、`authenticationEntryPoint`（401 `LOGIN_REQUIRED`）
+- [backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java): `business`、`invalid`、`conflict`、`database`
