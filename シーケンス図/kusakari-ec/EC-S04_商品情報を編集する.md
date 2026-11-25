@@ -9,7 +9,7 @@
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 Repository は、商品（`ProductRepository`）と在庫（`InventoryRepository`）だけを参加者にし、ほかは矢印の文に Repository とメソッドの名前を書いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
-代替フローのうち、エラーで終わるもの（7a・8a・8b・8c）と記述にない分岐（商品がない 404）は、分かれる所だけを描き、結果と画面は Note に文で書いています。植物の構成の取り直し（Canvas API への問い合わせと 502・503）と「戻る」は、`opt` の中の矢印 1 本と Note にしています。サーバーが失敗を返したときの画面の後処理（`readResponse` が `ApiError` を投げる → `write` の `catch` で画面の上部にエラーの文を出す → 一覧を取り直し、同じ商品があれば「変更前の在庫数」を最新にする → 編集フォームは開いたままで入力は残る）は、どれも同じです。
+エラーの代替フローは図に描かず、図の下に並べています。植物の構成の取り直し（Canvas API への問い合わせと 502・503）と「戻る」は、`opt` の中の矢印 1 本と Note にしています。
 
 ```mermaid
 sequenceDiagram
@@ -86,9 +86,6 @@ sequenceDiagram
 
     User->>Form: 「変更を保存」をクリック
     Form->>Form: すべてのタブの入力を確かめる (save → validate(null)。<br/>firstInvalid、商品名・説明、画像、plant.currentProfile)
-    break 7a 画面の検査で止まる
-        Note over User,Form: 結果: 通信しない。<br/>画面: 7a-1 フォームの下にエラーの文を出し、直す入力欄のタブを開く (fail → reveal。「在庫は0以上にしてください。」など)。7a-2 基本フロー 5 へ戻る
-    end
     Form->>Cat: 入力をまとめ、フォームを開いたときの在庫数を付けて保存を頼む<br/>(onSave → productInput → ProductManager の save → catalog.save、expectedStock)
     Cat->>Http: 商品を書き換える通信を送る<br/>(write → api.updateProduct → request)
     Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (authFetch)
@@ -96,29 +93,11 @@ sequenceDiagram
     AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
     AuthJs->>EdCtrl: PUT /api/products/{id}<br/>(storeId、sku、stock、expectedStock、heightCm、plantModelProfile ほか)
     EdCtrl->>EdCtrl: 入力を検査する (@Valid の ProductRequest)
-    break 7a 入力が不正 (画面の検査が先に止めるので、画面からはふつう届かない)
-        Note over EdCtrl,Mgr: 結果: 400 INVALID_INPUT「入力内容・文字数・数値の範囲を確認してください。」を返す。<br/>画面: 7a-1 画面の上部にエラーの文。編集フォームは開いたまま
-    end
     EdCtrl->>EdSvc: 商品を書き換えるよう頼む (update)<br/>update 全体が 1 つのトランザクション。例外が出るとすべて取り消す
     EdSvc->>CatgSvc: カテゴリーが登録済みかを確かめる (require)<br/>カテゴリーを共有ロックで読む (CategoryRepository.share、SELECT ... FOR SHARE categories)
-    break 7a カテゴリーが無いか削除済み
-        Note over CatgSvc,Mgr: 結果: 400 INVALID_CATEGORY「登録済みのカテゴリを選択してください。」を返し、何も変えない。<br/>画面: 7a-1 画面の上部にエラーの文。編集フォームは開いたまま
-    end
     EdSvc->>ProdRepo: 商品の行をロックして読む (findLocked、SELECT ... FOR UPDATE products)
-    break 商品が無い (記述なし)
-        Note over ProdRepo,Mgr: 結果: 404 PRODUCT_NOT_FOUND を返し、何も変えない。<br/>画面: 画面の上部に「商品が見つかりません。」
-    end
     EdSvc->>Auth: 商品の店舗を扱えるか (STAFF 以上か) を確かめる<br/>(requireProductStore → requireStoreRole。会員、店舗、組織、担当とロールを読む)
-    break 8c ロールなし、運営が停止した店舗、ほかの組織の店舗
-        Note over Auth,Mgr: 結果: 403 を 404 PRODUCT_NOT_FOUND に変えて返し、何も変えない。<br/>画面: 8c-1 画面の上部に「商品が見つかりません。」
-    end
     EdSvc->>InvRepo: 店舗と商品番号が変わっていないかを確かめ (画面はそのまま送るので通る)、<br/>在庫の行をロックして読む (lock、SELECT ... FOR UPDATE inventory)
-    break 8a 削除した商品 (在庫の行がないか、publicationStatus が DELETED)
-        Note over InvRepo,Mgr: 結果: 409 PRODUCT_ARCHIVED を返し、何も変えない。<br/>画面: 8a-1 画面の上部に「削除済みの商品は編集できません。」。編集フォームは開いたまま
-    end
-    break 8b 在庫数が expectedStock と違う
-        Note over InvRepo,Mgr: 結果: 409 STOCK_CHANGED を返し、何も変えない (SellerProductService.stockChanged)。<br/>画面: 8b-1「在庫数が変更されています（現在の在庫数：N）。…」と、最新の「変更前の在庫数：N」。8b-2 基本フロー 5 へ戻る
-    end
     EdSvc->>EdSvc: 入力を商品に書き込む (mapper.updateEntity)。<br/>植物の構成を作り直すかを決める (resolveModel)
     opt 植物の特徴が前と違う、構成がない、構成の version が 4 未満
         CModel->>CApi: 植物の 3D の構成を作るよう頼む (EdSvc の resolve から)<br/>POST /api/model-assemblies/resolve<br/>(受けた要求の KUSAKARI_SESSION Cookie と X-CSRF-TOKEN を付ける)
@@ -143,6 +122,8 @@ sequenceDiagram
 ```
 
 ![EC-S04 シーケンス図](<images/EC-S04_商品情報を編集する-1.png>)
+
+図に描いていない代替フロー：7a（入力の誤り、カテゴリーが無い）、8a（削除した商品）、8b（在庫数が変わっていた）、8c（編集の権限がない）、（記述なし）の分岐
 
 ## 共通代替フローを直接書いた図
 

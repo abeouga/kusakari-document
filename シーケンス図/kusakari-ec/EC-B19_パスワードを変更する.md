@@ -8,7 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 EC API が Amazon Cognito を 2 回呼び（現在のパスワードでのログインと、パスワードの変更）、ブラウザーは Cognito と直接通信しません。共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
-代替フローのうち、エラーで終わるもの（7a・8a）と記述にない分岐（入力の 400 `INVALID_INPUT`、429・409、403 `FORBIDDEN`、400 `PASSWORD_REJECTED`）は、分かれる所だけを描き、結果と画面は Note に文で書いています。サーバーがエラーを返したときの画面の後処理（`readResponse` が `ApiError` を投げる → `submit` の `catch` で入力欄の上にエラーの文を出し、入力は残す）は、どれも同じです。
+エラーは最重要の 8a（現在のパスワードが正しくない）だけを描き、ほかの代替フローは図の下に並べています。
 
 ```mermaid
 sequenceDiagram
@@ -37,7 +37,7 @@ sequenceDiagram
         participant Cog as Amazon Cognito
     end
 
-    Note over User,Cog: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認) と 14 に適用<br/>*a 通信に失敗した場合: 12、14、37 に適用
+    Note over User,Cog: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認) と 12 に適用<br/>*a 通信に失敗した場合: 11、12、32 に適用
 
     User->>Work: アカウント画面のサイドバー「アカウント設定」の<br/>「パスワード変更」をクリック (EC-C01)
     Work->>Acct: URL を /account/password に変え、AccountPage を表示<br/>(PageLink → navigate、tab は「パスワード変更」)
@@ -48,18 +48,11 @@ sequenceDiagram
     AuthCtrl-->>Hook: 200 ログイン状態 (SessionView。この画面では使わない)
 
     User->>Form: 3 つの欄に入力し (基本フロー 3〜5)、<br/>「パスワードを変更」をクリック
-    break 7a 新しいパスワードが 8 文字未満か、確認用パスワードと一致しない<br/>(submit。form は noValidate なので、ブラウザーの検査はしない)
-        Form-->>User: 7a-1「新しいパスワードは8文字以上で入力してください。」か<br/>「新しいパスワードと確認用パスワードが一致しません。」(setError)。<br/>通信しない。入力は残る。7a-2 基本フロー 3 へ戻る
-    end
     Form->>Http: パスワードを変える通信を送る (write → request)<br/>ボタンは「変更しています…」
     Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (send → authFetch)
     AuthJs->>AuthCtrl: GET /api/auth/csrf
     AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
     AuthJs->>PwCtrl: PUT /api/account/password<br/>(currentPassword、newPassword、confirmPassword、CSRF トークンのヘッダー付き)
-    break 現在のパスワードが空、または新しいパスワードが空白だけ (記述なし)
-        PwCtrl--xErrs: 入力の検査で例外を投げる<br/>(PasswordRequest の @NotBlank → MethodArgumentNotValidException)
-        Note over Errs,Form: 結果: 400 INVALID_INPUT「入力内容・文字数・数値の範囲を確認してください。」を返す。<br/>画面: その文 (catch → setError)。入力は残る。
-    end
     PwCtrl->>Auth: ログイン中の会員を読む<br/>(current → findByIssuerAndSubject、SELECT members)
     Auth-->>PwCtrl: 会員 (メールアドレスと subject)
     PwCtrl->>CogP: パスワードを変えるよう頼む (changePassword)<br/>新しいパスワードと確認用が違えば 400 PASSWORD_MISMATCH だが、<br/>画面の 7a が先に止めるので届かない
@@ -68,21 +61,9 @@ sequenceDiagram
         CogP--xErrs: 400 CURRENT_PASSWORD_INVALID の例外を投げる<br/>(NotAuthorizedException → INVALID_CREDENTIALS を言い換える)
         Note over Errs,Form: 結果: 400「現在のパスワードが正しくありません。」を返す。<br/>画面: 8a-1 その文 (setError)。入力は残る。8a-2 基本フロー 3 へ戻る
     end
-    break 試行が多すぎる、または追加の本人確認が要る (記述なし)
-        CogP--xErrs: 429 AUTH_RATE_LIMITED か 409 AUTH_CHALLENGE_REQUIRED の<br/>例外を投げる (TooManyRequestsException か ChallengeName を受けて)
-        Note over Errs,Form: 結果: 429「試行回数が多すぎます。時間をおいて再試行してください。」か<br/>409「追加の本人確認またはパスワード変更が必要です。…」を返す。<br/>画面: 応答の文 (setError)。入力は残る。
-    end
     Cog-->>CogP: ID トークンとアクセストークン
     CogP->>CogP: ID トークンを検証し、subject がログイン中の会員と<br/>同じかを確かめる (toUser)
-    break subject がログイン中の会員と違う (記述なし)
-        CogP--xErrs: 403 FORBIDDEN の例外を投げる
-        Note over Errs,Form: 結果: 403「本人確認に失敗しました。」を返す。<br/>画面: その文 (setError)。
-    end
     CogP->>Cog: 9 パスワードを変える (ChangePassword、<br/>AccessToken・PreviousPassword・ProposedPassword)
-    break Cognito が新しいパスワードを受け付けない (記述なし)
-        CogP--xErrs: 400 PASSWORD_REJECTED の例外を投げる<br/>(RestClientResponseException を受けて)
-        Note over Errs,Form: 結果: 400「パスワードを変更できません。パスワードの条件または試行間隔を確認してください。」を返す。<br/>画面: その文 (setError)。入力は残る。
-    end
     Cog-->>CogP: 200
     CogP-->>PwCtrl: 終わった
     PwCtrl->>PwCtrl: 9 セッションを無効にし、認証情報を消す<br/>(getSession().invalidate、SecurityContextHolder.clearContext)
@@ -99,6 +80,8 @@ sequenceDiagram
 ```
 
 ![EC-B19 シーケンス図](<images/EC-B19_パスワードを変更する-1.png>)
+
+図に描いていない代替フロー：7a（不一致または短すぎる）、（記述なし）の分岐
 
 ## 共通代替フローを直接書いた図
 
@@ -161,7 +144,7 @@ sequenceDiagram
         else 要求が Controller まで届いた
             AuthJs->>Filter: PUT /api/account/password
             Filter->>PwCtrl: 要求を通す (chain.doFilter)
-            PwCtrl->>Db: ログイン中の会員を読む<br/>(AuthService の current、上の図の 16〜17)
+            PwCtrl->>Db: ログイン中の会員を読む<br/>(AuthService の current、上の図の 14〜15)
             alt *a MySQL との通信に失敗
                 Db--xPwCtrl: 失敗 (DataAccessException)
                 PwCtrl-->>Http: 503 DATABASE_UNAVAILABLE (ApiErrors.java の database)
@@ -183,12 +166,12 @@ sequenceDiagram
                     Http--xForm: エラーを投げる (readResponse → ApiError 503)
                     Form-->>User: *a-1「認証サービスに接続できません。」(setError)。*a-2 入力は残る
                 else 変えた
-                    CogP->>Cog: InitiateAuth と ChangePassword (上の図の 19〜28)
+                    CogP->>Cog: InitiateAuth と ChangePassword (上の図の 17〜23)
                     Cog-->>CogP: 200
                     CogP-->>PwCtrl: 終わった
                     PwCtrl-->>Http: 200 { changed: true }。セッションは無効にした
                     Http-->>Form: 変えた
-                    Form-->>User: 「ログイン」画面と「パスワードを変更しました。…」<br/>(上の図の 32〜39)
+                    Form-->>User: 「ログイン」画面と「パスワードを変更しました。…」<br/>(上の図の 27〜34)
                 end
             end
         end

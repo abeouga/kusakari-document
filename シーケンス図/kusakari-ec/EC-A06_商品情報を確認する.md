@@ -8,7 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
-代替フローのうち、表示だけで終わるもの（2a・5a）は分かれる所だけを break で描いています。
+エラーの分岐は描かず、一覧が空のときの表示（2a・5a）は図の下に並べています。
 
 ```mermaid
 sequenceDiagram
@@ -31,7 +31,7 @@ sequenceDiagram
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、5、28 に適用<br/>*a 通信に失敗した場合: 5、28 に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、5、27 に適用<br/>*a 通信に失敗した場合: 5、27 に適用
 
     User->>Work: 運営者メニューの「商品管理」をクリック
     Work->>Page: URL を /operator/products に変え、<br/>ReviewPage を商品の一覧として表示 (products)
@@ -50,9 +50,6 @@ sequenceDiagram
     Ctrl-->>Http: 200 商品の配列
     Http-->>Hook: 商品の一覧
     Hook-->>Page: 商品の一覧
-    break 2a 商品が 1 件もない
-        Page-->>User: 2a-1「対象の商品はありません。」
-    end
     loop 商品ごと (サーバーが返した順のまま)
         Page->>Row: 商品の行を表示 (ProductModerationRow)
         Row->>Row: 公開状態を決める。停止なら「公開停止中」、<br/>そうでなく active なら「公開可能」、それ以外は「販売終了」
@@ -75,13 +72,12 @@ sequenceDiagram
     Ctrl-->>Http: 200 履歴の配列
     Http-->>Hook: 履歴
     Hook-->>Ev: 履歴
-    break 5a 履歴がない
-        Ev-->>User: 5a-1「履歴はありません。」
-    end
     Ev-->>User: 新しい順に 1 行ずつ「日時 警告／警告の解除／停止／再開<br/>（運営者名）：理由」(理由が空なら「：理由」を出さない)
 ```
 
 ![EC-A06 シーケンス図](<images/EC-A06_商品情報を確認する-1.png>)
+
+図に描いていない代替フロー：2a（商品がない）、5a（履歴がない）
 
 ## 共通代替フローを直接書いた図
 
@@ -140,7 +136,7 @@ sequenceDiagram
         Http->>Filter: GET /api/operator/products/{商品 ID}/moderation-events
         Filter->>Ctrl: 要求を通す (chain.doFilter)
         Ctrl->>Svc: 商品の履歴を読むよう頼む (events)
-        Svc->>Db: 運営者かを確かめ、商品の有無、履歴、<br/>操作した運営者を読む (上の図の 29〜33)
+        Svc->>Db: 運営者かを確かめ、商品の有無、履歴、<br/>操作した運営者を読む (上の図の 28〜32)
         alt *a MySQL との通信に失敗
             Db--xSvc: 失敗 (DataAccessException)
             Svc--xCtrl: 例外
@@ -154,7 +150,7 @@ sequenceDiagram
             Ctrl-->>Http: 200 履歴の配列
             Http-->>Hook: 履歴
             Hook-->>Ev: 履歴
-            Ev-->>User: 履歴 (上の図の 38〜39 のとおり)
+            Ev-->>User: 履歴 (上の図の 37 のとおり)
         end
     end
     opt *a-3 やり直す

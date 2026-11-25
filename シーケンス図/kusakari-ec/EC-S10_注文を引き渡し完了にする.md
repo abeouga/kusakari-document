@@ -8,7 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
-代替フローのうち、エラーで終わるもの（6a）と記述にない分岐（注文がない・店舗を扱えないときの 404）は、分かれる所だけを描き、結果と画面は Note に文で書いています。5a（確認ダイアログの「取消」）は `break` の中の矢印 1 本と Note に、関連情報の閉鎖・停止の確定は `opt` の中の矢印 1 本と Note にしています。サーバーが失敗を返したときの画面の後処理（`readResponse` が `ApiError` を投げる → 404・409 なら `reload` で一覧を取り直す → `run` が false → ダイアログを閉じてエラーの文を出す）は、どれも同じです。
+エラーは最重要の 6a（注文状態がもう変わっていた）だけを描き、ほかの代替フローは図の下に並べています。関連情報の閉鎖・停止の確定は `opt` の中の矢印 1 本と Note にしています。
 
 ```mermaid
 sequenceDiagram
@@ -34,7 +34,7 @@ sequenceDiagram
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、4、18、一覧の取り直しの 30 に適用<br/>*a 通信に失敗した場合: 4、16、18、一覧の取り直しの 30 に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、4、17、一覧の取り直しの 29 に適用<br/>*a 通信に失敗した場合: 4、15、17、一覧の取り直しの 29 に適用
 
     User->>Work: 出店者メニューの「店舗受け取り」をクリック
     Work->>Page: URL を /seller/orders に変え、<br/>選択中の店舗の ID を渡して OrderPage を表示
@@ -46,10 +46,6 @@ sequenceDiagram
     Card-->>User: 受け取り待ちの注文に「来店した購入者に注文番号と<br/>受取人名を確認して引き渡します。」と「引き渡し完了にする」
     User->>Card: 対象の注文の「引き渡し完了にする」をクリック
     Card-->>User: 今の状態を覚えて確認ダイアログを表示 (setConfirming('READY') → ConfirmDialog)<br/>「引き渡し完了の確認」、注文番号：…、受取人：…、<br/>「購入者が商品を受け取ったことを確認しましたか。<br/>注文状態を「引き渡し完了」に更新します。」、「引き渡し完了を確定」、「取消」
-    break 5a 確認ダイアログで「取消」をクリック
-        User->>Card: 「取消」をクリック<br/>(Esc キー、「閉じる」、ダイアログの外側のクリックも同じ)
-        Note over User,Card: 結果: 通信せず、注文状態は変わらない (onCancel → setConfirming(''))。<br/>画面: 5a-1 ダイアログを閉じる (5a-2 終わり)
-    end
     User->>Card: 「引き渡し完了を確定」をクリック
     Card->>Hook: 変更を実行し、成功の文を渡す (onConfirm → run)<br/>「引き渡し完了にしました。」
     Hook->>Http: 注文状態を変える通信を送る (write → request、<br/>本文は { expectedStatus: 'READY', status: 'COMPLETED' })
@@ -60,11 +56,8 @@ sequenceDiagram
     Ctrl->>Svc: 入力を確かめ (StatusRequest)、注文状態を変えるよう頼む (changeStatus)<br/>changeStatus 全体が 1 つのトランザクション
     Svc->>OrderRepo: 注文の行をロックして読む (lockOrder、SELECT ... FOR UPDATE orders)
     Svc->>Auth: ログイン中の人がこの店舗で STAFF 以上かを確かめる<br/>(requireStore → requireSeller)
-    break 注文がない、この店舗を扱えない (記述なし)
-        Note over Auth,Card: 結果: 404 ORDER_NOT_FOUND を返し、何も変えない (扱えないときも 404 にする)。<br/>画面: 一覧を取り直し、ダイアログを閉じてエラーの文
-    end
     break 6a 注文状態が「受取準備完了」でなくなっている (キャンセルなど)
-        Note over Auth,Card: 結果: 409 ORDER_CHANGED を返し、何も変えない (conflict)。<br/>画面: 6a-1・6a-2 一覧を取り直し (reload)、ダイアログを閉じ、「注文状態が変わりました。最新の状態を確認してください。」(6a-3 終わり)
+        Note over Auth,Card: 結果: 409 ORDER_CHANGED を返し、何も変えない。<br/>画面: 一覧を取り直してダイアログを閉じ、「注文状態が変わりました。最新の状態を確認してください。」
     end
     Svc->>Svc: 注文状態を引き渡し完了にし、<br/>引き渡しの日時を記録する (completePickup)
     Svc->>Close: コミットの後に、閉鎖中の店舗・受付停止中の組織を<br/>確かめるよう登録する (afterOrderChanged → AfterCommit.run)
@@ -84,6 +77,8 @@ sequenceDiagram
 ```
 
 ![EC-S10 シーケンス図](<images/EC-S10_注文を引き渡し完了にする-1.png>)
+
+図に描いていない代替フロー：5a（確認ダイアログの「取消」）、（記述なし）の分岐
 
 ## 共通代替フローを直接書いた図
 
@@ -160,7 +155,7 @@ sequenceDiagram
             AuthJs->>Filter: PUT /api/seller/orders/{id}/status
             Filter->>Ctrl: 要求を通す (chain.doFilter)
             Ctrl->>Svc: 注文状態を変えるよう頼む (changeStatus)
-            Svc->>Db: 注文をロックして読み、店舗の担当かと状態を確かめ、<br/>書き換えて通知を保存し、コミットする (上の図の 20〜26)
+            Svc->>Db: 注文をロックして読み、店舗の担当かと状態を確かめ、<br/>書き換えて通知を保存し、コミットする (上の図の 19〜25)
             alt *a MySQL との通信に失敗
                 Db--xSvc: 失敗 (DataAccessException)。<br/>トランザクションの変更はすべて取り消す (状態と通知の両方)
                 Svc--xCtrl: 例外

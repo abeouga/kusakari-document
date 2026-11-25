@@ -8,7 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 出店者が扱える店舗の一覧（`GET /api/seller/stores`）は、「出店者」をクリックする前、EC の画面を開いたときに `useShop` が読み込みます。「出店者」をクリックしても画面は読み込み直さず、`Workspace` がログイン状態だけを `GET /api/auth/me` で読み直します。代替フロー 3a〜3c は、読み込み済みの店舗の一覧と、店舗ごとの立場（`memberRole`）で画面が決めます。共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
-代替フローのうち、エラーで終わるもの（3b・3c）と記述にない分岐（店舗に所属していない担当者）は、分かれる所だけを描き、画面は矢印か Note に文で書いています。3a（管理する店舗を選ぶ）とサイドバーの折りたたみは、操作の矢印 1 本と Note にまとめています。
+エラーの代替フローは描かず、図の下に並べています。3a（管理する店舗を選ぶ）とサイドバーの折りたたみは、操作の矢印 1 本と Note にまとめています。
 
 ```mermaid
 sequenceDiagram
@@ -82,33 +82,16 @@ sequenceDiagram
     UseAuth-->>Work: ログイン状態 (accountType、organizationRole)
     Work->>Shop: 読み込み済みの店舗と選んでいる店舗を使う<br/>(sellerStores、sellerStoreId、sellerStoresLoading)
     Shop-->>Work: 13〜25 で読んだ店舗と、選んでいる店舗
-    break 店舗に所属していない担当者 (unassigned。ORG_ADMIN でない SHOP_STAFF で店舗が 0)
-        Work->>Side: メニューは「出店者通知」だけ (noticeItem)
-        Note over User,Side: 画面: 「出店者メニュー」と「メニューを閉じる」、「商品一覧へ戻る」、「出店者通知」。<br/>見出し「所属している店舗がありません」、「どの店舗にも所属していないため、この画面は使えません。自分あての通知だけを見られます。」、「通知の画面へ戻る」
-    end
     Work->>Work: 人事のメニューを出すかを決める (personnel)<br/>オーナー、ORG_ADMIN、いずれかの店舗の MANAGER
     Work->>Side: 出店者メニューを渡す (sellerMenu、personnel なら personnelMenu、<br/>オーナーと ORG_ADMIN なら historyItem)
     Side-->>User: 「出店者メニュー」と「メニューを閉じる」、「商品一覧へ戻る」、<br/>「商品管理」「店舗受け取り」「注文実績」「店舗一覧」「店舗プロフィール」「出店者通知」<br/>(personnel なら「アカウント」「招待キー」、オーナーと ORG_ADMIN なら「履歴」も)
-    break 3c 選んだ店舗で担当のロールがない (personnelOnly。ORG_ADMIN)
-        Work-->>User: 3c-1 見出し「商品管理」と「(店舗名)では担当のロールがないため、<br/>人事（アカウント・招待キー）の画面だけを使えます。」
-        Note over User,Work: 画面: 店舗が 2 つ以上なら上に「管理する店舗」の選択欄も出す
-    end
     Work->>PM: 商品管理を表示 (ProductManager、embedded)
     PM->>Sel: 店舗の選択欄を出す (SellerStoreSelect。店舗が 1 つでも出す)
-    break 3b 管理できる店舗がない (sellerStoreId が 0)
-        Sel-->>User: 見出し「商品管理」と 3b-1「管理できる店舗がありません。」
-    end
     Sel-->>User: 見出し「商品管理」と「管理する店舗」の選択欄
     PM-->>User: 「商品管理」画面 (商品の取得と中身は EC-S03 など)
 
     User->>Side: 3 サイドバーの対象のメニューをクリック
     Side->>Work: URL を対象の path に変え、Workspace を描き直す<br/>(MenuLink の PageLink → navigate)。ログイン状態と店舗は読み直さない
-    break 3c ロールのない店舗で、商品管理・商品登録・店舗受け取り・店舗プロフィール (rolePaths)
-        Work-->>User: 3c-1「(店舗名)では担当のロールがないため、<br/>人事（アカウント・招待キー）の画面だけを使えます。」(3c-2 ユースケースを終了する)
-    end
-    break 3b 店舗受け取り・店舗プロフィール・招待キー・履歴で、店舗がない (storePaths)
-        Work-->>User: 3b-1「管理できる店舗がまだありません。」と<br/>「店舗一覧を開く」(3b-2 ユースケースを終了する)
-    end
     opt 3a-1 店舗ごとの画面 (storePaths) で、店舗が 2 つ以上
         Work->>Sel: 画面の上に選択欄を出す (SellerStoreSelect)
         Note over User,Sel: 画面: 「管理する店舗」の選択欄
@@ -125,6 +108,8 @@ sequenceDiagram
 ```
 
 ![EC-C03 シーケンス図](<images/EC-C03_出店者画面のメニューを開く-1.png>)
+
+図に描いていない代替フロー：3b（管理できる店舗がない）、3c（担当のロールがない）、（記述なし）の分岐
 
 ## 共通代替フローを直接書いた図
 
@@ -208,7 +193,7 @@ sequenceDiagram
     else 店舗の一覧が空になったオーナー、ORG_ADMIN、運営者
         Work-->>User: 「商品管理」と「管理できる店舗がありません。」(3b と同じ表示)
     else 店舗を読めた
-        Work-->>User: 「商品管理」画面 (上の図の 40〜51)
+        Work-->>User: 「商品管理」画面 (上の図の 40〜48)
     end
 ```
 

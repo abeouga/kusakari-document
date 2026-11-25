@@ -8,7 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
-代替フローのうち、エラーで終わるもの（6a・6b・6d）と記述にない分岐（注文がない・店舗を扱えないときの 404）は、分かれる所だけを描き、結果と画面は Note に文で書いています。承認と却下は、承認でしか起きないやり取り（在庫の戻し、返金の依頼、閉鎖・停止の確認の登録）だけを矢印で描いています。返金の依頼、コミットの後の Stripe への返金の依頼、閉鎖・停止の確定は、`opt` の中の矢印 1 本と Note にしています。サーバーが失敗を返したときの画面の後処理（`readResponse` が `ApiError` を投げる → 404・409 なら `reload` で一覧を取り直す → `run` が false → エラーの文を出す）は、どれも同じです。
+エラーは最重要の 6b（申請がもう処理されていた）だけを描き、ほかの代替フローは図の下に並べています。承認と却下は、承認でしか起きないやり取り（在庫の戻し、返金の依頼、閉鎖・停止の確認の登録）だけを矢印で描いています。返金の依頼、コミットの後の Stripe への返金の依頼、閉鎖・停止の確定は、`opt` の中の矢印 1 本と Note にしています。
 
 ```mermaid
 sequenceDiagram
@@ -48,9 +48,6 @@ sequenceDiagram
     Ctrl->>Svc: 店舗の注文の一覧を作るよう頼む (sellerOrders)<br/>中身は EC-S08 の図と同じ流れ
     Ctrl-->>Hook: 200 注文の配列
     Page->>Card: キャンセル申請中の注文を先にして並べ (priority)、<br/>注文ごとにカードを表示 (PickupCard)
-    break 2a キャンセル申請中の注文がない
-        Note over User,Card: 結果: 回答欄を出さない。<br/>画面: 2a-1 キャンセル申請中の表示をしない (2a-2 終わり)
-    end
     Card-->>User: 「キャンセル申請中」、注文の明細と合計、「キャンセル申請があります：<br/>(キャンセル理由)」、「キャンセル回答」の入力欄、<br/>「キャンセルを承認」「キャンセルを却下」(CancellationDecision)
     User->>Card: 申請の内容を確かめ、却下するなら「キャンセル回答」に<br/>却下理由を入力し、「キャンセルを承認」か「キャンセルを却下」をクリック
     Card->>Hook: 押したボタンと回答を渡して変更を実行 (decide → run)<br/>成功の文は既定の「保存しました。」
@@ -62,17 +59,8 @@ sequenceDiagram
     Ctrl->>Svc: 入力を確かめ (DecisionRequest、回答は 500 文字まで)、<br/>申請に回答するよう頼む (decideCancellation)<br/>decideCancellation 全体が 1 つのトランザクション
     Svc->>OrderRepo: 注文の行をロックして読む (lockOrder、SELECT ... FOR UPDATE orders)
     Svc->>Auth: この店舗で STAFF 以上か (requireStore → requireSeller)、<br/>オーナーか MANAGER か (requireManager → requireStoreRole) を確かめる
-    break 注文がない、この店舗を扱えない (記述なし)
-        Note over Auth,Card: 結果: 404 ORDER_NOT_FOUND を返し、何も変えない (扱えないときも 404 にする)。<br/>画面: 一覧を取り直してエラーの文
-    end
-    break 6d 回答する権限がない (STAFF)
-        Note over Auth,Card: 結果: 403 FORBIDDEN を返し、申請は変わらない (denied)。<br/>画面: 6d-1「この操作の権限がありません。」と「再取得」。403 なので一覧は取り直さない (6d-2 終わり)
-    end
     break 6b 申請がすでに処理されている (注文受付でない、申請中でない)
-        Note over Auth,Card: 結果: 409 ORDER_CHANGED を返し、変更しない (conflict)。<br/>画面: 6b-1・6b-2 一覧を取り直し、「注文状態が変わりました。最新の状態を確認してください。」と最新の一覧 (6b-3 終わり)
-    end
-    break 6a 却下で「キャンセル回答」が空 (空白だけも同じ)
-        Note over Auth,Card: 結果: 400 REASON_REQUIRED を返し、申請は変わらない (ApiException)。<br/>画面: 6a-1「却下理由を入力してください。」。入力欄はそのまま (6a-2 基本フロー 4 へ戻る)
+        Note over Auth,Card: 結果: 409 ORDER_CHANGED を返し、何も変えない。<br/>画面: 一覧を取り直し、「注文状態が変わりました。最新の状態を確認してください。」と最新の一覧。
     end
     alt 承認
         Svc->>Stock: 引き当てた在庫を戻すよう頼む (restock)。注文の明細を読み、在庫の行を<br/>商品 ID の順にロックして (findAllForOrder、lockAll の SELECT ... FOR UPDATE inventory)、<br/>在庫の数量に注文の数量を足す (setQuantity。在庫の行がなければ 409 STOCK_NOT_FOUND)
@@ -105,6 +93,8 @@ sequenceDiagram
 ```
 
 ![EC-S13 シーケンス図](<images/EC-S13_注文キャンセル申請を処理する-1.png>)
+
+図に描いていない代替フロー：2a（キャンセル申請中の注文がない）、6a（却下理由が未入力）、6c（更新に失敗）、6d（回答する権限がない）、（記述なし）の分岐
 
 ## 共通代替フローを直接書いた図
 

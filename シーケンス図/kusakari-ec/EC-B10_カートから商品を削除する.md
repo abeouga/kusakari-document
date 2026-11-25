@@ -8,7 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
-代替フロー 2a はエラーで終わるので、分かれる所だけを描き、結果と画面は Note に文で書いています。エラーのときの画面の後処理（`readResponse` が `ApiError` を投げる → `run` の catch でエラーの文を覚える → `refreshOnFailure` なので最新のカートを取り直す（`GET /api/cart` などの流れは EC-B08 の図と同じ）→ エラーの文と最新のカートを出す）は、共通代替フローの失敗でも同じです。取り直しの `GET /api/cart` にも共通代替フロー \*a・\*b が起こります。
+エラーの分岐は描かず、代替フローは図の下に並べています。エラーのときの画面の後処理（`readResponse` が `ApiError` を投げる → `run` の catch でエラーの文を覚える → `refreshOnFailure` なので最新のカートを取り直す（`GET /api/cart` などの流れは EC-B08 の図と同じ）→ エラーの文と最新のカートを出す）は、2a でも共通代替フローの失敗でも同じです。取り直しの `GET /api/cart` にも共通代替フロー \*a・\*b が起こります。
 
 削除のための API はありません。ごみ箱アイコンは `useShop` の `setQuantity()` に数量 0 を渡し、[EC-B07](<EC-B07_商品をカートに追加する.md>)・[EC-B09](<EC-B09_カートの数量を変更する.md>) と同じ `PUT /api/cart/items/{productId}`（`CartService.updateItem()`）を送ります。サーバーは数量が 0 のとき、購入できるか・在庫・種類数の検査を通して明細を削除します。削除の前に確認のダイアログは出ません。
 
@@ -25,7 +25,6 @@ sequenceDiagram
     box rgba(27,127,92,0.12) EC API Spring Boot
         participant AuthCtrl as ログイン状態API<br/>AuthController<br/>(AuthController.java)
         participant Ctrl as カートAPI<br/>CartController<br/>(CartController.java)
-        participant Errs as エラーの応答<br/>ApiErrors<br/>(ApiErrors.java)
         participant Resolver as カートの特定<br/>CartSessionResolver<br/>(CartSessionResolver.java)
         participant Svc as カートの処理<br/>CartService<br/>(CartService.java)
         participant Catalog as 商品の販売状態<br/>CatalogService<br/>(CatalogService.java)
@@ -50,10 +49,6 @@ sequenceDiagram
     Svc->>CartRepo: カートの行をロックして読む (findLocked、SELECT ... FOR UPDATE carts)
     CartRepo-->>Svc: カート
     Svc->>Svc: 送られた revision と今の revision を比べる (checkRevision)
-    break 2a 別の操作でカートが更新されていた (revision が違う)
-        Svc--xErrs: 409 CART_CHANGED の例外を投げる (ApiException)
-        Note over Errs,Cart: 結果: 409「別の操作でカートが更新されました。最新の内容を確認してください。」を返し (business)、明細は残る。<br/>画面: 2a-1 その文と、取り直した最新のカート。2a-2 ユースケースを終了する。
-    end
     Svc->>ItemRepo: その商品の明細を読む (findById、SELECT cart_items)
     ItemRepo-->>Svc: 今の明細
     Svc->>Catalog: 商品と、今買えるかを調べるよう頼む (listing)<br/>商品・在庫・店舗・組織を読む (findByIdIn、findAllById、<br/>SELECT products、inventory、stores、organizations)
@@ -76,6 +71,8 @@ sequenceDiagram
 ```
 
 ![EC-B10 シーケンス図](<images/EC-B10_カートから商品を削除する-1.png>)
+
+図に描いていない代替フロー：2a（別の操作でカートが更新されていた）
 
 ## 共通代替フローを直接書いた図
 
@@ -149,7 +146,7 @@ sequenceDiagram
             AuthJs->>Filter: PUT /api/cart/items/{productId}
             Filter->>Ctrl: 要求を通す (chain.doFilter)
             Ctrl->>Svc: 明細の数量を書き換えるよう頼む (updateItem)
-            Svc->>Db: カートをロックして読み、明細を削除してコミットする<br/>(上の図の 12〜25)
+            Svc->>Db: カートをロックして読み、明細を削除してコミットする<br/>(上の図の 12〜24)
             alt *a MySQL との通信に失敗
                 Db--xSvc: 失敗 (DataAccessException)。<br/>トランザクションの変更はすべて取り消す
                 Svc--xCtrl: 例外

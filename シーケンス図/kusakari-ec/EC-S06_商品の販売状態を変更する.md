@@ -8,7 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
-代替フローのうち、エラーで終わるもの（4a・4b）と記述にない分岐（店舗・商品がない 404、商品 ID の重複の 400）は、分かれる所だけを描き、結果と画面は Note に文で書いています。3c（確認ダイアログの「取消」）は、`break` の中の矢印 1 本と Note にしています。サーバーが失敗を返したときの画面の後処理（`readResponse` が `ApiError` を投げる → `write` の `catch` でエラーの文を覚える → 一覧を取り直す → 失敗を返し、確認ダイアログから確定したときはダイアログが開いたまま）は、どれも同じです。
+エラーの代替フローと 3c（確認ダイアログの「取消」）は図に描かず、図の下に並べています。
 
 ```mermaid
 sequenceDiagram
@@ -34,7 +34,7 @@ sequenceDiagram
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、4、8、32、一覧の取り直しの 41 に適用<br/>*a 通信に失敗した場合: 4、8、30、32、一覧の取り直しの 41、購入者向けの商品の 43 に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、4、8、30、一覧の取り直しの 39 に適用<br/>*a 通信に失敗した場合: 4、8、28、30、一覧の取り直しの 39、購入者向けの商品の 41 に適用
 
     User->>Work: 出店者メニューの「商品管理」をクリック
     Work->>Mgr: URL を /seller/products に変え、<br/>ProductManager を表示 (選択中の店舗にロールがあるとき)
@@ -61,19 +61,11 @@ sequenceDiagram
         List->>List: 選んだ商品を覚える (setSelected)。<br/>選べるのは表示中のページの商品だけ
         User->>List: 「選択商品を非表示」か「選択商品を再公開」をクリック
         List-->>User: 3a-2 確認ダイアログを表示 (confirm → setPending)<br/>「商品状態変更の確認」「非表示の確認」か「再公開の確認」、対象店舗：店舗名 / N件、<br/>商品名、変更の内容、「非表示を確定」か「再公開を確定」、「取消」
-        break 3c 確認ダイアログで「取消」をクリック
-            User->>List: 「取消」をクリック<br/>(Esc キー、「閉じる」、ダイアログの外側のクリックも同じ)
-            Note over User,List: 結果: 通信せず、選択は残る (setPending(null))。<br/>画面: 3c-1 ダイアログを閉じる。3c-2 ここで終わり
-        end
         User->>List: 3a-3「非表示を確定」か「再公開を確定」をクリック
         List->>Cat: 変更を頼む (apply → onStatus → changeStatus)
     else 3b 取り扱いをやめる商品を削除する
         User->>List: 3b-1 対象商品の行の「削除」をクリック<br/>(複数なら選んで「選択商品を削除」)
         List-->>User: 3b-2 確認ダイアログを表示 (confirm → setPending)<br/>「削除の確認」、対象店舗：店舗名 / N件、商品名、<br/>「この店舗の管理一覧からも削除します。復元はできません。<br/>注文履歴と他店舗の販売には影響しません。」、「削除を確定」、「取消」
-        break 3c 確認ダイアログで「取消」をクリック
-            User->>List: 「取消」をクリック<br/>(Esc キー、「閉じる」、ダイアログの外側のクリックも同じ)
-            Note over User,List: 結果: 通信しない (setPending(null))。<br/>画面: 3c-1 ダイアログを閉じる。3c-2 ここで終わり
-        end
         User->>List: 3b-3「削除を確定」をクリック
         List->>Cat: 削除を頼む (apply → onStatus → changeStatus、status は DELETED)
     end
@@ -85,17 +77,8 @@ sequenceDiagram
     AuthJs->>Ctrl: PATCH /api/seller/products/status<br/>(CSRF トークンのヘッダー付き)
     Ctrl->>Svc: 販売状態を変えるよう頼む (update)<br/>update 全体が 1 つのトランザクション
     Svc->>Auth: 削除ならオーナーか MANAGER か (requireManager)、<br/>ほかは STAFF 以上か (requireSeller) を確かめる
-    break 4b 権限がない (削除は STAFF・ロールなし、公開状態の変更はロールなし)
-        Note over Auth,Mgr: 結果: 403 FORBIDDEN を返し、何も変えない (requireStoreRole → denied)。<br/>画面: 4b-1「この操作の権限がありません。」
-    end
     Svc->>Prod: 店舗があるか (CatalogService.requireStore、SELECT stores)、商品 ID に重複がないか、<br/>商品がこの店舗のものか (requireAtStore → findStoreReferences、SELECT products) を確かめる
-    break 店舗がない、商品 ID の重複、ほかの店舗の商品 (記述なし)
-        Note over Prod,Mgr: 結果: 404 STORE_NOT_FOUND、400 DUPLICATE_PRODUCT か 404 PRODUCT_NOT_FOUND を返し、何も変えない。<br/>画面: エラーの文
-    end
     Svc->>Inv: 在庫の行を商品 ID の順にロックして読む<br/>(lockAll、SELECT ... ORDER BY product_id FOR UPDATE inventory)
-    break 4a 保存できない (行の数が違う、削除済みの商品を公開・非表示にする)
-        Note over Inv,Mgr: 結果: 404 PRODUCT_NOT_FOUND か 409 PRODUCT_ARCHIVED を返し、何も変えない。<br/>画面: 4a-1「選択店舗の商品が見つかりません。」か「削除済みの商品は再公開・非表示に変更できません。」と最新の販売状態 (4a-2 基本フロー 3 へ戻る)
-    end
     Svc->>Svc: 選んだ商品の公開状態を書き換える (setPublicationStatus)<br/>削除は DELETED にするだけで、行は残す
     Svc->>Db: 書き換えた行を保存してコミットする<br/>(save は呼ばない。UPDATE inventory)
     Ctrl-->>Http: 200 { updated: true }
@@ -113,6 +96,8 @@ sequenceDiagram
 ```
 
 ![EC-S06 シーケンス図](<images/EC-S06_商品の販売状態を変更する-1.png>)
+
+図に描いていない代替フロー：3c（確認ダイアログの「取消」）、4a（保存に失敗）、4b（操作する権限がない）、（記述なし）の分岐
 
 ## 共通代替フローを直接書いた図
 
@@ -175,7 +160,7 @@ sequenceDiagram
         AuthJs->>Filter: PATCH /api/seller/products/status
         Filter->>Ctrl: 要求を通す (chain.doFilter)
         Ctrl->>Svc: 販売状態を変えるよう頼む (update)
-        Svc->>Db: 権限と商品を確かめ、在庫の行をロックして読み、<br/>書き換えてコミットする (上の図の 34〜38)
+        Svc->>Db: 権限と商品を確かめ、在庫の行をロックして読み、<br/>書き換えてコミットする (上の図の 32〜36)
         alt *a MySQL との通信に失敗
             Db--xSvc: 失敗 (DataAccessException)。<br/>トランザクションの変更はすべて取り消す
             Svc--xCtrl: 例外

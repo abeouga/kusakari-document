@@ -9,7 +9,7 @@
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 EC の画面は 1 つの React アプリです。共通ヘッダーの「アカウント」をクリックしても画面は読み込み直さず、URL を `/account` に変えて `Workspace` に切り替えます。`useAuth()` を使うコンポーネントは、作られるたびに `GET /api/auth/me` を送ります。そのため、「メイン」画面などから移ったときは `Workspace` と `AuthPanel` の 2 か所が送り、アカウント・出店者などの画面（`Workspace` の画面）から移ったときは `AuthPanel` だけが送ります。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
-代替フローのうち、記述にない分岐（利用できないアカウント）は分かれる所だけを描き、結果と画面は Note に文で書いています。出店申請用のアカウントの申請の取得と、3（「アカウント情報」以外のメニュー）は、頼む矢印 1 本と Note にまとめています。
+エラーの代替フローは描かず、図の下に並べています。出店申請用のアカウントの申請の取得と、3（「アカウント情報」以外のメニュー）は、頼む矢印 1 本と Note にまとめています。
 
 ```mermaid
 sequenceDiagram
@@ -35,7 +35,7 @@ sequenceDiagram
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 7、18、31 に適用<br/>*a 通信に失敗した場合: 7、18、31 に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 7、17、30 に適用<br/>*a 通信に失敗した場合: 7、17、30 に適用
 
     User->>Header: 共通ヘッダーの「アカウント」をクリック<br/>(ログインしているときだけ出る)
     Header->>App: 移動先の URL を渡す (follow → onNavigate → navigateFromHeader)
@@ -46,10 +46,6 @@ sequenceDiagram
         UseAuth->>AuthJs: 画面を開いたときに自動で読む<br/>(useEffect → refreshSession → readSession)
         AuthJs->>Filter: GET /api/auth/me
         Filter->>AuthSvc: ログイン中の会員が使えるかを確かめる (current)<br/>会員を読み (findByIssuerAndSubject、SELECT members)、<br/>担当者なら組織の所属も読む (findForMember、SELECT organization_members)
-        break 利用できないアカウント (利用停止、組織から除名) (記述なし)
-            AuthSvc--xFilter: 403 ACCOUNT_DISABLED か ACCOUNT_EXPELLED の例外を投げる
-            Note over Work,AuthSvc: 結果: セッションを消し、403 と文を JSON で返す。<br/>画面: 「このアカウントは利用できません。」か「このアカウントは無効化されています。組織の管理者にお問い合わせください。」だけ
-        end
         Filter->>AuthCtrl: 要求を通す (chain.doFilter)
         AuthCtrl->>AuthSvc: ログイン状態を作るよう頼む (session)<br/>会員、組織、組織の所属、店舗、店舗の担当を読む<br/>(current、organizationIdOf、organizationRoleOf、storeIdsOf)
         AuthSvc-->>AuthCtrl: ログイン状態 (SessionView。id、email、name、accountType、<br/>organizationId、organizationRole、storeIds)
@@ -72,13 +68,13 @@ sequenceDiagram
     Acc->>Res: ログイン状態も取りに行くよう頼む (useResource('/auth/me'))
     Res->>Http: 自動で通信を始める (useEffect → reload → request)
     Http->>AuthCtrl: GET /api/auth/me
-    AuthCtrl-->>Http: 200 ログイン状態 (流れは 8〜13 と同じ)
+    AuthCtrl-->>Http: 200 ログイン状態 (流れは 8〜12 と同じ)
     Http-->>Res: ログイン状態 (この画面では使わない)
     Acc->>Panel: アカウントの表示を出す (AuthPanel)
     Panel->>UseAuth: ログイン状態を読むよう頼む (useAuth)
     UseAuth->>AuthJs: 自動で読む (useEffect → refreshSession → readSession)
     AuthJs->>AuthCtrl: GET /api/auth/me
-    AuthCtrl-->>AuthJs: 200 ログイン状態 (流れは 8〜13 と同じ)
+    AuthCtrl-->>AuthJs: 200 ログイン状態 (流れは 8〜12 と同じ)
     AuthJs-->>UseAuth: ログイン状態
     UseAuth-->>Panel: ログイン状態 (読み終わるまでは「ログイン状態を確認しています。」)
     Panel-->>User: 名前 (なければメールアドレス)、アカウントの種類 (accountLabels。<br/>「管理者」「出店者（オーナー）」「出店者（スタッフ）」「出店申請用アカウント」、ほかは「利用者」)、「ログアウト」
@@ -90,6 +86,8 @@ sequenceDiagram
 ```
 
 ![EC-C01 シーケンス図](<images/EC-C01_アカウントのメニューを開く-1.png>)
+
+図に描いていない代替フロー：（記述なし）の分岐
 
 ## 共通代替フローを直接書いた図
 
@@ -144,7 +142,7 @@ sequenceDiagram
         else ログイン状態を読めた
             AuthJs->>Filter: GET /api/auth/me
             Filter->>AuthCtrl: 要求を通す (chain.doFilter)
-            AuthCtrl-->>AuthJs: 200 authenticated が true (上の図の 8〜13)
+            AuthCtrl-->>AuthJs: 200 authenticated が true (上の図の 8〜12)
             AuthJs-->>UseAuth: ログイン状態
             UseAuth-->>Work: ログイン状態 (setSession)
         end

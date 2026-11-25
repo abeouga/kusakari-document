@@ -9,7 +9,7 @@
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 Repository と、商品番号を作る `ProductSkuGenerator`、商品を読む `CatalogService` は参加者にせず、MySQL への矢印の文にクラスとメソッドの名前を書いています。「商品管理」画面の一覧の取得とカテゴリーの取得は、[EC-S04](<EC-S04_商品情報を編集する.md>) の図と同じなので、Controller から先を省いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
-代替フローのうち、エラーで終わるもの（10a・12a・14a・17a・19a・19b）と記述にない分岐（「AIで生成」の前の確かめ、推定・組み立ての失敗、Canvas に問い合わせられない）は、分かれる所だけを描き、結果と画面は Note に文で書いています。出品のエラーのときの画面の後処理（`readResponse` が `ApiError` を投げる → `run` の catch で `setError` → `run` が false → 「商品登録」の上部にエラーの文）は、どれも同じです。植物の 3D の構成と素材コードの対応の保存は、頼む矢印 1 本と Note にまとめています。
+エラーの代替フローは描かず、図の下に並べています。植物の 3D の構成と素材コードの対応の保存は、頼む矢印 1 本と Note にまとめています。
 
 ```mermaid
 sequenceDiagram
@@ -44,7 +44,6 @@ sequenceDiagram
         participant EdCtrl as 商品の登録・編集API<br/>ProductEditorController<br/>(ProductEditorController.java)
         participant CartCtrl as カートAPI<br/>CartController<br/>(CartController.java)
         participant CatalogCtrl as 購入者向けの商品API<br/>CatalogController<br/>(CatalogController.java)
-        participant Errs as エラーの応答<br/>ApiErrors<br/>(ApiErrors.java)
         participant MediaSvc as 商品画像の処理<br/>ProductMediaService<br/>(ProductMediaService.java)
         participant SugSvc as AI の推定の処理<br/>PlantSuggestionService<br/>(PlantSuggestionService.java)
         participant AiCli as OpenAI への問い合わせ<br/>PlantSuggestionClient<br/>(PlantSuggestionClient.java)
@@ -62,7 +61,7 @@ sequenceDiagram
         participant OpenAI as OpenAI API
     end
 
-    Note over User,OpenAI: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、3、5、13、28、55、82、出品の後の 102・109 に適用<br/>*a 通信に失敗した場合: 3、5、13、27、28、35、44、45、46、52、54、55、81、82、出品の後の 102・104・109 に適用
+    Note over User,OpenAI: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、3、5、13、26、50、75、出品の後の 91・98 に適用<br/>*a 通信に失敗した場合: 3、5、13、25、26、32、40、41、42、47、49、50、74、75、出品の後の 91・93・98 に適用
 
     User->>Work: 出店者メニューの「商品管理」をクリック
     Work->>Mgr: URL を /seller/products に変え、<br/>ProductManager を表示 (embedded)
@@ -88,26 +87,16 @@ sequenceDiagram
     User->>Picker: 「選ぶ」をクリックし、「カテゴリーを選ぶ」の一覧からカテゴリーを選ぶ<br/>(choose → onChange → set('category'))
     User->>Form: 「次へ」をクリック
     Form->>Form: 「商品情報」の入力を確かめる (next → validate(INFO)。<br/>firstInvalid で required・min・max、商品名と説明が空白だけでないか)
-    break 10a 入力が不正 (必須項目が空、在庫数が 1 未満、価格が範囲外など)
-        Form-->>User: 10a-1「在庫は1以上にしてください。」「商品名・説明を入力してください。」<br/>「入力内容を確認してください。」など。直す入力欄にフォーカス (fail → reveal)。<br/>通信しない (10a-2 基本フロー 5 へ戻る)
-    end
     Form-->>User: 基本フロー 10「2 / 4」、「画像」の手順 (move(IMAGES))
 
     User->>Images: 「商品の写真を選択」(1 枚以上あれば「画像を追加」) から、<br/>商品画像のファイルを選ぶ
     Images->>Images: 枚数、形式、大きさを確かめる (upload)
-    break 12a 合わせて 6 枚以上になる、PNG・JPEG・WebP 以外、0 バイト、5MB を超える
-        Images-->>User: 12a-1「画像は最大5枚です。不要な画像を削除してから追加してください。」か<br/>「1枚5MB以下のPNG・JPEG・WebPを選択してください。」通信しない (12a-2 基本フロー 11 へ戻る)
-    end
     Images->>Form: 保存の間はフォームを操作できなくする (onBusy(true))
     loop 選んだファイルごと
         Images->>Http: 画像を送る (api.uploadProductImage → send、FormData)
         AuthJs->>AuthCtrl: 書き込みの前に CSRF トークンを取る (authFetch)<br/>GET /api/auth/csrf
         AuthJs->>MediaCtrl: POST /api/product-images (multipart の file。CSRF トークンのヘッダー付き)
         MediaCtrl->>MediaSvc: 店舗側のアカウントか運営かを確かめ (requireSellerRole)、<br/>画像を保存するよう頼む (upload)。1 つのトランザクション。<br/>先頭のバイトで形式を判定し、ファイルの Content-Type と比べる (detect)
-        break 12a 空、5MB 超、形式が判定できない、宣言と違う
-            MediaSvc--xErrs: 400 INVALID_IMAGE の例外を投げる (invalid)
-            Note over Images,Errs: 結果: 400 を返し、残りのファイルは送らない。<br/>画面: 12a-1「画像は5MB以下のPNG・JPEG・WebPで選択してください。」それまでに保存した画像は残る
-        end
         MediaSvc->>Db: 基本フロー 12 画像を保存する (ProductMediaRepository.save、<br/>INSERT product_media。id は UUID)
         MediaCtrl-->>Images: 200 imageUrl (/api/product-images/{id})
         Images->>Form: 画像を下書きに入れる (change → onChange → set('imageUrl')、set('images'))
@@ -119,9 +108,6 @@ sequenceDiagram
 
     User->>Form: 「次へ」をクリック
     Form->>Form: 画像があるかを確かめる (next → validate(IMAGES)、draft.imageUrl)
-    break 14a 商品画像が 1 枚もない
-        Form-->>User: 14a-1「商品画像を1枚以上追加してください。」ファイルの入力にフォーカス。<br/>通信しない (14a-2 基本フロー 11 へ戻る)
-    end
     Form->>Garden: 基本フロー 14「3 / 4」の「庭オブジェクト」を表示 (move(GARDEN)、active が true)
     alt 「鉢・庭材」のカテゴリー (植物ではない。isPlantCategory)
         Garden-->>User: 「「鉢・庭材」の商品は植物の3Dモデルを作りません。…」と<br/>「商品の高さ」。3D は作らない
@@ -137,10 +123,7 @@ sequenceDiagram
     alt 15a 「AIで生成」をクリックした
         User->>Preview: 「AIで生成」をクリック
         Preview->>Plant: 下書きの値で特徴を推定するよう頼む (suggest(draft))。<br/>商品名が空でないか、高さが空か 10〜1500 の整数かを確かめる
-        break 商品名が空、高さが不正 (記述なし)
-            Plant-->>User: 「AIで生成する前に商品名を入力してください。」<br/>「植物の高さは10〜1500cmの整数にしてください。」(PlantPreview が表示)。通信しない
-        end
-        Plant->>MediaCtrl: 1 枚目の画像を読み、data URL にする (photo → fetch、dataUrl)<br/>GET /api/product-images/{id} (中は 35〜36 と同じ)
+        Plant->>MediaCtrl: 1 枚目の画像を読み、data URL にする (photo → fetch、dataUrl)<br/>GET /api/product-images/{id} (中は 32〜33 と同じ)
         Plant->>Http: 推定の通信を送る (api.suggestPlantModel → request)
         AuthJs->>AuthCtrl: 書き込みの前に CSRF トークンを取る (authFetch)<br/>GET /api/auth/csrf
         AuthJs->>SugCtrl: POST /api/products/plant-model-suggestions<br/>(name、latinName、category、description、heightCm、<br/>currentProfile、imageDataUrl)
@@ -155,25 +138,18 @@ sequenceDiagram
             CModel->>CApi: POST /api/model-assemblies/resolve
             CApi-->>CModel: 200 構成か、400 INCOMPATIBLE_PLANT_DIMENSIONS<br/>(組み立てられなければ 422 AI_MODEL_DIMENSIONS の例外)
         end
-        break 推定・組み立てができない、AI を使えない (記述なし。上のどの段階でも例外が出るとそこで止まる)
-            SugSvc--xErrs: 例外を投げる (400 AI_INVALID_IMAGE、422 AI_PLANT_UNIDENTIFIED・AI_REFUSED・<br/>AI_MODEL_DIMENSIONS・AI_MODEL_INCOMPATIBLE、429 AI_BUSY・AI_RATE_LIMITED、<br/>502 AI_INVALID_PROFILE・AI_SERVICE_ERROR ほか、503 AI_NOT_CONFIGURED・<br/>MODEL_SERVICE_UNAVAILABLE、504 AI_TIMEOUT)
-            Note over Preview,Errs: 結果: その状態と message を返す (business)。<br/>画面: message (PlantPreview が表示)。入力欄と 3D プレビューはそのまま
-        end
         SugSvc-->>SugCtrl: 推定した特徴、推定した項目、注意点 (PlantSuggestionView)
         SugCtrl-->>Plant: 200 推定の結果
-        Plant-->>User: 15a-1 前の値を残し (setUndo)、特徴を入力欄に反映 (setProfile、setHeightValue、setWarnings)。<br/>「AIの推定を反映しました · 注意点」、「AI設定を元に戻す」。<br/>3D プレビューは 43〜48 と同じ流れで更新 (15a-2 基本フロー 16 へ)
+        Plant-->>User: 15a-1 前の値を残し (setUndo)、特徴を入力欄に反映 (setProfile、setHeightValue、setWarnings)。<br/>「AIの推定を反映しました · 注意点」、「AI設定を元に戻す」。<br/>3D プレビューは 39〜44 と同じ流れで更新 (15a-2 基本フロー 16 へ)
     else 基本フロー 15 手で入力する
         User->>Garden: 「植物の高さ」などの特徴を入力する (PlantModelFields)
-        Garden->>Plant: 特徴を変える (setHeight、changeProfile)。<br/>3D プレビューは 43〜48 と同じ流れで更新
+        Garden->>Plant: 特徴を変える (setHeight、changeProfile)。<br/>3D プレビューは 39〜44 と同じ流れで更新
     end
 
     User->>Form: 「次へ」をクリック
     Form->>Form: 庭オブジェクトの入力を確かめる (next → validate(GARDEN)。<br/>firstInvalid で model から始まる入力欄、plant.currentProfile)
-    break 17a 庭オブジェクトの入力が不正 (高さが空、10〜1500cm の整数でないなど)
-        Form-->>User: 17a-1「植物の高さを入力してください。」<br/>「植物の高さは10〜1500cmの整数にしてください。」など。<br/>通信しない (17a-2 基本フロー 15 へ戻る)
-    end
     Form->>Review: 基本フロー 17「4 / 4」の「確認」を表示 (move(REVIEW) → ProductReview)
-    Review->>CWeb: 植物の商品なら、iframe の src で GET /model-preview?profile=...<br/>(流れは 44〜47 と同じ)
+    Review->>CWeb: 植物の商品なら、iframe の src で GET /model-preview?profile=...<br/>(流れは 40〜43 と同じ)
     Review-->>User: 「確認」に商品画像、3D モデル、商品名、価格、登録店舗、在庫、<br/>カテゴリー、商品説明など。「前の手順へ」「出品する」
 
     User->>Form: 「出品する」をクリック
@@ -183,31 +159,15 @@ sequenceDiagram
     AuthJs->>AuthCtrl: 書き込みの前に CSRF トークンを取る (authFetch)<br/>GET /api/auth/csrf
     AuthJs->>EdCtrl: POST /api/products<br/>(sku は空、storeId、stock、heightCm、plantModelProfile ほか)
     EdCtrl->>EdCtrl: 入力を検査する (@Valid の ProductRequest)
-    break 19a 入力が不正 (文字数、価格・在庫の範囲、画像の URL の形など)
-        EdCtrl--xErrs: 入力の違反の例外を投げる (MethodArgumentNotValidException)
-        Note over Form,Errs: 結果: 400 INVALID_INPUT を返し、商品は登録しない (invalid)。<br/>画面: 19a-1「入力内容・文字数・数値の範囲を確認してください。」を「商品登録」の上部に出し、「確認」のまま (19a-2「前の手順へ」で戻る)
-    end
     EdCtrl->>EdSvc: 商品を登録するよう頼む (create)<br/>create 全体が 1 つのトランザクション。Canvas への問い合わせもこの中
     EdSvc->>Auth: オーナーか、その店舗の MANAGER かを確かめる (requireManager → requireStoreRole)<br/>会員、店舗、オーナーの組織か、店舗の担当とロールを読む
-    break 19b 権限がない (STAFF、ロールなし、運営が停止した店舗)
-        Auth--xErrs: 403 FORBIDDEN の例外を投げる (denied)
-        Note over Form,Errs: 結果: 403 を返し、商品は登録しない (business)。<br/>画面: 19b-1「この操作の権限がありません。」を「商品登録」の上部に出し、「確認」のまま
-    end
     EdSvc->>Db: 店舗があるかを確かめる<br/>(CatalogService.requireStore → StoreRepository.existsById)
     EdSvc->>CatgSvc: カテゴリーが登録済みかを確かめる (require)<br/>(CategoryRepository.share、SELECT ... FOR SHARE categories)
-    break 19a カテゴリーが無いか削除済み
-        CatgSvc--xErrs: 400 INVALID_CATEGORY の例外を投げる (ApiException)
-        Note over Form,Errs: 結果: 400 を返し、商品は登録しない (business)。<br/>画面: 19a-1「登録済みのカテゴリを選択してください。」を「商品登録」の上部に出し、「確認」のまま
-    end
     EdSvc->>EdSvc: 在庫が 1 以上かを確かめ、入力から商品を作る<br/>(mapper.toEntity、id は UUID、追加した人は auth.current() の会員)
     EdSvc->>Db: 商品番号を作り、店舗の中で重ならないかを確かめる<br/>(ProductSkuGenerator.next → ProductRepository.existsByStoreIdAndSku。<br/>KS-年月日-6 文字。重なれば最大 5 回作り直す)
     opt 植物の商品 (plantModelProfile がある。resolveModel)
         EdSvc->>CModel: 植物の 3D の構成を作るよう頼む (resolve)
         Note over EdSvc,CApi: 結果: POST /api/model-assemblies/resolve (受けた要求の KUSAKARI_SESSION Cookie と X-CSRF-TOKEN を付ける) で、<br/>200 構成 (parts) を受け取り、modelComposition に入れる
-    end
-    break Canvas に問い合わせられない、構成が空 (記述なし)
-        CModel--xErrs: 503 MODEL_SERVICE_UNAVAILABLE か<br/>502 INVALID_MODEL_RESPONSE の例外を投げる
-        Note over Form,Errs: 結果: 503「植物モデルを確定できません。Canvasの起動を確認して再試行してください。」か 502 を返し、商品は登録しない (business)。<br/>画面: その文を「商品登録」の上部に出し、「確認」のまま
     end
     EdSvc->>Db: 基本フロー 19 商品と商品画像を保存する (saveProduct → entityManager.persist・flush、<br/>INSERT products、product_images)
     EdSvc->>Db: 在庫を公開中で保存する (InventoryRepository.save、<br/>INSERT inventory。publication_status は PUBLISHED)
@@ -231,6 +191,8 @@ sequenceDiagram
 ```
 
 ![EC-S03 シーケンス図](<images/EC-S03_商品を登録する-1.png>)
+
+図に描いていない代替フロー：10a（商品情報の入力が不正）、12a（画像の枚数・形式・大きさ）、14a（商品画像がない）、17a（庭オブジェクトの入力が不正）、19a（入力が不正、カテゴリーが無い）、19b（権限がない）、（記述なし）の分岐
 
 ## 共通代替フローを直接書いた図
 
@@ -291,7 +253,7 @@ sequenceDiagram
     else *a MySQL との通信に失敗
         AuthJs->>Filter: POST /api/product-images
         Filter->>MediaCtrl: 要求を通す (chain.doFilter)
-        MediaCtrl->>Db: 画像を保存する (上の図の 29〜32)
+        MediaCtrl->>Db: 画像を保存する (上の図の 27〜29)
         Db--xMediaCtrl: 失敗 (DataAccessException)
         MediaCtrl-->>Http: 503 DATABASE_UNAVAILABLE (ApiErrors.java の database)
         Http--xImages: エラーを投げる (ApiError 503)
@@ -327,7 +289,7 @@ sequenceDiagram
         else 要求が Controller まで届いた
             Http->>Filter: POST /api/products/plant-model-suggestions
             Filter->>SugCtrl: 要求を通す (chain.doFilter)
-            SugCtrl-->>Http: 200 推定の結果か、AI・Canvas のエラー (上の図の 56〜67)
+            SugCtrl-->>Http: 200 推定の結果か、AI・Canvas のエラー (上の図の 51〜61)
             Http-->>Plant: 推定の結果か、エラー
         end
     end
@@ -379,7 +341,7 @@ sequenceDiagram
         Http->>Filter: POST /api/products
         Filter->>EdCtrl: 要求を通す (chain.doFilter)
         EdCtrl->>EdSvc: 商品を登録するよう頼む (create)
-        EdSvc->>Db: 立場とカテゴリーを確かめ、商品番号を作り、<br/>商品・在庫を保存してコミットする (上の図の 86〜100)
+        EdSvc->>Db: 立場とカテゴリーを確かめ、商品番号を作り、<br/>商品・在庫を保存してコミットする (上の図の 78〜89)
         alt *a MySQL との通信に失敗
             Db--xEdSvc: 失敗 (DataAccessException)。<br/>トランザクションの変更はすべて取り消す
             EdSvc--xEdCtrl: 例外
@@ -400,7 +362,7 @@ sequenceDiagram
                 NewPage-->>User: 「商品登録」の上部に「サーバーに接続できません。…」。<br/>登録できたのに「確認」のままで、商品番号も出ない
             else 取り直せた
                 Http-->>Shop: 購入者向けの商品の一覧
-                Shop-->>Form: 成功を返す (run が true)。この後は上の図の 107〜110
+                Shop-->>Form: 成功を返す (run が true)。この後は上の図の 96〜99
             end
         end
     end

@@ -8,7 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
-代替フローのうち、エラーで終わるもの（4a・5a・5b）は分かれる所だけを描き、結果と画面は Note に文で書いています。エラーのときの画面の後処理（`readResponse` が `ApiError` を投げる → 409 なら `reload` で一覧を取り直す → `run` が false → エラーの文を出す）は、どれも同じです。
+エラーは最重要の 5b（同じ名前のカテゴリがある）だけを描き、ほかの代替フローは図の下に並べています。5b のときの画面の後処理（`readResponse` が `ApiError` を投げる → 409 なので `reload` で一覧を取り直す → `run` が false → エラーの文を出す）は、Note に文で書いています。
 
 ```mermaid
 sequenceDiagram
@@ -30,7 +30,7 @@ sequenceDiagram
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、5、19、一覧の取り直しの 31 に適用<br/>*a 通信に失敗した場合: 2 (URL を直接開いたときのログインの確認)、5、17、19、一覧の取り直しの 31 に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、5、18、一覧の取り直しの 29 に適用<br/>*a 通信に失敗した場合: 2 (URL を直接開いたときのログインの確認)、5、16、18、一覧の取り直しの 29 に適用
 
     User->>Work: 運営者メニューの「カテゴリ管理」をクリック
     Work->>Page: URL を /operator/categories に変え、<br/>CategoriesPage を表示
@@ -45,19 +45,12 @@ sequenceDiagram
     Page-->>User: 「カテゴリ名」入力欄 (30 文字まで)、「保存」「編集を取消」、<br/>カテゴリごとの「編集」「削除」と一覧
 
     User->>Page: 「カテゴリ名」に入力し、「保存」をクリック
-    break 4a カテゴリ名が未入力
-        Page-->>User: 4a-1 ブラウザーが必須入力のメッセージを出し、送信しない<br/>(入力欄の required。基本フロー 3 へ戻る)
-    end
     Page->>Hook: 保存を実行するよう頼む (save → run)
     Hook->>Http: カテゴリを保存する通信を送る<br/>(write → request、本文は { previous: 空文字, name: 入力値 })
     Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (authFetch)
     AuthJs->>AuthCtrl: GET /api/auth/csrf
     AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
     AuthJs->>Ctrl: PUT /api/operator/categories<br/>(CSRF トークンのヘッダー付き)
-    break 5a カテゴリ名が空白だけ
-        Ctrl--xErrs: 入力の検査で止める (@Valid の @NotBlank、<br/>MethodArgumentNotValidException)
-        Note over Errs,Page: 結果: 400 INVALID_INPUT を返し、保存しない。一覧は取り直さない。<br/>画面: 5a-1「入力内容・文字数・数値の範囲を確認してください。」入力欄はそのまま (基本フロー 3 へ戻る)
-    end
     Ctrl->>Svc: カテゴリを保存するよう頼む (save)。save 全体が 1 つのトランザクション<br/>運営者かを確かめ (AuthService.requireAdmin)、前後の空白を取り除く (trim)
     Svc->>Repo: 同じ名前の行をロックして読む (lock、SELECT ... FOR UPDATE categories)
     Repo-->>Svc: カテゴリ (なければなし)
@@ -79,6 +72,8 @@ sequenceDiagram
 ```
 
 ![EC-A07 シーケンス図](<images/EC-A07_商品カテゴリを追加する-1.png>)
+
+図に描いていない代替フロー：4a（カテゴリ名が未入力）、5a（カテゴリ名が空白だけ）
 
 ## 共通代替フローを直接書いた図
 
@@ -276,7 +271,7 @@ sequenceDiagram
             AuthJs->>Filter: PUT /api/operator/categories
             Filter->>Ctrl: 要求を通す (chain.doFilter)
             Ctrl->>Svc: カテゴリを保存するよう頼む (save)
-            Svc->>Db: 運営者かを確かめ、同じ名前の行をロックして読み、<br/>追加してコミットする (上の図の 21〜28)
+            Svc->>Db: 運営者かを確かめ、同じ名前の行をロックして読み、<br/>追加してコミットする (上の図の 19〜26)
             alt *a MySQL との通信に失敗
                 Db--xSvc: 失敗 (DataAccessException)。<br/>トランザクションの変更はすべて取り消す
                 Svc--xCtrl: 例外

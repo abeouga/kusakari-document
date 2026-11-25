@@ -8,7 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
-代替フローのうち、エラーで終わるもの（5a・6a・6b・6c）と記述にない分岐（同じ名前の店舗がある）は、分かれる所だけを描き、結果と画面は Note に文で書いています。エラーのときの画面の後処理（`readResponse` が `ApiError` を投げる → 409 なら `reload` でプロフィールを取り直す → `run` が false → エラーの文を出す）は、どれも同じです。1a（店舗を選び直す）は、選ぶ矢印 1 本と Note にまとめています。
+エラーの代替フローは描かず、図の下に並べています。1a（店舗を選び直す）は、選ぶ矢印 1 本と Note にまとめています。
 
 ```mermaid
 sequenceDiagram
@@ -27,7 +27,6 @@ sequenceDiagram
     box rgba(27,127,92,0.12) EC API Spring Boot
         participant AuthCtrl as ログイン状態API<br/>AuthController<br/>(AuthController.java)
         participant Ctrl as 店舗API<br/>StoreController<br/>(StoreController.java)
-        participant Errs as エラーの応答<br/>ApiErrors<br/>(ApiErrors.java)
         participant Svc as 店舗の処理<br/>StoreService<br/>(StoreService.java)
         participant Auth as ログイン中の会員<br/>AuthService<br/>(AuthService.java)
         participant Mod as 店舗への運営の警告<br/>StoreModerationService<br/>(StoreModerationService.java)
@@ -36,7 +35,7 @@ sequenceDiagram
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 5 (URL を直接開いたときのログインの確認)、8、27、プロフィールの取り直しの 45 に適用<br/>*a 通信に失敗した場合: 8、25、27、プロフィールの取り直しの 45 に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 5 (URL を直接開いたときのログインの確認)、8、26、プロフィールの取り直しの 39 に適用<br/>*a 通信に失敗した場合: 8、24、26、プロフィールの取り直しの 39 に適用
 
     alt 1b 「店舗一覧」から開く
         User->>Stores: 「店舗一覧」画面で対象の店舗の「店舗情報を編集」をクリック<br/>(閉鎖済みの店舗にはこのボタンを出さない)
@@ -67,9 +66,6 @@ sequenceDiagram
     end
 
     User->>Page: 入力欄を編集し、「店舗情報を保存」をクリック
-    break 5a 店舗名・所在地・営業時間が空 (画面で止まる)
-        Page-->>User: 5a-1 ブラウザーが送信を止め、空の入力欄に標準のメッセージを出す<br/>(Input の required)。通信しない。文字数は maxLength で上限を超えて入力できない
-    end
     Page->>Hook: 6 項目と、表示したときの revision で保存するよう頼む<br/>(save → values → run)
     Hook->>Http: プロフィールを書き換える通信を送る (write → request)
     Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (authFetch)
@@ -77,32 +73,12 @@ sequenceDiagram
     AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
     AuthJs->>Ctrl: PUT /api/seller/stores/{id}<br/>(CSRF トークンのヘッダー付き)
     Ctrl->>Ctrl: 入力を検査する (@Valid の StoreService.Input。<br/>@NotBlank、@NotNull、@Size、@Email)
-    break 5a 入力が不正 (空白だけ、メールの形が違う、文字数の超過)
-        Ctrl--xErrs: 入力の違反の例外を投げる (MethodArgumentNotValidException)
-        Note over Page,Errs: 結果: 400 INVALID_INPUT を返す (invalid)。400 なので取り直さない。<br/>画面: 5a-1「入力内容・文字数・数値の範囲を確認してください。」入力欄は入力のまま (5a-2 基本フロー 3 へ戻る)
-    end
     Ctrl->>Svc: 店舗のプロフィールを保存するよう頼む (save)<br/>save 全体が 1 つのトランザクション
     Svc->>Auth: オーナーか、その店舗の MANAGER かを確かめる (requireManager → requireStoreRole)<br/>会員、店舗、オーナーの組織か、店舗の担当とロールを読む
-    break 6b 権限がない (STAFF、ロールなし、運営が停止した店舗、閉鎖で担当から外れた MANAGER)
-        Auth--xErrs: 403 FORBIDDEN の例外を投げる (denied)
-        Note over Page,Errs: 結果: 403 を返す (business)。403 なので取り直さない。<br/>画面: 6b-1「この操作の権限がありません。」。変更は確定しない
-    end
     Svc->>Repo: 店舗を読む (require → findById、SELECT stores)
-    break 6c 閉鎖済み (closedAt がある)
-        Svc--xErrs: 409 STORE_CLOSED の例外を投げる (requireNotClosed)
-        Note over Page,Errs: 結果: 409 を返す (business)。画面は 409 なので最新のプロフィールを取り直す (reload。流れは 8〜16 と同じ)。<br/>画面: 6c-1「この店舗は閉鎖済みです。」。変更は確定しない
-    end
-    break 6a 表示した後にほかの人が更新した (revision が違う)
-        Svc--xErrs: 409 STORE_CHANGED の例外を投げる (ApiException)
-        Note over Page,Errs: 結果: 409 を返す (business)。画面は最新のプロフィール (新しい revision) を取り直す (reload)。<br/>画面: 6a-1「店舗情報が更新されています。」と、6a-2 最新のプロフィールの入力欄 (form key={p.revision} を作り直す。6a-3 基本フロー 3 へ戻る)
-    end
     opt 店舗名を変えた (前後の空白を除いて今の名前と比べる)
         Svc->>Repo: 同じ組織に同じ名前の店舗があるかを読む<br/>(existsByOrganizationIdAndName)
         Note over Svc,Repo: 結果: SELECT stores で、ある か ない かを返す
-    end
-    break 同じ組織に同じ名前の店舗がある (記述なし)
-        Svc--xErrs: 409 STORE_NAME_EXISTS の例外を投げる (ApiException)
-        Note over Page,Errs: 結果: 409 を返す (business)。画面は最新のプロフィールを取り直す (revision は同じ)。<br/>画面: 「同じ名前の店舗がすでにあります。」revision が同じなので form を作り直さず、入力欄は入力のまま
     end
     Svc->>Svc: 基本フロー 6 入力を店舗に書き込む (updateProfile。<br/>問い合わせメール以外は前後の空白を除く)
     Svc->>Repo: 書き込んだ店舗を送る (flush)
@@ -118,6 +94,8 @@ sequenceDiagram
 ```
 
 ![EC-S02 シーケンス図](<images/EC-S02_店舗プロフィールを編集する-1.png>)
+
+図に描いていない代替フロー：5a（入力が不正）、6a（ほかの人が更新した）、6b（権限がない）、6c（閉鎖済み）、（記述なし）の分岐
 
 ## 共通代替フローを直接書いた図
 
@@ -265,7 +243,7 @@ sequenceDiagram
                 AuthJs->>Filter: PUT /api/seller/stores/{id}
                 Filter->>Ctrl: 要求を通す (chain.doFilter)
                 Ctrl->>Svc: 店舗のプロフィールを保存するよう頼む (save)
-                Svc->>Db: 立場を確かめ、店舗を読み、revision と店舗名を確かめて<br/>書き換え、コミットする (上の図の 31〜42)
+                Svc->>Db: 立場を確かめ、店舗を読み、revision と店舗名を確かめて<br/>書き換え、コミットする (上の図の 29〜36)
                 alt *a MySQL との通信に失敗
                     Db--xSvc: 失敗 (DataAccessException)。<br/>トランザクションの変更はすべて取り消す
                     Svc--xCtrl: 例外

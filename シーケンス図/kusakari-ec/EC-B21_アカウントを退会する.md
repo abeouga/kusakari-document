@@ -8,7 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 代替フローの 6a（セッションが切れている）は共通代替フロー \*b に、9a（通信に失敗した）は \*a に当たるので、下の「共通代替フローを直接書いた図」に書いています。
-代替フローのうち、エラーで終わるもの（7a・8a・8b）と記述にない分岐（運営者の 409 `ADMIN_REQUIRED`、アカウントの種類が変わった 409）は、分かれる所だけを描き、結果と画面は Note に文で書いています。3a・4a の画面の中だけの操作と、条件つきの処理（オーナーの店舗のロック、譲渡の申し出の無効化）も、頼む矢印 1 本と Note にしています。サーバーがエラーを返したときの画面の後処理（`readResponse` が `ApiError` を投げる → `withdraw` の `catch` で `setRefusal` → `WithdrawalRefusal` が断りの文を出す）は、どれも同じです。
+エラーは最重要の、退会できない場合（7a・8a・8b）だけを 1 つの break にまとめて描き、ほかの代替フローは図の下に並べています。4a の画面の中だけの操作と、条件つきの処理（オーナーの店舗のロック、譲渡の申し出の無効化）は、頼む矢印 1 本と Note にしています。
 
 ```mermaid
 sequenceDiagram
@@ -20,7 +20,6 @@ sequenceDiagram
         participant Work as アカウントの画面の枠<br/>Workspace<br/>(Workspace.jsx)
         participant Acct as アカウント画面<br/>AccountPage<br/>(AccountPage.jsx)
         participant Form as 退会の画面<br/>WithdrawalForm<br/>(AccountSecurity.jsx)
-        participant Nav as 画面の移動<br/>goBack<br/>(navigation.js)
         participant Hook as 取得と書き込み<br/>useResource・write<br/>(useResource.js)
         participant Http as 通信<br/>request<br/>(api.js)
         participant AuthJs as 通信の準備<br/>authFetch<br/>(auth.js)
@@ -28,7 +27,6 @@ sequenceDiagram
     box rgba(27,127,92,0.12) EC API Spring Boot
         participant AuthCtrl as ログイン状態API<br/>AuthController<br/>(AuthController.java)
         participant Ctrl as 会員API<br/>MemberController<br/>(MemberController.java)
-        participant Errs as エラーの応答<br/>ApiErrors<br/>(ApiErrors.java)
         participant Svc as 会員の処理<br/>MemberService<br/>(MemberService.java)
         participant StoreRepo as 店舗の読み書き<br/>StoreRepository<br/>(StoreRepository.java)
         participant Pend as オーナーの譲渡の申し出<br/>PendingOwnerSuccession<br/>(PendingOwnerSuccession.java)
@@ -37,7 +35,7 @@ sequenceDiagram
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合 (6a): 2 (URL を直接開いたときのログインの確認) と 18 に適用<br/>*a 通信に失敗した場合 (9a): 16 と 18 に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合 (6a): 2 (URL を直接開いたときのログインの確認) と 16 に適用<br/>*a 通信に失敗した場合 (9a): 14 と 16 に適用
 
     User->>Work: アカウント画面のサイドバー「アカウント設定」の<br/>「退会」をクリック (EC-C01)
     Work->>Acct: URL を /account/delete に変え、AccountPage を表示<br/>(PageLink → navigate、tab は「退会」)
@@ -47,11 +45,6 @@ sequenceDiagram
     Hook->>AuthCtrl: 画面を開いたときに自動で通信を始める (reload → request)<br/>GET /api/auth/me。ログイン状態を作る (session)
     AuthCtrl-->>Hook: 200 ログイン状態 (SessionView。この画面では使わない)
 
-    break 3a 退会をやめる
-        User->>Form: 3a-1「戻る」をクリック
-        Form->>Nav: 前の画面へ戻るよう頼む (goBack)
-        Note over Form,Nav: 結果: Kusakari の中から来たときは history.back、URL を直接開いたときは navigate('/')。退会の通信はしない。<br/>画面: 3a-2 前の画面か「メイン」画面。3a-3 終了
-    end
     User->>Form: 3 「注意事項を確認し、退会することに同意します」にチェックを付ける
     Form-->>User: 4 「アカウントを削除する」を押せるようにする (setAgreed(true))
     opt 4a チェックを外した
@@ -72,29 +65,13 @@ sequenceDiagram
     Svc->>Pend: 会員がオーナーか担当者として属する組織を探し、<br/>あればロックして読み直す (lockOrganizationOf、SELECT ... FOR UPDATE organizations)
     Pend-->>Svc: 組織 (購入者などは組織なし)
     Svc->>Repo: 会員を読み、行をロックして読み直す<br/>(findById、lockMember、SELECT ... FOR UPDATE members)
-    break 運営者アカウント (isAdmin) (記述なし)
-        Svc--xErrs: 409 ADMIN_REQUIRED の例外を投げる (ApiException)
-        Note over Errs,Form: 結果: 409「管理者はこの画面から退会できません。」を返す。<br/>画面: 断りの文 (setRefusal → WithdrawalRefusal)。
-    end
-    break ロックを待つ間に、譲渡の承認で担当者からオーナーになった (記述なし)
-        Svc--xErrs: 409 WITHDRAWAL_ACCOUNT_CHANGED の例外を投げる (ApiException)
-        Note over Errs,Form: 結果: 409「退会の手続きの間にアカウントの種類が変わりました。…」を返す。<br/>画面: 断りの文 (setRefusal → WithdrawalRefusal)。
-    end
     Svc->>Guard: 7 自分の未完了の注文を読む (openPurchases)<br/>SELECT orders。status が ACCEPTED か READY、またはキャンセル申請が PENDING。<br/>注文履歴で非表示にした注文も含む
     Guard-->>Svc: 注文番号と状態の一覧 (なければ空)
-    break 7a 未完了の注文がある
-        Svc--xCtrl: 409 WITHDRAWAL_OPEN_ORDERS の例外を、<br/>注文の一覧と一緒に投げる (WithdrawalBlockedException)
-        Note over Ctrl,Form: 結果: 409 code、message、orders を返す (withdrawalBlocked)。<br/>画面: 7a-1「受け渡しが完了していない注文があるため退会できません。」7a-2「注文番号 {id}（注文受付）」か「（受取準備完了）」と「注文履歴を確認する」(/purchases)。7a-3 終了
-    end
     Svc->>Guard: 8 オーナーで組織に店舗があるときだけ、出品中の商品があるかを確かめる<br/>(hasListedProducts、SELECT count inventory・products、publicationStatus が PUBLISHED)
-    break 8a 出品中の商品がある
-        Svc--xCtrl: 409 WITHDRAWAL_LISTED_PRODUCTS の例外を投げる<br/>(WithdrawalBlockedException、注文は空)
-        Note over Ctrl,Form: 結果: 409 code と message を返す (withdrawalBlocked)。<br/>画面: 8a-1「出品中の商品があるため退会できません。すべての商品を販売停止にしてから再度お試しください。」8a-2「商品一覧を確認する」(/seller/products)。8a-3 終了
-    end
     Svc->>Guard: 8 同じく、店舗の未完了の注文か、未処理のキャンセル申請があるかを確かめる<br/>(hasOpenStoreOrders、SELECT count orders。status が ACCEPTED か READY、<br/>またはキャンセル申請が PENDING)
-    break 8b ある
-        Svc--xCtrl: 409 WITHDRAWAL_STORE_ORDERS の例外を投げる<br/>(WithdrawalBlockedException、注文は空)
-        Note over Ctrl,Form: 結果: 409 code と message を返す (withdrawalBlocked)。<br/>画面: 8b-1「引き渡しが完了していない注文、または処理していないキャンセル申請があるため退会できません。」8b-2「注文一覧・キャンセル申請を確認する」(/seller/orders)。8b-3 終了
+    break 7a・8a・8b 退会できない (未完了の注文、出品中の商品、店舗の未完了の注文かキャンセル申請がある)
+        Svc--xCtrl: 409 WITHDRAWAL_OPEN_ORDERS・WITHDRAWAL_LISTED_PRODUCTS・<br/>WITHDRAWAL_STORE_ORDERS のどれかの例外を投げる (WithdrawalBlockedException)
+        Note over Ctrl,Form: 結果: 最初に見つかったもので 409 を返し (7a は注文の一覧も)、アカウントを削除しない。<br/>画面: 断りの文と、7a「注文履歴を確認する」、8a「商品一覧を確認する」、8b「注文一覧・キャンセル申請を確認する」。終了
     end
     Svc->>Svc: 9 会員を退会状態にする<br/>(AuthMember の withdraw。enabled を偽、withdrawnAt に今の時刻)
     opt 組織をロックした (記述なし)
@@ -113,6 +90,8 @@ sequenceDiagram
 ```
 
 ![EC-B21 シーケンス図](<images/EC-B21_アカウントを退会する-1.png>)
+
+図に描いていない代替フロー：3a（退会をやめる）、（記述なし）の分岐
 
 ## 共通代替フローを直接書いた図
 
@@ -185,7 +164,7 @@ sequenceDiagram
             AuthJs->>Filter: DELETE /api/account
             Filter->>Ctrl: 要求を通す (chain.doFilter)
             Ctrl->>Svc: 退会するよう頼む (withdraw)
-            Svc->>Db: 会員を読み、店舗・組織・会員をロックし、退会できるかを確かめて<br/>書き換え、コミットする (上の図の 19〜36)
+            Svc->>Db: 会員を読み、店舗・組織・会員をロックし、退会できるかを確かめて<br/>書き換え、コミットする (上の図の 17〜30)
             alt 9a (*a) MySQL との通信に失敗
                 Db--xSvc: 失敗 (DataAccessException)。<br/>トランザクションの変更はすべて取り消す
                 Svc--xCtrl: 例外
@@ -198,7 +177,7 @@ sequenceDiagram
                 Svc-->>Ctrl: 終わった
                 Ctrl-->>Http: 200 { withdrawn: true }。セッションは無効にした
                 Http-->>Form: 退会した
-                Form-->>User: 「メイン」画面と「退会が完了しました。…」(上の図の 41〜43)
+                Form-->>User: 「メイン」画面と「退会が完了しました。…」(上の図の 35〜37)
             end
         end
     end

@@ -9,7 +9,7 @@
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 ログインは EC の画面でメールアドレスとパスワードを受け取り、EC API が Amazon Cognito の `InitiateAuth` を呼びます。ブラウザーが Cognito の画面へ移るのは、代替フロー 7d の認証画面だけです。ブラウザーには `KUSAKARI_SESSION` の Cookie だけを渡し、トークンはサーバーの HTTP セッションに置きます。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
-代替フローのうち、エラーで終わるもの（6a・7a・7b・7e）は分かれる所だけを描き、結果と画面は Note に文で書いています。7c・7d は、そこでしか起きないやり取り（確認コードの送信、Cognito の認証画面）だけを矢印で描いています。
+エラーは最重要の 7a・7b だけを描き、ほかの代替フローは図の下に並べています。
 
 ```mermaid
 sequenceDiagram
@@ -20,14 +20,11 @@ sequenceDiagram
         participant App as 画面の切り替え<br/>App<br/>(App.jsx)
         participant Login as ログイン画面<br/>LoginPage<br/>(LoginPage.jsx)
         participant Panel as ログインの入力欄<br/>AuthPanel<br/>(AuthPanel.jsx)
-        participant Form as 確認コードの入力欄<br/>SignupForm<br/>(SignupForm.jsx)
         participant AuthJs as ログインの通信<br/>readSession・postAuth<br/>(auth.js)
     end
     box rgba(27,127,92,0.12) EC API Spring Boot
         participant AuthCtrl as ログイン状態API<br/>AuthController<br/>(AuthController.java)
         participant LoginCtrl as パスワードログインAPI<br/>PasswordLoginController<br/>(PasswordLoginController.java)
-        participant SignupCtrl as 新規登録API<br/>SignupController<br/>(SignupController.java)
-        participant Sec as 認証画面との連携<br/>oauth2Login<br/>(AuthConfiguration.java)
         participant Errs as エラーの応答<br/>ApiErrors<br/>(ApiErrors.java)
         participant CogP as Cognito でのログイン<br/>CognitoPasswordLogin<br/>(CognitoPasswordLogin.java)
         participant AuthSvc as ログイン中の会員<br/>AuthService<br/>(AuthService.java)
@@ -38,7 +35,7 @@ sequenceDiagram
         participant Cog as Amazon Cognito
     end
 
-    Note over User,Cog: 共通代替フロー<br/>*a 通信に失敗した場合: 6、16、18、27、7d のページの移動の 31・35、49 に適用<br/>*b 未ログインの場合: ログインの前なので適用しない
+    Note over User,Cog: 共通代替フロー<br/>*a 通信に失敗した場合: 6、15、17、34 に適用<br/>*b 未ログインの場合: ログインの前なので適用しない
 
     User->>Header: 共通ヘッダーの「ログイン」をクリック
     Header->>App: ログインのボタンが押されたことを伝える<br/>(onPanel('login') → openHeaderPanel)
@@ -53,9 +50,6 @@ sequenceDiagram
     Panel-->>User: 「ログイン」画面。「メールアドレス」「パスワード」「ログイン」、<br/>「パスワードを忘れた方・追加の本人確認」「新規登録」<br/>「招待キーで登録（店舗の担当者）」
 
     User->>Panel: 「メールアドレス」と「パスワード」を入力し、<br/>「ログイン」をクリック
-    break 6a メールアドレスかパスワードが未入力
-        Panel-->>User: 6a-1 ブラウザーが未入力の欄に入力を求める<br/>(input の required。通信しない)。6a-2 基本フロー 3 へ戻る
-    end
     Panel->>Panel: 送信中にして入力欄を押せなくする<br/>(submit → setSubmitting(true))。ボタンは「ログイン中…」
     Panel->>AuthJs: メールアドレスとパスワードで<br/>ログインするよう頼む (passwordLogin)
     AuthJs->>AuthCtrl: 書き込みの前に CSRF トークンを取る<br/>GET /api/auth/csrf (postAuth → authFetch)
@@ -66,30 +60,6 @@ sequenceDiagram
     break 7a 一致するアカウントがない
         CogP--xErrs: 401 INVALID_CREDENTIALS の例外を投げる<br/>(NotAuthorizedException か UserNotFoundException を受けて)
         Note over Errs,Panel: 結果: 401 を返し、ログインしない。<br/>画面: 7a-1「メールアドレスまたはパスワードが正しくありません。」入力はそのまま (7a-2 基本フロー 3 へ)
-    end
-    break 7e 短時間にログインを繰り返し失敗した
-        CogP--xErrs: 429 AUTH_RATE_LIMITED の例外を投げる<br/>(TooManyRequestsException を受けて)
-        Note over Errs,Panel: 結果: 429 を返し、ログインしない。<br/>画面: 7e-1「試行回数が多すぎます。時間をおいて再試行してください。」入力はそのまま
-    end
-    break 7c メールアドレスの確認が済んでいない
-        CogP--xErrs: 409 EMAIL_NOT_CONFIRMED の例外を投げる<br/>(UserNotConfirmedException を受けて)
-        Panel->>Form: 確認コードの入力に切り替える<br/>(setPending、switchMode('confirm') → SignupForm)
-        Form-->>User: 7c-1「(メールアドレス) に送信した6桁の確認コードを入力してください。」<br/>「確認コード」「確認して登録を完了」「確認コードを再送する」
-        User->>Form: 7c-2 確認コードを入力し、「確認して登録を完了」をクリック
-        Form->>SignupCtrl: 確認コードを送る POST /api/auth/signup/confirm<br/>(confirm → confirmSignUp。先に CSRF トークンを取る)
-        SignupCtrl->>Cog: 確認コードを照合する<br/>(CognitoSignup.confirm、ConfirmSignUp)
-        Note over Form,Cog: 結果: 確認できたら、覚えていたパスワードでログインし直す (passwordLogin。流れは 15〜20、36〜51 と同じ)。7c-3 基本フロー 8 へ。<br/>画面: コードが違う・期限切れ (記述なし) なら「確認コードが正しくありません。」などを出し、入力欄は残る。
-    end
-    break 7d 追加の本人確認やパスワードの変更が必要
-        CogP--xErrs: 409 AUTH_CHALLENGE_REQUIRED の例外を投げる<br/>(ChallengeName のある応答か PasswordResetRequiredException を受けて)
-        Note over Errs,Panel: 画面: 7d-1「追加の本人確認またはパスワード変更が必要です。認証画面で手続きを完了してください。」<br/>か「認証画面でメール確認またはパスワード再設定を完了してください。」
-        User->>Panel: 7d-2「パスワードを忘れた方・追加の本人確認」をクリック
-        Panel->>Sec: 認証画面へページごと移る (a 要素の href)<br/>GET /api/auth/login?managed=true → /api/auth/authorize/cognito
-        Sec->>Cog: 認可要求 (PKCE、state、nonce) を作り、<br/>Cognito の /oauth2/authorize へ 302 (withPkce)
-        Cog-->>User: 7d-3 Cognito の認証画面 (Managed Login)
-        User->>Cog: 7d-4 追加の本人確認やパスワードの再設定を済ませる
-        Cog->>Sec: GET /api/auth/callback/cognito (code と state)。<br/>認可コードをトークンに換える (oauth2Login、POST /oauth2/token)
-        Note over Sec,Cog: 結果: 会員を用意して使えるかを確かめ (successHandler → provision、current。流れは 38〜44 と同じ)、戻り先へ 302 して基本フロー 8 へ。<br/>失敗したとき (記述なし) は /account/login?auth=failed に戻し、「認証が完了しませんでした。もう一度ログインしてください。」
     end
     Cog-->>CogP: ID トークン、アクセストークン、refresh トークン
     CogP-->>LoginCtrl: 会員の情報と refresh トークン (Login)<br/>ID トークンの署名、issuer、audience、期限は toUser で確かめた
@@ -114,6 +84,10 @@ sequenceDiagram
     AuthCtrl-->>App: 200 authenticated=true、email、name、accountType など
     App-->>User: 元の画面 (戻り先がなければトップ)、<br/>共通ヘッダーに「アカウント」
 ```
+
+![EC-B01 シーケンス図](<images/EC-B01_ログインする-1.png>)
+
+図に描いていない代替フロー：6a（未入力）、7e（試行回数の上限）、7c（メールアドレスの確認）、7d（追加の本人確認）、（記述なし）の分岐
 
 ## 共通代替フローを直接書いた図
 
@@ -218,6 +192,8 @@ sequenceDiagram
     end
 ```
 
+![EC-B01 共通代替フローを直接書いた図](<images/EC-B01_ログインする-2.png>)
+
 ## ユースケース記述との差
 
 - 6a: 未入力の検査は React のコードではなく、入力欄の `required` でブラウザーが行います。文言はブラウザーが出すもので、記述の「入力を求める表示」に当たります。サーバーでも `LoginRequest` の `@NotBlank`・`@Email`・`@Size` が検査し、違反すると 400 `INVALID_INPUT`「入力内容・文字数・数値の範囲を確認してください。」になります（`ApiErrors.invalid()`）。
@@ -229,7 +205,7 @@ sequenceDiagram
 - 基本フロー 8: 戻り先は、ヘッダーの「ログイン」を押した画面の URL（`returnTo`）です。`AuthUrls.safeReturn()` が、EC と Canvas のオリジン以外の URL、`/account/login`、`/api/auth/` で始まる URL を EC の「/」に換えます。Canvas の画面から来た場合は Canvas へ戻ります。記述の「元の画面または『メイン』画面」に当たります。
 - 基本フロー 2: ログイン画面を開くと、`LoginPage` と `AuthPanel` がそれぞれ `useAuth()` を呼ぶので、`GET /api/auth/me` を 2 回送ります。図では 1 回だけ書いています。ログインの後の `kusakari-auth-changed` でも、表示中の `useAuth()` が `GET /api/auth/me` を送り直しますが、すぐにページを読み込み直すので図には書いていません。
 - 共通代替フロー \*a: ログインの通信は `api.js` を通らないので、00 の \*a-1 の共通の文（「サーバーに接続できません。…」）になりません。届かないときは `fetch()` の例外の文（ブラウザーが作る英語などの文）がそのまま出ます。CSRF トークンを取れないときの「操作の確認情報を取得できません。画面を再読み込みしてください。」は、`api.js` を通る画面と違い、この画面ではそのまま出ます。ログイン画面を開いたときの `GET /api/auth/me` に失敗すると、入力欄の代わりにエラーの文だけが出て、「再取得」のボタンはありません。
-- 共通代替フロー \*a: Cognito の応答で Cognito の側のエラー（図の 7a・7c・7d・7e 以外）が返ったときは、503 `AUTH_UNAVAILABLE` でも文が「認証サービスに接続できません。時間をおいて再試行してください。」に変わります。Cognito に届かないときと、ID トークンを確かめられないとき（`toUser()`）は「認証を確認できません。時間をおいて再試行してください。」です。古い図は届かないときを「認証サービスに接続できません。」としていましたが、コードでは「認証を確認できません。」です。
+- 共通代替フロー \*a: Cognito の応答で Cognito の側のエラー（記述の 7a・7c・7d・7e 以外）が返ったときは、503 `AUTH_UNAVAILABLE` でも文が「認証サービスに接続できません。時間をおいて再試行してください。」に変わります。Cognito に届かないときと、ID トークンを確かめられないとき（`toUser()`）は「認証を確認できません。時間をおいて再試行してください。」です。古い図は届かないときを「認証サービスに接続できません。」としていましたが、コードでは「認証を確認できません。」です。
 - 共通代替フロー \*b: ログインの前のユースケースなので、適用しません。
 - `GET /api/auth/me` が 403 を返したとき（ログインの後に利用停止になった会員など）、`readSession()` は応答の文（「このアカウントは利用できません。」など）を出します。事前条件がログアウト状態なので、図には書いていません。
 

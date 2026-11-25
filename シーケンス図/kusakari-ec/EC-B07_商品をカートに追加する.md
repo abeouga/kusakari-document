@@ -8,7 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
-代替フローのうち、エラーで終わるもの（4a の 5 つ。うち revision の違いは記述なし）と 1b（ログイン画面へ移る）は、分かれる所だけを描き、結果と画面は Note に文で書いています。4a のときの画面の後処理（`readResponse` が `ApiError` を投げる → `run` の catch でエラーの文を覚える → `refreshOnFailure` なので最新のカートを取り直す（`GET /api/cart` などの流れは EC-B08 の図と同じ）→ ダイアログか商品一覧の上にエラーの文を出す）は、どれも同じです。取り直しの `GET /api/cart` にも共通代替フロー \*a・\*b が起こります。
+エラーは最重要の 4a（受取店舗の在庫数を超える）だけを描き、ほかの代替フローは図の下に並べています。4a のときの画面の後処理（`readResponse` が `ApiError` を投げる → `run` の catch でエラーの文を覚える → `refreshOnFailure` なので最新のカートを取り直す（`GET /api/cart` などの流れは EC-B08 の図と同じ）→ ダイアログか商品一覧の上にエラーの文を出す）は、図に描いていないほかの 4a でも同じです。取り直しの `GET /api/cart` にも共通代替フロー \*a・\*b が起こります。
 
 「カートに追加」と商品一覧の「＋」は、どちらも `useShop` の `add()` を呼びます。`add()` は、画面が持っているカートの数量に追加する数量を足し、その合計を `PUT /api/cart/items/{productId}` で送ります。サーバーは送られた数量で明細を上書きします。カートは画面を開いたときに読み込み済みです（[EC-B08](<EC-B08_カートを確認する.md>) の図と同じ流れ）。
 
@@ -36,7 +36,7 @@ sequenceDiagram
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 13 に適用<br/>*a 通信に失敗した場合: 11、13 に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 12 に適用<br/>*a 通信に失敗した場合: 10、12 に適用
 
     alt 1a 商品一覧から追加する
         User->>Card: 1a-1 商品カードの「＋」(「(商品名)をカートに追加」) をクリック
@@ -47,10 +47,6 @@ sequenceDiagram
         User->>Detail: 「カートに追加」をクリック
         Detail->>Shop: 商品をカートに追加するよう頼む<br/>(onAdd(quantity) → App.jsx の shop.add(detail.id, quantity))
     end
-    break 1b 未ログイン (画面を開いたときの GET /api/cart が 401 で、signedOut が真)
-        Shop->>AuthJs: 1b-1 ログイン画面へ移るよう頼む (login)。カートの API は呼ばない
-        Note over App,AuthJs: 結果: URL を /account/login?returnTo=今の URL に変え (navigate)、ログイン画面 (LoginPage) を出す。<br/>画面: 1b-2 ログインすると元の URL を読み込み直す。1b-3 ダイアログは閉じた状態に戻り、基本フロー 1 へ戻る。
-    end
     Shop->>Shop: 送る数量を決める (cart.items から今の数量を探し、<br/>今の数量 + 追加する数量で setQuantity)
     Shop->>Http: 明細の数量を書き換える通信を送る<br/>(run → api.setItem → request、本文は { quantity, revision })
     Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (send → authFetch)
@@ -58,38 +54,22 @@ sequenceDiagram
     AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
     AuthJs->>Ctrl: PUT /api/cart/items/{productId}<br/>(CSRF トークンのヘッダー付き)
     Ctrl->>Ctrl: 本文を検査する<br/>(@Valid、ItemRequest の quantity は 0〜99、revision は 0 以上)
-    break 4a 送る数量 (今の数量 + 追加する数量) が 99 を超える
-        Ctrl--xErrs: 検査の失敗 (MethodArgumentNotValidException)
-        Note over Errs,Detail: 結果: 400 INVALID_INPUT「入力内容・文字数・数値の範囲を確認してください。」を返す (invalid)。<br/>画面: 4a-1 最新のカートを取り直し、エラーの文を出す (追加しない)。4a-2 基本フロー 1 へ戻る。
-    end
     Ctrl->>Resolver: 会員のカートを特定するよう頼む (resolve)<br/>中身は EC-B08 の図と同じ流れ
     Resolver-->>Ctrl: カートの ID
     Ctrl->>Svc: 明細の数量を書き換えるよう頼む (updateItem)<br/>updateItem 全体が 1 つのトランザクション
     Svc->>CartRepo: カートの行をロックして読む (findLocked、SELECT ... FOR UPDATE carts)
     CartRepo-->>Svc: カート
     Svc->>Svc: 送られた revision と今の revision を比べる (checkRevision)
-    break 4a 画面のカートが古い (revision が違う、記述なし)
-        Svc--xErrs: 409 CART_CHANGED の例外を投げる (ApiException)
-        Note over Errs,Detail: 結果: 409「別の操作でカートが更新されました。最新の内容を確認してください。」を返す (business)。<br/>画面: 4a-1 最新のカートを取り直し、その文を出す (追加しない)。4a-2 基本フロー 1 へ戻る。
-    end
     Svc->>ItemRepo: その商品の明細を読む (findById、SELECT cart_items)
     ItemRepo-->>Svc: 明細 (なければなし)
     Svc->>Catalog: 商品と、今買えるかを調べるよう頼む (listing)<br/>商品・在庫・店舗・組織を読む (findByIdIn、findAllById、<br/>SELECT products、inventory、stores、organizations)
     Catalog-->>Svc: 商品と買えない理由 (Listing)
-    break 4a 商品を一覧に出した後で買えなくなった (purchasable が偽)
-        Svc--xErrs: 409 PRODUCT_ARCHIVED の例外を投げる (ApiException)
-        Note over Errs,Detail: 結果: 409「この商品は販売を終了しています。カートから削除してください。」を返す (business)。<br/>画面: 4a-1 最新のカートを取り直し、その文を出す (追加しない)。4a-2 基本フロー 1 へ戻る。
-    end
     break 4a 送る数量が受取店舗の在庫数を超える
         Svc--xErrs: 409 OUT_OF_STOCK の例外を投げる (ApiException)
         Note over Errs,Detail: 結果: 409「受取店舗の在庫が不足しています。」を返す (business)。<br/>画面: 4a-1 最新のカートを取り直し、その文を出す (追加しない)。4a-2 基本フロー 1 へ戻る。
     end
     Svc->>ItemRepo: カートの全明細を読む (findAllForCart、SELECT cart_items)
     ItemRepo-->>Svc: 明細のリスト
-    break 4a カートにない商品で、すでに 50 種類ある
-        Svc--xErrs: 400 CART_LIMIT の例外を投げる (ApiException)
-        Note over Errs,Detail: 結果: 400「カートは50種類までです。」を返す (business)。<br/>画面: 4a-1 最新のカートを取り直し、その文を出す (追加しない)。4a-2 基本フロー 1 へ戻る。
-    end
     Svc->>ItemRepo: 明細を保存する (save、INSERT か UPDATE cart_items)<br/>カートになければ明細を作り、あれば数量を送られた数量で上書きする
     Svc->>Svc: カートの revision を 1 増やし (incrementRevision)、明細ごとの金額、合計、<br/>点数、注文に進めるかを計算する (view。中身は EC-B08 の図と同じ流れ)
     Svc-->>Ctrl: カートの内容 (CartView)。updateItem の終わりにコミット
@@ -106,6 +86,8 @@ sequenceDiagram
 ```
 
 ![EC-B07 シーケンス図](<images/EC-B07_商品をカートに追加する-1.png>)
+
+図に描いていない代替フロー：1b（未ログイン）、4a（数量が 99 を超える、販売を終了した、カートが 50 種類）、（記述なし）の分岐
 
 ## 共通代替フローを直接書いた図
 
@@ -171,7 +153,7 @@ sequenceDiagram
                 AuthJs-->>User: /account/login?returnTo=今の URL のログイン画面<br/>(*b-2 ログインの後は元の画面を読み込み直す。カートは変わっていない)
             else 閉じる
                 User->>Notice: 「閉じる」をクリック
-                Notice-->>User: お知らせを消す (setExpired(false))。<br/>もう一度追加すると、signedOut が真なので上の図の 1b と同じくログイン画面へ移る
+                Notice-->>User: お知らせを消す (setExpired(false))。<br/>もう一度追加すると、signedOut が真なので記述の 1b と同じくログイン画面へ移る
             end
         else *a ID トークンの更新で Cognito に届かない
             AuthJs->>Filter: PUT /api/cart/items/{productId}
@@ -185,7 +167,7 @@ sequenceDiagram
             AuthJs->>Filter: PUT /api/cart/items/{productId}
             Filter->>Ctrl: 要求を通す (chain.doFilter)
             Ctrl->>Svc: 明細の数量を書き換えるよう頼む (updateItem)
-            Svc->>Db: カートをロックして読み、商品と在庫を確かめ、<br/>明細を保存してコミットする (上の図の 19〜34)
+            Svc->>Db: カートをロックして読み、商品と在庫を確かめ、<br/>明細を保存してコミットする (上の図の 17〜29)
             alt *a MySQL との通信に失敗
                 Db--xSvc: 失敗 (DataAccessException)。<br/>トランザクションの変更はすべて取り消す
                 Svc--xCtrl: 例外

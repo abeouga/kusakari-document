@@ -8,7 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
-代替フローのうち、画面の中だけで終わるもの（5a）、エラーで終わるもの（6a）と記述にない分岐（カテゴリがない）は、分かれる所だけを描き、結果と画面は Note に文で書いています。エラーのときの画面の後処理（`readResponse` が `ApiError` を投げる → 404・409 なら `reload` で一覧を取り直す → `run` が false → ダイアログを閉じてエラーの文を出す）は、どれも同じです。
+エラーは最重要の 6a（商品で使用中）だけを描き、ほかの代替フローは図の下に並べています。6a のときの画面の後処理（`readResponse` が `ApiError` を投げる → 409 なので `reload` で一覧を取り直す → `run` が false → ダイアログを閉じてエラーの文を出す）は、Note に文で書いています。
 
 ```mermaid
 sequenceDiagram
@@ -32,7 +32,7 @@ sequenceDiagram
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、5、23、一覧の取り直しの 39 に適用<br/>*a 通信に失敗した場合: 2 (URL を直接開いたときのログインの確認)、5、21、23、一覧の取り直しの 39 に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、5、22、一覧の取り直しの 38 に適用<br/>*a 通信に失敗した場合: 2 (URL を直接開いたときのログインの確認)、5、20、22、一覧の取り直しの 38 に適用
 
     User->>Work: 運営者メニューの「カテゴリ管理」をクリック
     Work->>Page: URL を /operator/categories に変え、<br/>CategoriesPage を表示
@@ -49,10 +49,6 @@ sequenceDiagram
     User->>Page: 削除するカテゴリの「削除」をクリック
     Page->>Dlg: 対象のカテゴリを覚えて、<br/>確認ダイアログを表示 (setDeleting(name) → ConfirmDialog)
     Dlg-->>User: 「カテゴリ削除の確認」、「カテゴリ「(名前)」を削除します。」、<br/>販売中・非表示の商品があると削除できないこと、「削除を確定」「取消」
-    break 5a 削除を取り消した
-        User->>Dlg: 5a-1「取消」をクリック<br/>(Esc キー、「閉じる」、ダイアログの外側のクリックも同じ)
-        Note over Page,Dlg: 結果: 取り消したことを伝え (onCancel)、ダイアログを閉じる (setDeleting(''))。通信しない。<br/>画面: 5a-2 一覧は変わらない (5a-3 終了)。
-    end
     User->>Dlg: 「削除を確定」をクリック
     Dlg->>Page: 確定したことを伝える (onConfirm → remove)
     Page->>Hook: 削除を実行し、成功の文を渡す (run)<br/>「カテゴリを削除しました。」
@@ -64,14 +60,11 @@ sequenceDiagram
     Ctrl->>Svc: カテゴリを削除するよう頼む (delete)。delete 全体が 1 つのトランザクション<br/>運営者かを確かめる (AuthService.requireAdmin)
     Svc->>CatRepo: カテゴリの行をロックして読む (lock、SELECT ... FOR UPDATE categories)
     CatRepo-->>Svc: カテゴリ (なければなし)
-    break カテゴリがない (ほかの運営者が削除した。記述なし)
-        Note over Svc,Page: 結果: 404 CATEGORY_NOT_FOUND を返し (notFound)、何も変えない。<br/>画面: ダイアログを閉じ、一覧を取り直して「カテゴリが見つかりません。」
-    end
     Svc->>ProdRepo: 削除されていない商品がこのカテゴリを使っているかを調べる (isCategoryInUse)<br/>SELECT count products (在庫の publication_status が DELETED の商品は数えない)
     ProdRepo-->>Svc: 使っているか
     break 6a 商品で使用中
         Svc--xErrs: 409 CATEGORY_IN_USE の例外を投げる (ApiException)
-        Note over Errs,Page: 結果: 409 を返し、削除しない。<br/>画面: 6a-1 ダイアログを閉じ、一覧を取り直して「商品で使用中のカテゴリは削除できません。<br/>先に該当商品を別のカテゴリへ移してください。」(6a-2 終了)
+        Note over Errs,Page: 結果: 409 を返し、削除しない。<br/>画面: 6a-1 ダイアログを閉じ、一覧を取り直して「商品で使用中のカテゴリは削除できません。先に該当商品を別のカテゴリへ移してください。」(6a-2 終了)
     end
     Svc->>ProdRepo: 削除済みの商品がこのカテゴリを持っているかを調べる (existsByCategory)<br/>SELECT products (category_name が同じ商品)
     ProdRepo-->>Svc: あるか
@@ -92,6 +85,8 @@ sequenceDiagram
 ```
 
 ![EC-A09 シーケンス図](<images/EC-A09_商品カテゴリを削除する-1.png>)
+
+図に描いていない代替フロー：5a（削除を取り消した）、（記述なし）の分岐
 
 ## 共通代替フローを直接書いた図
 
@@ -171,7 +166,7 @@ sequenceDiagram
             AuthJs->>Filter: DELETE /api/operator/categories/{name}
             Filter->>Ctrl: 要求を通す (chain.doFilter)
             Ctrl->>Svc: カテゴリを削除するよう頼む (delete)
-            Svc->>Db: 運営者かを確かめ、カテゴリの行をロックして読み、<br/>商品の使用を調べて削除し、コミットする (上の図の 24〜35)
+            Svc->>Db: 運営者かを確かめ、カテゴリの行をロックして読み、<br/>商品の使用を調べて削除し、コミットする (上の図の 23〜34)
             alt *a MySQL との通信に失敗
                 Db--xSvc: 失敗 (DataAccessException)。<br/>トランザクションの変更はすべて取り消す
                 Svc--xCtrl: 例外

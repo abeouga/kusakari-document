@@ -8,7 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
-代替フローのうち、画面の中だけで終わるもの（2a）と事前条件の外の分岐（店舗側・出店申請用のアカウント）は、分かれる所だけを描いています。条件つきの処理（`Workspace` の外から開いたときのログイン状態の読み込み、注文状態での絞り込み）は、頼む矢印 1 本と Note に寄せています。
+エラーの分岐は描かず、代替フローは図の下に並べています。条件つきの処理（`Workspace` の外から開いたときのログイン状態の読み込み、注文状態での絞り込み）は、頼む矢印 1 本と Note に寄せています。
 
 ```mermaid
 sequenceDiagram
@@ -33,7 +33,7 @@ sequenceDiagram
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 4 (Workspace を新しく表示したときのログインの確認) と 9 に適用<br/>*a 通信に失敗した場合: 4 と 9 に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 4 (Workspace を新しく表示したときのログインの確認) と 8 に適用<br/>*a 通信に失敗した場合: 4 と 8 に適用
 
     User->>Header: 共通ヘッダーの「注文履歴」をクリック
     Header->>App: 移る先の URL を渡す<br/>(follow → onNavigate の navigateFromHeader)
@@ -41,9 +41,6 @@ sequenceDiagram
     opt トップなど Workspace の外の画面から開いたとき
         Work->>AuthCtrl: ログイン状態を読む (useAuth → readSession)<br/>GET /api/auth/me
         Note over Work,AuthCtrl: 結果: 200 ログイン状態 (authenticated、accountType) を受け取る。<br/>画面: ログイン中なら続ける。マイページなど Workspace の画面から開いたときは読み直さない。
-    end
-    break 店舗側・出店申請用のアカウント (isShopAccount)
-        Work-->>User: 「店舗・出店申請用のアカウントでは購入できません。<br/>購入は購入者のアカウントでご利用ください。」(buyerOnlyMessage)。<br/>注文を取りに行かない
     end
     Work->>Orders: BuyerOrders を表示
     Orders->>Hook: 注文の一覧を取りに行くよう頼む (useResource)
@@ -67,9 +64,6 @@ sequenceDiagram
     Http-->>Hook: 注文の一覧
     Hook-->>Orders: 注文の一覧
     Orders->>Orders: 選んだ注文状態で絞り込む (shown、filter)<br/>初めは「すべて」なので全件
-    break 2a 注文が 0 件
-        Orders-->>User: 2a-1「注文はありません。」(2a-2 ユースケースを終了する)
-    end
     Orders-->>User: 注文ごとの注文日時、注文状態 (orderLabels)、商品画像 (4 枚まで)、<br/>商品名 (「ほか N 点」)、受取店舗、個数、注文番号、合計金額。<br/>申請中なら「キャンセル申請中」、返金が済んだら「返金済み」
     opt 基本フロー 4〜5 注文状態で絞り込む
         User->>Orders: 絞り込みボタン (「すべて」「注文受付」「受取準備完了」<br/>「引き渡し完了」「キャンセル」) をクリック
@@ -86,6 +80,8 @@ sequenceDiagram
 ```
 
 ![EC-B13 シーケンス図](<images/EC-B13_注文履歴を確認する-1.png>)
+
+図に描いていない代替フロー：2a（注文が 0 件）、（記述なし）の分岐
 
 ## 共通代替フローを直接書いた図
 
@@ -180,7 +176,7 @@ sequenceDiagram
         Http->>Filter: GET /api/orders
         Filter->>Ctrl: 要求を通す (chain.doFilter)
         Ctrl->>Svc: 購入者を確かめ、カートを調べてから、<br/>注文の一覧を作るよう頼む (resolve → list)
-        Svc->>Db: 注文、明細、画像、決済、返金、店舗、会員を読む<br/>(上の図の 10〜20)
+        Svc->>Db: 注文、明細、画像、決済、返金、店舗、会員を読む<br/>(上の図の 9〜19)
         alt *a MySQL との通信に失敗
             Db--xSvc: 失敗 (DataAccessException)
             Svc--xCtrl: 例外

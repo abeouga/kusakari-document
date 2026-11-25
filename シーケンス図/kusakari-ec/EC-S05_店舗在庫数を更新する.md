@@ -8,7 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
-代替フローのうち、エラーで終わるもの（7a・8a・8b）と記述にない分岐（店舗・商品がない 404、削除済みの商品の 409）は、分かれる所だけを描き、結果と画面は Note に文で書いています。サーバーが失敗を返したときの画面の後処理（`readResponse` が `ApiError` を投げる → `write` の `catch` でエラーの文を覚える → 一覧を取り直し、同じ商品の最新の在庫数を「変更前の在庫数」にする → 入力欄は開いたままで、入力した値は残る）は、どれも同じです。
+エラーは最重要の 8a（在庫数がもう変わっていた）だけを描き、ほかの代替フローは図の下に並べています。
 
 ```mermaid
 sequenceDiagram
@@ -62,9 +62,6 @@ sequenceDiagram
     Editor-->>User: 「(商品名)：変更前の在庫数 N」、「在庫数」の入力欄、<br/>「在庫を保存」、「取消」
     User->>Editor: 「在庫数」の入力欄に新しい在庫数を入力し、<br/>「在庫を保存」をクリック
     Editor->>Editor: 入力値が 0〜10000 の整数かを確かめる (save)
-    break 7a 空、整数でない、0〜10000 の範囲外
-        Note over User,Editor: 結果: 通信せず、在庫数は変えない。<br/>画面: 7a-1「在庫は0〜10000の整数で入力してください。」(7a-2 基本フロー 5 へ戻る)
-    end
     Editor->>Cat: 在庫数の保存を頼む (onSave → saveStock)<br/>店舗 ID、変更前の在庫数、新しい在庫数
     Cat->>Http: 前のお知らせとエラーを消し、在庫数を書き換える通信を送る<br/>(write → request、本文は { storeId, expectedStock, stock })
     Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (send → authFetch)
@@ -73,19 +70,10 @@ sequenceDiagram
     AuthJs->>Ctrl: PUT /api/seller/products/{id}/stock<br/>(CSRF トークンのヘッダー付き)
     Ctrl->>Svc: 在庫数を書き換えるよう頼む (updateStock)<br/>updateStock 全体が 1 つのトランザクション
     Svc->>Auth: ログイン中の人がこの店舗で STAFF 以上の<br/>ロールを持つかを確かめる (requireSeller → requireStoreRole)
-    break 8b ロールがない (運営が停止した店舗、ない店舗も同じ)
-        Note over Auth,Mgr: 結果: 403 FORBIDDEN を返し、在庫数は変えない (denied)。<br/>画面: 8b-1「この操作の権限がありません。」
-    end
     Svc->>Prod: 店舗があるかを確かめ (CatalogService.requireStore、SELECT stores)、<br/>商品がこの店舗のものかを確かめる (requireAtStore → findStoreReferences、SELECT products)
-    break 店舗がない、商品がほかの店舗のもの (記述なし)
-        Note over Prod,Mgr: 結果: 404 STORE_NOT_FOUND か 404 PRODUCT_NOT_FOUND を返し、在庫数は変えない。<br/>画面: エラーの文
-    end
     Svc->>Inv: 在庫の行をロックして読む (lock、SELECT ... FOR UPDATE inventory)
-    break 商品が削除済み (記述なし)
-        Note over Inv,Mgr: 結果: 409 PRODUCT_ARCHIVED を返し、在庫数は変えない。<br/>画面: 「削除済みの商品の在庫は変更できません。」
-    end
     break 8a 今の在庫数が変更前の在庫数と違う (注文の引き当て、キャンセルの戻しなど)
-        Note over Inv,Mgr: 結果: 409 STOCK_CHANGED を返し、在庫数は変えない (stockChanged)。<br/>画面: 8a-1「在庫数が変更されています（現在の在庫数：N）。…」と、最新の変更前の在庫数。8a-2 基本フロー 5 へ戻る
+        Note over Inv,Mgr: 結果: 409 STOCK_CHANGED を返し、在庫数は変えない。<br/>画面: 「在庫数が変更されています（現在の在庫数：N）。…」と、最新の変更前の在庫数。
     end
     Svc->>Svc: 在庫の数量を新しい在庫数に書き換える (setQuantity)
     Svc->>Prod: 商品を追加した人の名前を読む (findCreatorName、SELECT products JOIN members)
@@ -106,6 +94,8 @@ sequenceDiagram
 ```
 
 ![EC-S05 シーケンス図](<images/EC-S05_店舗在庫数を更新する-1.png>)
+
+図に描いていない代替フロー：7a（入力が無効）、8b（在庫数を変更する権限がない）、（記述なし）の分岐
 
 ## 共通代替フローを直接書いた図
 
@@ -275,7 +265,7 @@ sequenceDiagram
 - 基本フロー 8: 成功のあと、出店者の一覧（`GET /api/seller/products`）のほかに、`shop.refreshProducts()` が購入者向けの商品（`GET /api/cart`、`GET /api/products`）も取り直します。記述にない処理です。
 - 一覧の各行には「追加した人：(表示名)」（追加した人が記録されていない商品は「初期データ」）が出ます。サーバーは一覧と在庫の保存のたびに `findCreatorNamesAtStore()`・`findCreatorName()` で名前を読みます。記述にない表示です。
 - 記述にない操作として、`StockEditor` の「取消」があります。入力欄を閉じるだけで、通信しません。
-- 共通代替フロー: 保存に失敗すると、`useSellerCatalog.js` の `write()` は失敗の種類によらず一覧を取り直します（`useResource.js` は 404・409 のときだけ取り直す）。保存が成功しても、そのあとの一覧か購入者向けの商品の取り直し（上の図の 87・89）に失敗すると、`write()` は失敗として扱い、エラーの文を出して入力欄を開いたままにします（在庫数は保存済みです）。画面を開いたときの一覧の失敗は `ProductManager` の上部に文が出るだけで、「再取得」のボタンはありません。
+- 共通代替フロー: 保存に失敗すると、`useSellerCatalog.js` の `write()` は失敗の種類によらず一覧を取り直します（`useResource.js` は 404・409 のときだけ取り直す）。保存が成功しても、そのあとの一覧か購入者向けの商品の取り直し（上の図の 37・39）に失敗すると、`write()` は失敗として扱い、エラーの文を出して入力欄を開いたままにします（在庫数は保存済みです）。画面を開いたときの一覧の失敗は `ProductManager` の上部に文が出るだけで、「再取得」のボタンはありません。
 
 ## 参照したコード
 

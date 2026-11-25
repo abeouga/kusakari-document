@@ -8,7 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
-代替フローのうち、一覧の表示だけで終わるもの（2a・4a）は分かれる所だけを描き、閉鎖済みでない店舗だけに出す警告・停止の操作（opt）は、表示を頼む矢印と Note に寄せています。5a は、そこでしか起きない注文実績の通信（`GET /api/operator/stores/{店舗 ID}/sales`）があるので、矢印で描いています。
+エラーの分岐は描かず、一覧が空のときの表示（2a・4a）は図の下に並べています。閉鎖済みでない店舗だけに出す警告・停止の操作（opt）は、表示を頼む矢印と Note に寄せています。5a は、そこでしか起きない注文実績の通信（`GET /api/operator/stores/{店舗 ID}/sales`）があるので、矢印で描いています。
 
 ```mermaid
 sequenceDiagram
@@ -32,7 +32,7 @@ sequenceDiagram
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2・28 (URL を直接開いたときのログインの確認)、5、31、43 に適用<br/>*a 通信に失敗した場合: 5、31、43 に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2・26 (URL を直接開いたときのログインの確認)、5、29、41 に適用<br/>*a 通信に失敗した場合: 5、29、41 に適用
 
     User->>Work: 運営者メニューの「店舗管理」をクリック
     Work->>Page: URL を /operator/sellers に変え、<br/>OperatorStoresPage を表示
@@ -53,9 +53,6 @@ sequenceDiagram
     Http-->>Hook: 店舗の一覧
     Hook-->>Page: 店舗の一覧
     Page->>Page: 検索欄の文字を含む店舗だけ残す<br/>(all.filter。検索欄が空なので全店舗が残る)
-    break 2a 店舗が 1 件もない
-        Page-->>User: 2a-1「対象の店舗はありません。」
-    end
     Page->>Page: 店舗ごとに状態を決める (stateOf、SellerStores.jsx)<br/>閉鎖済みなら「閉鎖済み」、閉鎖中なら「閉鎖中（運営が開始・未完了の注文 N件）」<br/>か「閉鎖中（オーナーが開始・未完了の注文 N件）」、停止中なら「運営により停止中」、<br/>それ以外は公開していれば「公開中」、していなければ「非公開」
     opt 閉鎖済みでない店舗 (closedAt が空)
         Page->>Mod: 警告と警告・停止の操作を表示するよう頼む (ModerationControls)
@@ -65,9 +62,6 @@ sequenceDiagram
 
     User->>Page: 「店舗名・会社名・所在地で検索」欄に入力
     Page->>Page: 入力値を覚え (onChange → setQuery)、店舗名・会社名・所在地を空白でつないだ<br/>文字列が入力を含む店舗だけ残す (all.filter、includes。入力欄が空なら全店舗)
-    break 4a 該当する店舗がない
-        Page-->>User: 4a-1「検索条件に一致する店舗はありません。」<br/>4a-2 検索条件を変えて入力する (基本フロー 3 へ戻る)
-    end
     Page-->>User: 部分一致した店舗だけの一覧
 
     alt 5a 店舗の注文実績を確認する
@@ -95,6 +89,8 @@ sequenceDiagram
 ```
 
 ![EC-A05 シーケンス図](<images/EC-A05_店舗情報を確認する-1.png>)
+
+図に描いていない代替フロー：2a（店舗がない）、4a（該当する店舗がない）
 
 ## 共通代替フローを直接書いた図
 
@@ -204,7 +200,7 @@ sequenceDiagram
             Ctrl-->>Http: 200 店舗の配列
             Http-->>Hook: 店舗の一覧
             Hook-->>Page: 店舗の一覧
-            Page-->>User: 店舗の一覧 (上の図の 17〜21 のとおり)
+            Page-->>User: 店舗の一覧 (上の図の 17〜20 のとおり)
         end
     end
     opt *a-3 やり直す

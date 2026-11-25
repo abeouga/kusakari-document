@@ -8,7 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
-代替フローのうち、確認ダイアログを開くだけの 3a〜3c、画面の中だけで終わるもの（6a）、エラーで終わるもの（5a）と記述にない分岐（商品がない）は、分かれる所だけを描き、結果と画面は Note に文で書いています。3b で今の警告を読む処理（opt）も、頼む矢印と Note に寄せています。エラーのときの画面の後処理（`readResponse` が `ApiError` を投げる → 404 なら `reload` で一覧を取り直す → `run` が false → ダイアログを閉じてエラーの文を出す）は、どれも同じです。
+代替フローのうち、確認ダイアログを開くだけの 3a〜3c は、分かれる所だけを描き、結果と画面は Note に文で書いています。3b で今の警告を読む処理（opt）も、頼む矢印と Note に寄せています。エラーの分岐は描かず、ほかの代替フローは図の下に並べています。
 基本フロー（公開の停止）と代替フロー 3a〜3c（警告、警告の解除、公開停止の解除）は、同じ部品と同じ流れを通るので、1 枚の図の中で操作ごとに分けて書いています。
 
 ```mermaid
@@ -35,7 +35,7 @@ sequenceDiagram
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、5、29、一覧の取り直しの 43 に適用<br/>*a 通信に失敗した場合: 2 (URL を直接開いたときのログインの確認)、5、27、29、一覧の取り直しの 43 に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、5、27、一覧の取り直しの 41 に適用<br/>*a 通信に失敗した場合: 2 (URL を直接開いたときのログインの確認)、5、25、27、一覧の取り直しの 41 に適用
 
     User->>Work: 運営者メニューの「商品管理」をクリック
     Work->>Page: URL を /operator/products に変え、<br/>ReviewPage (products) を表示
@@ -65,15 +65,8 @@ sequenceDiagram
         Note over User,Dlg: 結果: 理由を空にして確認ダイアログを表示 (open('resume'))。<br/>画面: 3c-2「公開停止の解除の確認」、対象：商品名、出店者が非表示にしていなければ再び表示されること、「理由（任意・出店者に通知します）」
     end
     User->>Dlg: 理由を入力する (500 文字まで。任意の操作では空でもよい)
-    break 6a 確定を取り消した
-        User->>Dlg: 「取消」をクリック<br/>(Esc キー、「閉じる」、ダイアログの外側のクリックも同じ)
-        Note over User,Dlg: 結果: 取り消したことを伝え (onCancel)、ダイアログを閉じる (setPending(null))。通信しない。<br/>画面: 6a-1 公開状態は変わらない (6a-2 終了)。
-    end
     User->>Dlg: 6「公開停止を確定」(3a「警告する」、3b「警告を解除する」、<br/>3c「公開停止の解除を確定」) をクリック
     Dlg->>Mod: 確定したことを伝える (onConfirm → confirm)
-    break 5a 理由が必須の操作 (停止・警告) で、理由が空 (前後の空白を除いて)
-        Mod-->>User: 5a-1「理由を入力してください。」(setMissing(true))<br/>ダイアログは開いたまま、通信しない (5a-2 基本フロー 5 へ戻る)
-    end
     Mod->>Hook: 操作を実行し、成功の文を渡す (run)
     Hook->>Http: 操作の通信を送る (send の write → request)<br/>停止・解除は { suspended, reason }、警告・解除は { warned, reason }
     Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (authFetch)
@@ -83,9 +76,6 @@ sequenceDiagram
     Ctrl->>Svc: 停止・解除は公開停止の状態を (moderate → suspend)、<br/>警告・解除は警告を (warning → warn) 変えるよう頼む。全体が 1 つのトランザクション<br/>運営者かを確かめる (AuthService.requireAdmin)
     Svc->>ProdRepo: 商品の行をロックして読む (lock → findLocked、SELECT ... FOR UPDATE products)
     ProdRepo-->>Svc: 商品 (なければなし)
-    break 商品がない (記述なし)
-        Note over Svc,Mod: 結果: 404 PRODUCT_NOT_FOUND を返し (notFound)、何も変えない。<br/>画面: ダイアログを閉じ、一覧を取り直して「商品が見つかりません。」
-    end
     Svc->>Hist: 理由の前後の空白を除き、必須なら空でないかを確かめる (reasonFor)<br/>(空の必須の理由は 400 REASON_REQUIRED。画面の 5a が先に止めるので、画面からは届かない)
     opt 3b 警告の解除
         Svc->>EvRepo: 今の警告を求めるため履歴を読むよう頼む (currentWarning → findByProductIdOrderByIdDesc)
@@ -109,6 +99,8 @@ sequenceDiagram
 ```
 
 ![EC-A10 シーケンス図](<images/EC-A10_商品の公開を停止・再開する-1.png>)
+
+図に描いていない代替フロー：5a（理由が未入力）、6a（確定を取り消した）、（記述なし）の分岐
 
 ## 共通代替フローを直接書いた図
 
@@ -268,7 +260,7 @@ sequenceDiagram
             AuthJs->>Filter: PUT /api/operator/products/{id}/moderation か .../warning
             Filter->>Ctrl: 要求を通す (chain.doFilter)
             Ctrl->>Svc: 公開停止の状態を変えるか、警告を記録・解除するよう頼む (suspend、warn)
-            Svc->>Db: 運営者かを確かめ、商品をロックして読み、履歴と通知を保存して<br/>コミットする (上の図の 30〜40)
+            Svc->>Db: 運営者かを確かめ、商品をロックして読み、履歴と通知を保存して<br/>コミットする (上の図の 28〜38)
             alt *a MySQL との通信に失敗
                 Db--xSvc: 失敗 (DataAccessException)。<br/>トランザクションの変更 (公開停止の印、履歴、通知) はすべて取り消す
                 Svc--xCtrl: 例外

@@ -8,7 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
-代替フローのうち、エラーで終わるもの（2b・3a）と記述にない分岐（店舗がない 404、見られない 403）は、分かれる所だけを描き、結果と画面は Note に文で書いています。1a（管理する店舗を選ぶ）と 2a（閉鎖した店舗を選ぶ）は、`opt` の中の矢印 1 本と Note にしています。
+エラーの代替フローは図に描かず、図の下に並べています。1a（管理する店舗を選ぶ）と 2a（閉鎖した店舗を選ぶ）は、`opt` の中の矢印 1 本と Note にしています。
 
 ```mermaid
 sequenceDiagram
@@ -56,21 +56,12 @@ sequenceDiagram
         User->>Page: 2a-1「表示する店舗」の「閉鎖した店舗」から店舗を選ぶ
         Note over User,Page: 結果: その店舗を表示する店舗にする (setPicked)。<br/>画面: 「表示する店舗」の選択欄 (選択中の店舗か「店舗を選んでください」と、「閉鎖した店舗」の「店舗名（閉鎖済み）」)
     end
-    break 2b 表示する店舗がない (選択中の店舗が配列になく、閉鎖した店舗も選んでいない)
-        Note over User,Page: 結果: 通信しない。<br/>画面: 2b-1「選択中の店舗の注文実績を見る権限がありません。」(閉鎖した店舗があれば「閉鎖した店舗は上の欄から選べます。」も)。2b-2 終了
-    end
     Page->>Hook: 2 その店舗の注文実績を取りに行くよう頼む<br/>(SalesReport → useResource('/seller/stores/{storeId}/sales'))
     Hook->>Http: 画面を開いたときに自動で通信を始める (reload → request)
     Http->>Ctrl: GET /api/seller/stores/{storeId}/sales
     Ctrl->>Svc: 店舗の注文実績を作るよう頼む (report)。読むだけのトランザクション
     Svc->>StoreRepo: 店舗を読む (findById、SELECT stores)
-    break 店舗がない (記述なし)
-        Note over StoreRepo,Page: 結果: 404 STORE_NOT_FOUND を返す (notFound)。<br/>画面: 「店舗が見つかりません。」と「再取得」(ResourceStatus)
-    end
     Svc->>Policy: ログイン中の会員を調べ (AuthService の current)、<br/>その店舗の注文実績を見られるかを確かめる (canViewSales)。判定は 9〜10 と同じ
-    break 見られない (記述なし)
-        Note over Policy,Page: 結果: 403 FORBIDDEN を返す (ApiException)。<br/>画面: 「この店舗の注文実績を見る権限がありません。」と「再取得」(ResourceStatus)
-    end
     Svc->>OrderRepo: 店舗の注文を新しい順に読む<br/>(build → findByStoreIdOrderByCreatedAtDesc、SELECT orders)
     loop 注文ごと (row)
         Svc->>Mapper: 手数料と差引額を求めるよう頼む (figures)
@@ -80,14 +71,13 @@ sequenceDiagram
     Ctrl-->>Hook: 200 注文実績 (店舗名、closedAt、注文の一覧、件数と合計)
     Hook-->>Page: 注文実績
     Page-->>User: 3 店舗名、「注文数：N件 / 支払い待ち：N件 / キャンセル：N件 /<br/>キャンセル申請中：N件」、「注文金額」「販売手数料」「差引額」と、販売手数料の計算方法の説明<br/>(2a-2 閉鎖済みの店舗なら、店舗名の横の「閉鎖済み」と「(日時)に閉鎖した店舗です。<br/>注文実績は読み取り専用で、期限なく確認できます。」)
-    break 3a 注文がない
-        Note over User,Page: 結果: 件数と合計は 0。<br/>画面: 3a-1「この店舗の注文はまだありません。」。3a-2 終了
-    end
     Page-->>User: 注文ごとの一覧 (注文番号、注文日時、状態、支払方法、注文金額、<br/>手数料率、販売手数料、差引額。キャンセルは「手数料なし」と「—」)
     User->>Page: 4 注文実績を確認する (読み取りだけで、注文を変える操作はない)
 ```
 
 ![EC-S07 シーケンス図](<images/EC-S07_注文実績を確認する-1.png>)
+
+図に描いていない代替フロー：2b（見る権限がない）、3a（注文がない）、（記述なし）の分岐
 
 ## 共通代替フローを直接書いた図
 

@@ -8,7 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
-代替フローのうち、エラーで終わるもの（6a）と記述にない分岐（会員がいない）は、分かれる所だけを描き、その後は Note に文で書いています。エラーのときの画面の後処理（`readResponse` が `ApiError` を投げる → 404・409 なので `reload` で一覧を取り直す → `run` が false → `setTarget(null)` でダイアログを閉じる → エラーの文を出す）は、どちらも同じです。
+エラーは最重要の 6a（対象が運営者か退会済み）だけを描き、ほかの代替フローは図の下に並べています。6a のときの画面の後処理（`readResponse` が `ApiError` を投げる → 409 なので `reload` で一覧を取り直す → `run` が false → `setTarget(null)` でダイアログを閉じる → エラーの文を出す）は、Note に文で書いています。
 
 ```mermaid
 sequenceDiagram
@@ -39,7 +39,7 @@ sequenceDiagram
     Work->>Page: アカウント管理者画面を表示
     Page->>Hook: 会員の一覧を取りに行くよう頼む (useResource)
     Hook->>Ctrl: 画面の表示時に自動でアカウント一覧の取得を開始<br/>GET /api/operator/members (reload → request)
-    Ctrl-->>Hook: 200 会員の配列<br/>流れは EC-A01 の図の 3〜18 と同じ
+    Ctrl-->>Hook: 200 会員の配列<br/>流れは EC-A01 の図と同じ
     Hook-->>Page: 会員の一覧
     Page-->>User: 会員の一覧と利用状態 (「利用中」「利用停止」「退会済み」)、<br/>利用中なら「利用を停止」、そうでなければ「利用を再開」
 
@@ -69,9 +69,6 @@ sequenceDiagram
         end
         Svc->>Repo: 対象の会員を読む (findById、SELECT members)
         Repo-->>Svc: 会員 (なければなし)
-        break 会員がいない (記述なし)
-            Note over Svc,Page: 結果: 404 MEMBER_NOT_FOUND を返し、何も変えない。<br/>画面: 一覧を取り直し、ダイアログを閉じて「会員が見つかりません。」
-        end
         Svc->>Db: 会員の行をロックして読み直す<br/>(lockMember、SELECT ... FOR UPDATE members)
         Db-->>Svc: ロックした会員の行
         break 6a 対象が運営者アカウントか退会済み (isAdmin、withdrawnAt)
@@ -94,6 +91,10 @@ sequenceDiagram
         Page-->>User: ダイアログを閉じ (setTarget(null))、「利用を停止しました。」<br/>または「利用を再開しました。」と更新後の利用状態
     end
 ```
+
+![EC-A02 シーケンス図](<images/EC-A02_アカウントの利用状況を変更する-1.png>)
+
+図に描いていない代替フロー：（記述なし）の分岐（会員がいない）
 
 ## 共通代替フローを直接書いた図
 
@@ -201,6 +202,8 @@ sequenceDiagram
         end
     end
 ```
+
+![EC-A02 共通代替フローを直接書いた図](<images/EC-A02_アカウントの利用状況を変更する-2.png>)
 
 ## ユースケース記述との差
 

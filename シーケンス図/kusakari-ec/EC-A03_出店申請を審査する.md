@@ -8,7 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
-代替フローのうち、エラーで終わるもの（6a・7a・7b・7c）と記述にない分岐（申請がない）は、分かれる所だけを描き、結果と画面は Note に文で書いています。エラーのときの画面の後処理（`readResponse` が `ApiError` を投げる → 404・409 なら `reload` で一覧を取り直す → `run` が false → エラーの文を出す）は、どれも同じです。
+エラーは最重要の 7a（申請がもう審査中ではない）だけを描き、ほかの代替フローは図の下に並べています。7a のときの画面の後処理（`readResponse` が `ApiError` を投げる → 409 なので `reload` で一覧を取り直す → `run` が false → エラーの文を出す）は、Note に文で書いています。
 
 ```mermaid
 sequenceDiagram
@@ -34,7 +34,7 @@ sequenceDiagram
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、4、26、一覧の取り直しの 46 に適用<br/>*a 通信に失敗した場合: 4、24、26、一覧の取り直しの 46 に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、4、24、一覧の取り直しの 42 に適用<br/>*a 通信に失敗した場合: 4、22、24、一覧の取り直しの 42 に適用
 
     User->>Work: 運営者メニューの「出店審査」をクリック
     Work->>Page: URL を /operator/applications に変え、<br/>ReviewPage を表示
@@ -45,9 +45,6 @@ sequenceDiagram
     Ctrl-->>Hook: 200 申請の配列
     Hook-->>Page: 申請の一覧
     Page->>Page: 「表示する申請」は最初「審査中」なので、審査中の申請だけ残し、<br/>申請日の古い順に並べる (scope、filter、reviewOrder)
-    break 3a 審査中の申請がない
-        Page-->>User: 3a-1「審査待ちの出店申請はありません。」
-    end
     Page-->>User: 申請ごとの行 (ApplicationRow)。会社名、「申請者：名前 / 申請日：日付」、<br/>メール / 所在地 / 電話番号、「審査中」、「提出書類を確認」、<br/>「却下理由」欄、「承認」「却下」
     opt 3b 審査済みの申請も確認する
         User->>Page: 3b-1「表示する申請」で「すべて」を選ぶ
@@ -62,9 +59,6 @@ sequenceDiagram
     Row-->>User: ブラウザーが提出書類のファイルを端末に保存する
 
     User->>Row: 「承認」をクリック、または<br/>「却下理由」を入力して「却下」をクリック
-    break 6a 却下で、却下理由が空 (reason.trim() が空)
-        Row-->>User: 6a-1「却下する場合は却下理由を入力してください。」<br/>(setMissing(true)。通信しない)。6a-2 基本フロー 6 へ戻る
-    end
     Row->>Hook: 審査の結果を送り、成功の文を渡す (decide → run)<br/>承認なら「承認しました。申請者に審査結果を通知しました。」、<br/>却下なら「却下しました。申請者に却下理由を通知しました。」
     Hook->>Http: 審査の結果を送る通信を始める<br/>(write → request、本文は { approved, reason })
     Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (authFetch)
@@ -74,26 +68,15 @@ sequenceDiagram
     Ctrl->>Svc: 審査の結果を保存するよう頼む (decide)。全体が 1 つのトランザクション<br/>運営者かを確かめる (requireAdmin)
     Svc->>AppRepo: 申請をロックして読む (lock、SELECT ... FOR UPDATE organization_applications)
     AppRepo-->>Svc: 申請 (なければなし)
-    break 申請がない (記述なし)
-        Note over Svc,Page: 結果: 404 APPLICATION_NOT_FOUND を返し、何も変えない。<br/>画面: 一覧を取り直して「申請が見つかりません。」
-    end
     break 7a 申請が審査中ではない (他の運営者が処理した、申請者が取り下げたなど)
         Svc--xErrs: 409 APPLICATION_CHANGED の例外を投げる (ApiException)
         Note over Errs,Page: 結果: 409 を返し、状態を変えない。<br/>画面: 7a-1 一覧を取り直して「この申請は審査済みです。」(7a-2 基本フロー 2 へ戻る)
     end
     Svc->>MemRepo: 申請者の会員をロックして読む (lockMember、SELECT ... FOR UPDATE members)
     MemRepo-->>Svc: 申請者
-    break 7c 承認で、申請者が利用停止中か退会済み (isEnabled が偽)
-        Svc--xErrs: 409 MEMBER_CHANGED の例外を投げる (ApiException)
-        Note over Errs,Page: 結果: 409 を返し、申請は審査中のまま。<br/>画面: 7c-1 一覧を取り直して「申請者の利用状態が変わりました。」(7c-2 基本フロー 6 へ戻る)
-    end
     alt 承認
         Svc->>Svc: 申請者を出店者 (オーナー) のアカウントに切り替える (becomeOwner)
         Svc->>OrgRepo: 申請の会社名で組織を作る (OrganizationEntity、saveAndFlush)<br/>先に切り替えを送る (flush、UPDATE members)。INSERT organizations
-        break 7b アカウントの切り替えか組織の作成で DB がエラーを返す
-            OrgRepo--xErrs: DB の例外 (DataIntegrityViolationException か DataAccessException)
-            Note over Errs,Page: 結果: 申請・アカウント・組織の変更をすべて取り消し、409 DATA_CHANGED か 503 DATABASE_UNAVAILABLE を返す。<br/>画面: 7b-1 エラーの文 (409 なら一覧を取り直す)。7b-2 基本フロー 3 へ戻る
-        end
         OrgRepo-->>Svc: 組織
         Svc->>Svc: 申請を承認にして組織を結びつけ、却下理由を空にする (approve)
     else 却下
@@ -112,6 +95,8 @@ sequenceDiagram
 ```
 
 ![EC-A03 シーケンス図](<images/EC-A03_出店申請を審査する-1.png>)
+
+図に描いていない代替フロー：3a（審査待ちの申請がない）、6a（却下理由が未入力）、7b（アカウントの切り替えか組織の作成の失敗）、7c（申請者が退会済み・利用停止中）、（記述なし）の分岐
 
 ## 共通代替フローを直接書いた図
 
@@ -185,7 +170,7 @@ sequenceDiagram
             AuthJs->>Filter: PUT /api/operator/applications/{申請 ID}
             Filter->>Ctrl: 要求を通す (chain.doFilter)
             Ctrl->>Svc: 審査の結果を保存するよう頼む (decide)
-            Svc->>Db: 運営者かを確かめ、申請と申請者をロックして読み、<br/>書き換えて通知を保存し、コミットする (上の図の 27〜42)
+            Svc->>Db: 運営者かを確かめ、申請と申請者をロックして読み、<br/>書き換えて通知を保存し、コミットする (上の図の 25〜38)
             alt *a MySQL との通信に失敗 (7b の 503 と同じ)
                 Db--xSvc: 失敗 (DataAccessException)。<br/>トランザクションの変更はすべて取り消す
                 Svc--xCtrl: 例外

@@ -9,7 +9,7 @@
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 「店舗紹介」画面（パス `/store/{店舗 ID}`）は、ログインしていなくても開ける `Workspace` の画面です。`Workspace` は、ログイン状態を `GET /api/auth/me` で確かめてから、店舗の情報を `GET /api/stores/{id}` で取得します。
 ログインは不要なので、共通代替フロー \*b は適用しません。
-代替フロー 2a はエラーで終わるので、分かれる所だけを描き、結果と画面は Note に文で書いています。条件つきの処理（店舗の組織の確認、運営者の警告の読み込み）は、opt の中を頼む矢印 1 本と Note にしています。
+エラーの分岐は描かず、代替フローは図の下に並べています。条件つきの処理（店舗の組織の確認、運営者の警告の読み込み）は、opt の中を頼む矢印 1 本と Note にしています。
 
 ```mermaid
 sequenceDiagram
@@ -28,7 +28,6 @@ sequenceDiagram
     box rgba(27,127,92,0.12) EC API Spring Boot
         participant AuthCtrl as ログイン状態API<br/>AuthController<br/>(AuthController.java)
         participant Ctrl as 店舗API<br/>StoreController<br/>(StoreController.java)
-        participant Errs as エラーの応答<br/>ApiErrors<br/>(ApiErrors.java)
         participant Svc as 店舗の処理<br/>StoreService<br/>(StoreService.java)
         participant AuthSvc as ログイン中の会員<br/>AuthService<br/>(AuthService.java)
         participant Mod as 運営者の警告<br/>StoreModerationService<br/>(StoreModerationService.java)
@@ -59,20 +58,12 @@ sequenceDiagram
     Ctrl->>Svc: 店舗の公開ページの情報を作るよう頼む (get)<br/>読み取り専用のトランザクション
     Svc->>StoreRepo: 店舗を読む (require → findById、SELECT stores)
     StoreRepo-->>Svc: 店舗 (なければなし)
-    break 2a 店舗の行がない
-        Svc--xErrs: 404 STORE_NOT_FOUND の例外を投げる (notFound → ApiException)
-        Note over Errs,Profile: 結果: 404「店舗が見つかりません。」を返す (business)。<br/>画面: 2a-1「店舗が見つかりません。」と「再取得」(ResourceStatus。押すと 17 から取り直す)。2a-2 ここで終わる。
-    end
     Svc->>AuthSvc: 店舗側の立場で見られるかを確かめる (canViewAsStaff → canManageView)<br/>運営者なら見られる。運営者が利用停止した店舗は運営者だけ。<br/>オーナーは自分の組織の店舗、担当者は所属する店舗なら見られる。<br/>未ログイン (current の 401) と利用できないアカウント (403) は見られない
     AuthSvc-->>Svc: 店舗側の立場で見られるか (staff)
     Svc->>Svc: 購入者に見せる店舗かを確かめる (publiclyVisible)<br/>公開中で、運営者の利用停止も閉鎖済みもないか
     opt 公開中で、運営者の利用停止も閉鎖済みもない (組織の確認は記述なし)
         Svc->>OrgRepo: 店舗の組織を読む (findById)
         Note over Svc,OrgRepo: 結果: SELECT organizations。組織が停止 (suspended) でなければ購入者に見せる。
-    end
-    break 2a 購入者に見せない店舗で、店舗側の立場でもない
-        Svc--xErrs: 404 STORE_NOT_FOUND の例外を投げる (notFound → ApiException)
-        Note over Errs,Profile: 結果: 404「店舗が見つかりません。」を返す (business)。<br/>画面: 2a-1「店舗が見つかりません。」と「再取得」。2a-2 ここで終わる。
     end
     Svc->>OrgRepo: 会社名のために組織を読む (view → findById、SELECT organizations)<br/>(読んでいれば、同じトランザクションの中ではもう読まない)
     OrgRepo-->>Svc: 組織
@@ -88,6 +79,8 @@ sequenceDiagram
 ```
 
 ![EC-B05 シーケンス図](<images/EC-B05_販売店舗の情報を確認する-1.png>)
+
+図に描いていない代替フロー：2a（店舗が見つからない）
 
 ## 共通代替フローを直接書いた図
 
@@ -156,7 +149,7 @@ sequenceDiagram
                 Http->>Filter: GET /api/stores/{id}
                 Filter->>Ctrl: 要求を通す (chain.doFilter)
                 Ctrl->>Svc: 店舗の公開ページの情報を作るよう頼む (get)
-                Svc->>Db: 店舗、組織、警告を読む (上の図の 19〜29)
+                Svc->>Db: 店舗、組織、警告を読む (上の図の 19〜27)
                 alt *a MySQL との通信に失敗
                     Db--xSvc: 失敗 (DataAccessException)
                     Svc--xCtrl: 例外
@@ -166,7 +159,7 @@ sequenceDiagram
                     Status-->>User: *a-1「保存処理を完了できませんでした。時間をおいて<br/>再試行してください。」と「再取得」
                 else 読めた
                     Db-->>Svc: 行
-                    Svc-->>Ctrl: 店舗の情報、または 404 (上の図の 21〜30)
+                    Svc-->>Ctrl: 店舗の情報、または 404 (上の図の 21〜28)
                     Ctrl-->>Http: 200 店舗の情報、または 404
                     Http-->>Res: 店舗の情報、またはエラー
                     Res-->>Profile: 店舗の情報、またはエラーの文

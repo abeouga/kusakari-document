@@ -8,7 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
-代替フローのうち、エラーで終わるもの（2a）と関連情報の分岐（ロールのない担当者の 403）は、分かれる所だけを描き、結果と画面は Note に文で書いています。1a（管理する店舗を選ぶ）は、`opt` の中の矢印 1 本と Note にしています。
+エラーの代替フローは図に描かず、図の下に並べています。1a（管理する店舗を選ぶ）は、`opt` の中の矢印 1 本と Note にしています。
 
 ```mermaid
 sequenceDiagram
@@ -44,9 +44,6 @@ sequenceDiagram
     Http->>Ctrl: GET /api/seller/orders?storeId={店舗ID}
     Ctrl->>Svc: 店舗の注文の一覧を作るよう頼む (sellerOrders)<br/>読むだけのトランザクション
     Svc->>Auth: ログイン中の人がこの店舗で STAFF 以上の<br/>ロールを持つかを確かめる (requireSeller → requireStoreRole)
-    break ロールがない (関連情報「ロールのない担当者は注文を見られない」)
-        Note over Auth,Page: 結果: 403 FORBIDDEN を返す (denied)。<br/>画面: 「この操作の権限がありません。」と「再取得」(ResourceStatus)
-    end
     Svc->>OrderRepo: 店舗の注文を新しい順に読む<br/>(findByStoreIdOrderByCreatedAtDesc、SELECT orders)
     loop 注文ごと (storeView)
         Svc->>ItemRepo: 注文の明細を読む (findAllForOrder、SELECT order_items)
@@ -57,9 +54,6 @@ sequenceDiagram
     Hook-->>Page: 注文の一覧
     Page->>Page: 絞り込みは「すべて」、検索欄は空で、キャンセル申請中、<br/>準備待ち、受け取り待ち、そのほかの順に並べる (priority)
     Page-->>User: 絞り込みのボタン (「準備待ち」「受け取り待ち」「キャンセル申請」<br/>「引き渡し完了」「キャンセル」「すべて」と件数) と<br/>「注文番号・受取人で検索」欄
-    break 2a 注文がない
-        Note over User,Page: 結果: カードを出さない。<br/>画面: 2a-1「該当する注文はありません。」(2a-2 終わり)
-    end
     loop 表示する注文ごと
         Page->>Card: 注文を渡して表示 (PickupCard)
         Card-->>User: 注文番号、注文日時、注文状態、「キャンセル申請中」、合計、<br/>お支払い方法と支払い・返金の状態 (PaymentState)。<br/>注文受付・受取準備完了は明細と受取連絡先も出し、<br/>引き渡し完了・キャンセルは「商品名 × 数量」と「詳細」にたたむ
@@ -73,15 +67,14 @@ sequenceDiagram
 
     User->>Page: 絞り込みのボタンのどれかをクリックするか、<br/>「注文番号・受取人で検索」欄に注文番号か受取人名を入力
     Page->>Page: 選んだ状態か入力を覚え (setFilter、setQuery)、その状態の注文のうち、<br/>注文番号と受取人名に入力 (前後の空白を除き小文字にする) を<br/>含む注文だけ残して、priority で並べる (入力欄が空ならその状態の全部)
-    break 2a 条件に合う注文がない
-        Note over User,Page: 結果: 通信しない。<br/>画面: 2a-1「該当する注文はありません。」(2a-2 終わり)
-    end
     Page-->>User: 条件に合う注文だけのカード (流れは 17〜20 と同じ)
     User->>Card: 引き渡し完了・キャンセルの注文の「詳細」をクリック
     Card-->>User: ブラウザーがたたんでいた欄を開き (details 要素)、明細 (商品名、SKU、<br/>数量、金額)、受取人、電話番号、連絡先メール、受け取りの進み具合を見せる。<br/>一覧の取得で読み込み済みなので通信しない
 ```
 
 ![EC-S08 シーケンス図](<images/EC-S08_注文一覧・詳細を確認する-1.png>)
+
+図に描いていない代替フロー：2a（注文がない、条件に合う注文がない）、（記述なし）の分岐
 
 ## 共通代替フローを直接書いた図
 

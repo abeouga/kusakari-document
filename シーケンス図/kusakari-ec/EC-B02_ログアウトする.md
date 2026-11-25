@@ -65,6 +65,8 @@ sequenceDiagram
     App-->>User: 「メイン」画面 (トップ)、共通ヘッダーに「ログイン」
 ```
 
+![EC-B02 シーケンス図](<images/EC-B02_ログアウトする-1.png>)
+
 ## 共通代替フローを直接書いた図
 
 上の図の、アカウント情報画面を開いたときの `Workspace` の `GET /api/auth/me` と、「ログアウト」をクリックした後の `GET /api/auth/csrf`・`POST /api/auth/logout`・Cognito の `/logout` に、この画面で起こる共通代替フロー（\*a、\*b）を書き込んだ図です。`AccountPage` と `AuthPanel` が送る `GET /api/auth/me` は、`Workspace` の通信が通った直後に送るもので、失敗したときの表示は `Workspace` と同じ形（エラーの文だけ）なので省いています。
@@ -108,7 +110,7 @@ sequenceDiagram
         AuthJs-->>Work: ログイン状態
         Work->>Panel: 画面の代わりにログインの入力欄を表示 (AuthPanel)
         Panel-->>User: *b-1「メールアドレス」「パスワード」「ログイン」
-        User->>Panel: *b-2 入力して「ログイン」をクリック<br/>(EC-B01 の図の 12〜51。returnTo は今の URL の /account)
+        User->>Panel: *b-2 入力して「ログイン」をクリック<br/>(EC-B01 の図と同じ流れ。returnTo は今の URL の /account)
         Panel->>Browser: /account を読み込み直す (complete → window.location.replace)
         Browser-->>User: 「アカウント情報」画面 (基本フロー 2 へ戻る)
     else 読めた
@@ -166,6 +168,8 @@ sequenceDiagram
         end
     end
 ```
+
+![EC-B02 共通代替フローを直接書いた図](<images/EC-B02_ログアウトする-2.png>)
 
 ## ユースケース記述との差
 

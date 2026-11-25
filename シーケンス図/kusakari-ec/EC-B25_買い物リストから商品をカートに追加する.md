@@ -9,7 +9,7 @@
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 ダイアログを開いて買い物リストを表示するまでは [EC-B24 の図](<EC-B24_買い物リストを確認する(EC).md>) にあります。カートへの追加は `POST /api/cart/shopping-lists/{gardenId}/items` の 1 回です。画面は数量を送らず、行の key と商品 ID と 3 つの版（庭、買い物リスト、カート）だけを送ります。必要数はサーバーが Canvas から取り直します。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
-代替フローのうち、エラーで終わるもの（2a・4b）と記述にない分岐（入力が不正、庭が見つからない・Canvas に接続できない、選択が行と合わない）は、分かれる所だけを描き、結果と画面は Note に文で書いています。4a の見送りと「すべて選択」も Note にまとめています。エラーのときの画面の後処理（`readResponse` が `ApiError` を投げる → `run` が false → 409 なら `refresh` でカートを取り直す → `GardenItems` が失敗の文を出して `data.reload` で買い物リストを取り直す）は、どれも同じなので、最初の 4b の枠にだけ矢印で描いています。
+エラーの代替フローは描かず、図の下に並べています。4a の見送りは表示の分かれ道として描き、見送ったときの表示と「すべて選択」は Note にまとめています。
 
 ```mermaid
 sequenceDiagram
@@ -18,15 +18,12 @@ sequenceDiagram
     box rgba(47,111,219,0.10) ブラウザー React
         participant Dlg as 庭に設置したものから追加<br/>GardenItems・AddFromGardenCard・ShoppingTransferNotice<br/>(GardenItemsDialog.jsx)
         participant Shop as カートの状態<br/>useShop<br/>(useShop.js)
-        participant Data as 買い物リストの取得<br/>useShoppingData<br/>(useShoppingData.js)
         participant Http as 通信<br/>request<br/>(api.js)
         participant AuthJs as 通信の準備<br/>authFetch<br/>(auth.js)
     end
     box rgba(27,127,92,0.12) EC API Spring Boot
         participant AuthCtrl as ログイン状態API<br/>AuthController<br/>(AuthController.java)
-        participant CartCtrl as カートAPI<br/>CartController<br/>(CartController.java)
         participant Ctrl as 庭の買い物リストAPI<br/>ShoppingController<br/>(ShoppingController.java)
-        participant Errs as エラーの応答<br/>ApiErrors<br/>(ApiErrors.java)
         participant Svc as 買い物リストの処理<br/>ShoppingService<br/>(ShoppingService.java)
         participant Client as Canvas との通信<br/>CanvasShoppingClient<br/>(CanvasShoppingClient.java)
         participant Saved as EC で追加した商品<br/>SavedShoppingItems<br/>(SavedShoppingItems.java)
@@ -40,13 +37,10 @@ sequenceDiagram
         participant CApi as 庭と買い物リストのAPI<br/>create_app<br/>(main.py)
     end
 
-    Note over User,CApi: 共通代替フロー<br/>*b 未ログインの場合: 10、12、失敗のあとの取り直しの 27、28 に適用<br/>*a 通信に失敗した場合 (記述の 5a): 10、12、失敗のあとの取り直しの 27、28 に適用
+    Note over User,CApi: 共通代替フロー<br/>*b 未ログインの場合: 9、11 に適用<br/>*a 通信に失敗した場合 (記述の 5a): 9、11 に適用
 
     User->>Dlg: 1 カートに追加したい商品のチェックボックスにチェックを付ける
     Dlg->>Dlg: 選んだ行の key と商品 ID を覚え、必要数を合計する<br/>(setSelection、picked、quantity)
-    break 2a 1 つも選んでいない
-        Dlg-->>User: 2a-1「カートに追加」(押せない)。2a-2 基本フロー 1 へ戻る
-    end
     Dlg-->>User: 2「(必要数の合計)点をカートに追加」(押せる)
     opt 「すべて選択」
         User->>Dlg: 「すべて選択」をクリック
@@ -61,42 +55,20 @@ sequenceDiagram
     AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
     AuthJs->>Ctrl: POST /api/cart/shopping-lists/{gardenId}/items<br/>(CSRF トークンのヘッダー付き。本文は gardenRevision、<br/>listRevision、cartRevision、items の key と productId)
     Ctrl->>Ctrl: 本文を検査する (@Valid TransferRequest。items は 1〜200 件、<br/>key と productId は空でない、版は 0 以上)
-    break 入力が不正 (記述なし)
-        Ctrl--xErrs: 例外を投げる (MethodArgumentNotValidException)
-        Note over Dlg,Errs: 結果: 400 INVALID_INPUT を返し、カートは変えない (invalid)。<br/>画面: 「入力内容・文字数・数値の範囲を確認してください。」と取り直した買い物リスト (後処理は 4b と同じで、カートは取り直さない)
-    end
     Ctrl->>Ctrl: 購入者かを確かめ、会員のカートを決める<br/>(CartSessionResolver.resolve → requireBuyer、MemberCartService.resolve)
     Ctrl->>Svc: 選んだ商品をカートに移すよう頼む (transfer)。<br/>transfer 全体が 1 つのトランザクション (READ_COMMITTED)
     Svc->>Client: Canvas から最新の配置の行を取るよう頼む (detail)。<br/>カートのロックを取る前に終える
     Client->>CApi: GET /api/gardens/{id}/shopping-list
-    break 庭が見つからない、Canvas に接続できない (記述なし)
-        Client--xErrs: 404 GARDEN_NOT_FOUND か<br/>503 SHOPPING_LIST_UNAVAILABLE の例外を投げる
-        Note over Dlg,Errs: 結果: 404 か 503 を返し、カートは変えない (business)。<br/>画面: 「庭が見つかりません。」か「庭の買い物リストを取得できません。接続を確認して再試行してください。」と取り直した買い物リスト (後処理は 4b と同じで、カートは取り直さない)
-    end
     CApi-->>Client: 200 配置の行と庭の版 (持ち主の確かめと読み方は EC-B24 の図と同じ流れ)
     Client-->>Svc: 配置の行と庭の版
     Svc->>Saved: カートをロックし、EC で追加した商品を読むよう頼む (lockAndRead)
     Saved->>CartRepo: カートの行をロックして読む<br/>(lock → findLocked、SELECT carts … FOR UPDATE)
     Saved->>Db: EC で追加した商品を読む (read)<br/>SELECT garden_shopping_lists と garden_shopping_items、products
     Saved-->>Svc: 買い物リストの版と EC で追加した商品
-    break 4b 庭の版 (Canvas の版と gardenRevision) か、買い物リストの版 (EC の版と listRevision) が違う
-        Svc--xErrs: 409 GARDEN_CHANGED か<br/>SHOPPING_LIST_CHANGED の例外を投げる (ApiException)
-        Shop->>CartCtrl: 409 を受けて最新のカートを取り直す (run の catch → setError → refresh → api.cart)<br/>GET /api/cart (続けて GET /api/products と GET /api/orders も送る。EC-B08 の図と同じ流れ)
-        Data->>Ctrl: GardenItems が失敗の文を出し (setFailed(true))、4b-2 最新の買い物リストを取り直す<br/>(data.reload → load → api.shoppingList)<br/>GET /api/shopping-lists/{gardenId} (EC-B24 の図と同じ流れ)
-        Note over Dlg,Errs: 結果: 409 を返し、カートは変えない (business)。<br/>画面: 4b-1「庭の配置が変更されました。最新の買い物リストから選び直してください。」か「買い物リストが更新されました。最新の内容から選び直してください。」と最新の買い物リスト (版が変わっていればチェックを外す)。4b-3 基本フロー 1 へ戻る
-    end
     Svc->>Svc: 最新の行と候補の商品を作る (supplement、resolve。<br/>素材と商品の対応と商品・在庫の読み方は EC-B24 の図と同じ流れ)
     Svc->>Svc: 選んだ key と商品 ID を最新の行と照らし、<br/>同じ商品の必要数を合計して、追加する商品を作る (additions)
-    break 選択が行と合わない (同じ key が 2 つ、無い key、候補に無い商品。記述なし)
-        Svc--xErrs: 400 INVALID_SELECTION の例外を投げる (invalidSelection ほか)
-        Note over Dlg,Errs: 結果: 400 を返し、カートは変えない (business)。<br/>画面: 「買い物リストの選択内容が不正です。」か「リストに対応する商品を選択してください。」と取り直した買い物リスト (後処理は 4b と同じで、カートは取り直さない)
-    end
     Svc->>Carts: 必要数でカートに足すよう頼む (addShoppingItems)
     Carts->>CartRepo: カートの行をロックして読む (requireLockedCart → findLocked)<br/>SELECT carts … FOR UPDATE (同じトランザクションでロック済み)
-    break 4b カートの版が違う (checkRevision)
-        Carts--xErrs: 409 CART_CHANGED の例外を投げる (ApiException)
-        Note over Dlg,Errs: 結果: 409 を返し、カートは変えない (business)。<br/>画面: 4b-1「別の操作でカートが更新されました。最新の内容を確認してください。」と最新のカートと買い物リスト (後処理は上の 4b と同じ)
-    end
     Carts->>Items: カートの明細を読む (findAllForCart、SELECT cart_items)
     Carts->>Cat: 4 追加する商品と在庫を読む (listingsById → listingsByIds)<br/>SELECT products、inventory、stores、organizations
     Cat-->>Carts: 商品、在庫、買えない理由 (Listing)
@@ -126,6 +98,8 @@ sequenceDiagram
 ```
 
 ![EC-B25 シーケンス図](<images/EC-B25_買い物リストから商品をカートに追加する-1.png>)
+
+図に描いていない代替フロー：2a（1 つも選んでいない）、4b（庭・買い物リスト・カートの版が違う）、（記述なし）の分岐
 
 ## 共通代替フローを直接書いた図
 
@@ -203,7 +177,7 @@ sequenceDiagram
             AuthJs->>Filter: POST /api/cart/shopping-lists/{gardenId}/items
             Filter->>Ctrl: 要求を通す (chain.doFilter)
             Ctrl->>Svc: 選んだ商品をカートに移すよう頼む (transfer)
-            Svc->>Db: カートをロックして読み、明細を足してコミットする<br/>(上の図の 22〜43)
+            Svc->>Db: カートをロックして読み、明細を足してコミットする<br/>(上の図の 19〜35)
             alt *a MySQL との通信に失敗
                 Db--xSvc: 失敗 (DataAccessException)。<br/>トランザクションの変更はすべて取り消す
                 Svc--xCtrl: 例外
@@ -219,12 +193,12 @@ sequenceDiagram
                 Ctrl-->>Http: 200 結果
                 Http-->>Shop: 結果
                 Shop-->>Dlg: 結果 (run が true)
-                Dlg-->>User: ダイアログを閉じ、「(庭の名前)からn種類を追加しました。」<br/>(以降は上の図の 45〜)
+                Dlg-->>User: ダイアログを閉じ、「(庭の名前)からn種類を追加しました。」<br/>(以降は上の図の 40〜)
             end
         end
     end
     opt 5a-3 *a-3 やり直す
-        User->>Dlg: 残ったチェックのまま、もう一度「n点をカートに追加」をクリック<br/>(5a-4 基本フロー 4 へ戻る。上の図の 6〜)
+        User->>Dlg: 残ったチェックのまま、もう一度「n点をカートに追加」をクリック<br/>(5a-4 基本フロー 4 へ戻る。上の図の 5〜)
     end
 ```
 

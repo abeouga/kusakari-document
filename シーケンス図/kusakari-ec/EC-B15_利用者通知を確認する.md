@@ -8,7 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
-代替フローのうち、画面の中だけで終わるもの（2a）と記述にない分岐（通知が見つからない）は、分かれる所だけを描き、通知が見つからないときの結果と画面は Note に文で書いています。エラーのときの画面の後処理（`readResponse` が `ApiError` を投げる → 404 なので `reload` で一覧を取り直す → `run` が false → エラーの文と「再取得」を出す）は、Note の「画面:」の 1 行にまとめています。
+エラーの分岐は描かず、代替フローは図の下に並べています。
 
 ```mermaid
 sequenceDiagram
@@ -24,7 +24,6 @@ sequenceDiagram
     box rgba(27,127,92,0.12) EC API Spring Boot
         participant AuthCtrl as ログイン状態API<br/>AuthController<br/>(AuthController.java)
         participant Ctrl as 通知API<br/>NotificationController<br/>(NotificationController.java)
-        participant Errs as エラーの応答<br/>ApiErrors<br/>(ApiErrors.java)
         participant Svc as 通知の処理<br/>NotificationService<br/>(NotificationService.java)
         participant Pend as オーナーの譲渡の申し出<br/>PendingOwnerSuccession<br/>(PendingOwnerSuccession.java)
         participant Org as 組織の読み書き<br/>OrganizationRepository<br/>(OrganizationRepository.java)
@@ -32,7 +31,7 @@ sequenceDiagram
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、5、26、一覧の取り直しの 38 (通知が見つからないときの取り直しも同じ) に適用<br/>*a 通信に失敗した場合: 5、24、26、一覧の取り直しの 38 (通知が見つからないときの取り直しも同じ) に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、5、25、一覧の取り直しの 36 に適用<br/>*a 通信に失敗した場合: 5、23、25、一覧の取り直しの 36 に適用
 
     User->>Work: マイページのメニューの「通知一覧」をクリック (EC-C01)
     Work->>Page: URL を /notifications に変え、<br/>Notices を表示
@@ -51,9 +50,6 @@ sequenceDiagram
     Ctrl-->>Http: 200 通知の配列
     Http-->>Hook: 通知の一覧
     Hook-->>Page: 通知の一覧
-    break 2a 通知がない
-        Page-->>User: 2a-1「通知はありません。」(2a-2 ユースケースを終了する)
-    end
     Page-->>User: 通知ごとのタイトル、本文、日時 (toLocaleString('ja-JP'))、<br/>既読なら「既読」、未読なら「既読にする」
 
     User->>Page: 必要に応じて、未読の通知の「既読にする」をクリック
@@ -67,10 +63,6 @@ sequenceDiagram
     Svc->>Repo: 通知を読む (findById、SELECT notifications)
     Repo-->>Svc: 通知 (なければなし)
     Svc->>Svc: 自分あてで、見られる通知だけを残す<br/>(filter、visibility)
-    break 通知が見つからない (記述なし)
-        Svc--xErrs: 404 NOTICE_NOT_FOUND の例外を投げる (ApiException)
-        Note over Errs,Page: 結果: 404 を返し、既読にしない。<br/>画面: 一覧を取り直して「通知が見つかりません。」と「再取得」、最新の通知の一覧。
-    end
     Svc->>Svc: 既読の日時を入れる (markRead)<br/>readAt が空のときだけ今の日時
     Svc->>Db: 書き換えた行を保存してコミットする<br/>(save は呼ばない。UPDATE notifications)
     Db-->>Svc: 完了
@@ -84,6 +76,8 @@ sequenceDiagram
 ```
 
 ![EC-B15 シーケンス図](<images/EC-B15_利用者通知を確認する-1.png>)
+
+図に描いていない代替フロー：2a（通知がない）、（記述なし）の分岐
 
 ## 共通代替フローを直接書いた図
 
@@ -277,7 +271,7 @@ sequenceDiagram
             AuthJs->>Filter: PUT /api/notifications/{id}/read
             Filter->>Ctrl: 要求を通す (chain.doFilter)
             Ctrl->>Svc: 通知を既読にするよう頼む (read)
-            Svc->>Db: 通知を読み、既読の日時を入れてコミットする<br/>(上の図の 28〜34)
+            Svc->>Db: 通知を読み、既読の日時を入れてコミットする<br/>(上の図の 27〜32)
             alt *a MySQL との通信に失敗
                 Db--xSvc: 失敗 (DataAccessException)。変更は取り消す
                 Svc--xCtrl: 例外

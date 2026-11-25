@@ -8,7 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
-代替フローのうち、2a（カートが空）は画面の中で終わるので `break` の中に矢印 1 本で、2b（買えなくなった明細を外す、お知らせを閉じる）は `opt` の中を矢印 1 本と Note にしています。店舗側・出店申請用のアカウントの 403（関連情報）も、分かれる所だけを描き、結果と画面は Note に文で書いています。
+エラーの分岐は描かず、代替フローは図の下に並べています。2b（買えなくなった明細を外す、お知らせを閉じる）は `opt` の中を矢印 1 本と Note にしています。
 
 カートは、EC の画面を開いたときに `useShop` が `GET /api/cart` で読み込みます。共通ヘッダーの「カート」をクリックしても通信せず、読み込み済みのカートを「ショッピングカート」画面に出します。購入できなくなった明細を外す処理（2b）も、画面を開いたときの `GET /api/cart` の中でサーバーが行います。そのため図は、画面を開く操作から始めています。
 
@@ -26,7 +26,6 @@ sequenceDiagram
     end
     box rgba(27,127,92,0.12) EC API Spring Boot
         participant Ctrl as カートAPI<br/>CartController<br/>(CartController.java)
-        participant Errs as エラーの応答<br/>ApiErrors<br/>(ApiErrors.java)
         participant Resolver as カートの特定<br/>CartSessionResolver<br/>(CartSessionResolver.java)
         participant Auth as ログイン中の会員<br/>AuthService<br/>(AuthService.java)
         participant MemberCart as 会員のカート<br/>MemberCartService<br/>(MemberCartService.java)
@@ -37,7 +36,7 @@ sequenceDiagram
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (ログイン状態の確認)、5、31 に適用<br/>*a 通信に失敗した場合: 2、5 に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (ログイン状態の確認)、5、30 に適用<br/>*a 通信に失敗した場合: 2、5 に適用
 
     User->>App: EC の画面 (「トップ」画面など) を開く
     App->>App: ログイン状態を読む<br/>(useAuth → readSession、GET /api/auth/me)
@@ -46,10 +45,6 @@ sequenceDiagram
     Http->>Ctrl: GET /api/cart
     Ctrl->>Resolver: 会員のカートを特定するよう頼む (resolve)
     Resolver->>Auth: ログイン中の人が購入できるアカウントかを確かめる (requireBuyer)
-    break 関連情報 店舗側・出店申請用のアカウント (SHOP_OWNER、SHOP_STAFF、SHOP_OWNER_APPLICANT)
-        Auth--xErrs: 403 BUYER_REQUIRED の例外を投げる (ApiException)
-        Note over Errs,Page: 結果: 403「店舗・出店申請用のアカウントでは購入できません。…」を返す (business)。画面は購入できないアカウントとして覚え (setRefusedBuyer(true)、setCart(null))、商品を読む。<br/>画面: 「カート」をクリックすると、カートの代わりに「店舗・出店申請用のアカウントでは購入できません。購入は購入者のアカウントでご利用ください。」と「商品を探す」(CartPage の buyerBlocked)。
-    end
     Auth-->>Resolver: ログイン中の会員 (購入者 (USER) か運営者 (ADMIN))
     Resolver->>MemberCart: 会員のカートの ID を求めるよう頼む (resolve)。resolve 全体が 1 つのトランザクション<br/>会員の行をロックして読む (lockMember、SELECT ... FOR UPDATE members)
     MemberCart->>CartRepo: 会員のカートを探す (findByMemberId、SELECT carts)
@@ -81,9 +76,6 @@ sequenceDiagram
     Header->>App: URL を /cart に変え、画面を切り替える。通信しない<br/>(follow → onNavigate → navigateFromHeader → navigate)
     App->>Page: path が /cart でログイン中なので、<br/>ショッピングカート画面を表示 (CartPage)
     Page->>Cart: 読み込み済みのカートで表示するよう頼む (Cart)
-    break 2a カートが空 (cart.items.length が 0)
-        Cart-->>User: 2a-1「まだ商品が入っていません。」「商品を探す」<br/>「庭に設置したものから追加」(2a-2 ユースケースを終了する)
-    end
     Cart->>Cart: 明細ごとに注意書きを決め (cart.items.map。2c unavailableReason があれば<br/>「現在は購入できません」、2d available が偽で unavailableReason がなければ<br/>「在庫不足（現在 N 点）」)、うち消費税を計算する (Math.floor(totalYen × 10 / 110))
     Cart-->>User: 「ショッピングカート (点数)」、明細ごとの画像・名前・価格・<br/>受取店舗・数量・金額と 2c-1・2d-1 の注意書き、「庭に設置したものから追加」、<br/>「ご請求内容」(商品小計、うち消費税、合計)、「注文内容を確認する」(canCheckout が偽なら押せない)。<br/>2b-1 外した明細があれば「(商品名)は購入できなくなったためカートから外しました。」と「閉じる」
     opt 2b 外した明細がある (shop.removedLines)
@@ -94,9 +86,11 @@ sequenceDiagram
 
 ![EC-B08 シーケンス図](<images/EC-B08_カートを確認する-1.png>)
 
+図に描いていない代替フロー：2a（カートが空）、関連情報（店舗側・出店申請用のアカウントの 403）
+
 ## 共通代替フローを直接書いた図
 
-上の図の、画面を開いたときのログイン状態の確認（`GET /api/auth/me`）とカートの読み込み（`GET /api/cart`）、「カート」のクリックに、この画面で起こる共通代替フロー（\*a、\*b）を書き込んだ図です。`GET /api/cart` が Controller に届いた後の流れは上の図の 6〜24 と同じなので、まとめて書いています。`GET /api/products`、`GET /api/orders`、`GET /api/stores` の失敗は省いています。
+上の図の、画面を開いたときのログイン状態の確認（`GET /api/auth/me`）とカートの読み込み（`GET /api/cart`）、「カート」のクリックに、この画面で起こる共通代替フロー（\*a、\*b）を書き込んだ図です。`GET /api/cart` が Controller に届いた後の流れは上の図の 6〜23 と同じなので、まとめて書いています。`GET /api/products`、`GET /api/orders`、`GET /api/stores` の失敗は省いています。
 
 ```mermaid
 sequenceDiagram
@@ -155,7 +149,7 @@ sequenceDiagram
     else 要求が Controller まで届いた
         Http->>Filter: GET /api/cart
         Filter->>Ctrl: 要求を通す (chain.doFilter)
-        Ctrl->>Db: 会員のカートを特定し、明細を読んで、<br/>買えなくなった明細を外す (上の図の 6〜24)
+        Ctrl->>Db: 会員のカートを特定し、明細を読んで、<br/>買えなくなった明細を外す (上の図の 6〜23)
         alt *a MySQL との通信に失敗
             Db--xCtrl: 失敗 (DataAccessException)。トランザクションの変更は取り消す
             Ctrl-->>Http: 503 DATABASE_UNAVAILABLE「保存処理を完了できませんでした。<br/>時間をおいて再試行してください。」(ApiErrors.java の database)
@@ -188,7 +182,7 @@ sequenceDiagram
         end
     else カートを読めた
         App->>Cart: ショッピングカート画面を表示 (CartPage → Cart)
-        Cart-->>User: カートの内容 (上の図の 32〜)
+        Cart-->>User: カートの内容 (上の図の 31〜)
     end
 ```
 

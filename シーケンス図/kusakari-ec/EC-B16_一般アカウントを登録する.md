@@ -8,7 +8,7 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 新規登録は、ログイン画面（`/account/login`）のカードの中で入力欄を切り替えて行います。EC API が Amazon Cognito の `SignUp`、`ConfirmSignUp`、`ResendConfirmationCode` を呼び、確認コードが通ったら EC-B01 と同じ `POST /api/auth/login` でログインします。会員（`members` の行）を作る時点は、通常の登録では確認のあとのログイン、企業様向け（6a）と招待キー（3a）では確認コードの送信のときです。共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
-代替フローのうち、エラーで終わるもの（8a・8b・11a）は分かれる所だけを描き、結果と画面は Note に文で書いています。6a-2 の出店申請用アカウントの作成と、11a-2 の確認コードの再送は、頼む矢印 1 本と Note に寄せています。3a の招待キーでの登録は、そこでしか起きないやり取り（招待キーのロックと担当者の会員などの保存）を矢印で描いています。確認のあとのログインの Cognito とのやり取りは EC-B01 の図と同じなので、矢印 1 本にまとめています。
+エラーは最重要の 8a（Cognito が受け付けない）と 8b（招待キーが使えない）だけを描き、ほかの代替フローは図の下に並べています。6a-2 の出店申請用アカウントの作成は、頼む矢印 1 本と Note に寄せています。3a の招待キーでの登録は、そこでしか起きないやり取り（招待キーのロックと担当者の会員などの保存）を矢印で描いています。確認のあとのログインの Cognito とのやり取りは EC-B01 の図と同じなので、矢印 1 本にまとめています。
 
 ```mermaid
 sequenceDiagram
@@ -38,7 +38,7 @@ sequenceDiagram
         participant Cog as Amazon Cognito
     end
 
-    Note over User,Cog: 共通代替フロー<br/>*a 通信に失敗した場合: 8、20、22、46、50、56、71 に適用<br/>*b 未ログインの場合: ログインの前なので適用しない
+    Note over User,Cog: 共通代替フロー<br/>*a 通信に失敗した場合: 8、19、21、40、48、63 に適用<br/>*b 未ログインの場合: ログインの前なので適用しない
 
     alt 基本フロー 1 共通ヘッダーから開く
         User->>Header: 「メイン」画面の共通ヘッダーの「ログイン」をクリック
@@ -65,30 +65,12 @@ sequenceDiagram
 
     User->>Form: 5・6 メールアドレス、パスワード、確認用のパスワードを入力<br/>(3a-3 なら招待キーも。6a-1 企業様向けならチェックを付ける)
     User->>Form: 7「確認コードを送信」をクリック
-    break 8a 未入力、メールアドレスの形式違い、8 文字未満、招待キーが 43 文字でない
-        Form-->>User: ブラウザーが入力を求める (required、type=email、minLength、pattern)。<br/>通信しない。8a-2 基本フロー 5 へ戻る
-    end
     Form->>AuthJs: 登録を頼む (register → run → signUp)<br/>ボタンは「登録中…」
     AuthJs->>AuthCtrl: 書き込みの前に CSRF トークンを取る<br/>(postAuth → authFetch、GET /api/auth/csrf)
     AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
     AuthJs->>SignupCtrl: POST /api/auth/signup<br/>(email、password、confirmPassword、business、invitationKey)
-    break 8a 入力の形式の違反か、確認用のパスワードと一致しない
-        SignupCtrl--xErrs: 400 INVALID_INPUT (SignupRequest の @Valid) か<br/>400 PASSWORD_MISMATCH (ApiException) の例外を投げる
-        Note over Errs,Form: 結果: 400 を返し、登録しない。<br/>画面: 8a-1「入力内容・文字数・数値の範囲を確認してください。」か「パスワードと確認用パスワードが一致しません。」。入力は残る (8a-2 基本フロー 5 へ)。
-    end
     alt 招待キーなし
         SignupCtrl->>CogS: Cognito に登録するよう頼む (signUp)
-        CogS->>Cog: 8 SignUp (Username と email にメールアドレス)
-        break 8a Cognito が受け付けない (UsernameExistsException、InvalidPasswordException など)
-            CogS--xErrs: 409 EMAIL_IN_USE、400 PASSWORD_REJECTED などの<br/>例外を投げる (call → translate)
-            Note over Errs,Form: 結果: 409 か 400 を返し、登録しない。<br/>画面: 8a-1「このメールアドレスは既に登録されています。ログインしてください。」か「パスワードが条件を満たしていません。…」など。入力は残る (8a-2 基本フロー 5 へ)。
-        end
-        Cog-->>CogS: 未確認のユーザーの UserSub。<br/>9 Cognito が確認コードのメールを送る
-        CogS-->>SignupCtrl: subject
-        opt 6a-2 企業様向けの登録 (business が真)
-            SignupCtrl->>Auth: 出店申請用アカウントを作るよう頼む (registerApplicant)
-            Note over SignupCtrl,Db: 結果: 同じ利用者の会員がいなければ (findByIssuerAndSubject、SELECT members)、<br/>出店申請用 (SHOP_OWNER_APPLICANT) の会員を保存してコミットする (saveAndFlush、INSERT members)。
-        end
     else 3a-3 招待キーがある
         SignupCtrl->>Inv: 招待キーで登録するよう頼む (register)<br/>register 全体が 1 つのトランザクション
         Inv->>Db: 招待キーの行をロックして読み、使用回数・店舗・組織を読む<br/>(lockByKeyHash、countForInvitation、findById。SELECT ... FOR UPDATE store_invitations ほか)
@@ -97,12 +79,20 @@ sequenceDiagram
             Note over Errs,Form: 結果: 400 を返し、Cognito には登録しない。<br/>画面: 8b-1「招待キーが無効です。期限切れ・取り消し済み・使用済みのキーは使えません。…」。入力は残る (8b-2 代替フロー 3a-3 へ)。
         end
         Inv->>CogS: Cognito に登録するよう頼む (signUp.get → signUp)
-        CogS->>Cog: 8 SignUp
-        break 8a Cognito が受け付けない (UsernameExistsException など)
-            CogS--xErrs: 409 EMAIL_IN_USE などの例外を投げる (translate)
-            Note over Errs,Form: 結果: トランザクションを取り消してキーのロックを外し、409 などを返す。<br/>画面: 8a-1 応答の文。入力は残る (8a-2 基本フロー 5 へ)。
+    end
+    CogS->>Cog: 8 SignUp (Username と email にメールアドレス)
+    break 8a Cognito が受け付けない (UsernameExistsException、InvalidPasswordException など)
+        CogS--xErrs: 409 EMAIL_IN_USE、400 PASSWORD_REJECTED などの<br/>例外を投げる (call → translate)
+        Note over Errs,Form: 結果: 409 か 400 を返し、登録しない (招待キーがあるときはトランザクションを取り消してキーのロックを外す)。<br/>画面: 8a-1「このメールアドレスは既に登録されています。ログインしてください。」か「パスワードが条件を満たしていません。…」など。入力は残る (8a-2 基本フロー 5 へ)。
+    end
+    Cog-->>CogS: 未確認のユーザーの UserSub。<br/>9 Cognito が確認コードのメールを送る
+    alt 招待キーなし
+        CogS-->>SignupCtrl: subject
+        opt 6a-2 企業様向けの登録 (business が真)
+            SignupCtrl->>Auth: 出店申請用アカウントを作るよう頼む (registerApplicant)
+            Note over SignupCtrl,Db: 結果: 同じ利用者の会員がいなければ (findByIssuerAndSubject、SELECT members)、<br/>出店申請用 (SHOP_OWNER_APPLICANT) の会員を保存してコミットする (saveAndFlush、INSERT members)。
         end
-        Cog-->>CogS: 未確認のユーザーの UserSub。<br/>9 Cognito が確認コードのメールを送る
+    else 3a-3 招待キーがある
         CogS-->>Inv: subject
         Inv->>Db: 店舗の担当者 (SHOP_STAFF) の会員、組織への所属、店舗の担当 (ロールなし)、<br/>キーの使用記録を保存してコミットする (saveAndFlush、save、flush。<br/>members、organization_members、store_members、store_invitation_uses)
     end
@@ -112,28 +102,17 @@ sequenceDiagram
     Form-->>User: 9「{メールアドレス} に送信した6桁の確認コードを入力してください。」、<br/>「確認コード」「確認して登録を完了」「確認コードを再送する」「ログインに戻る」
 
     User->>Form: 10・11 メールに届いた確認コードを入力し、<br/>「確認して登録を完了」をクリック
-    break 6 桁の数字でない (記述なし)
-        Form-->>User: ブラウザーが入力を求める (pattern)。通信しない
-    end
     Form->>AuthJs: 確認コードを送るよう頼む (confirm → run → confirmSignUp)<br/>ボタンは「確認中…」
     AuthJs->>SignupCtrl: POST /api/auth/signup/confirm (email、code)<br/>(先に CSRF トークンを取る。GET /api/auth/csrf)
     SignupCtrl->>CogS: 確認コードを照合するよう頼む (confirm)
     CogS->>Cog: 12 ConfirmSignUp
-    break 11a 確認コードが無効、または有効期限切れ
-        CogS--xErrs: 400 CODE_MISMATCH か CODE_EXPIRED の例外を投げる<br/>(CodeMismatchException か ExpiredCodeException を受けて translate)
-        Note over Errs,Form: 結果: 400 を返し、確認しない。<br/>画面: 11a-1「確認コードが正しくありません。」か「確認コードの有効期限が切れています。コードを再送してください。」。確認コードの入力欄のまま (11a-3 基本フロー 10 へ)。
-        opt 11a-2 確認コードを再送する
-            Form->>SignupCtrl: 「確認コードを再送する」のクリックで、確認コードを送り直すよう頼む<br/>POST /api/auth/signup/resend (run → resendSignUpCode。先に CSRF トークンを取る)
-            Note over Form,Cog: 結果: Cognito が確認コードのメールを送り直す (CognitoSignup の resend、ResendConfirmationCode) 。<br/>画面: 200 { codeSent: true } なら「確認コードを再送しました。」(setNotice)。
-        end
-    end
     Cog-->>CogS: 確認済みにした
     CogS-->>SignupCtrl: 終わった
     SignupCtrl-->>AuthJs: 200 { confirmed: true }
     AuthJs-->>Form: 確認できた
     Form->>AuthJs: 12 覚えていたパスワードでログインするよう頼む (passwordLogin)
     AuthJs->>LoginCtrl: POST /api/auth/login (email、password、returnTo)<br/>(先に CSRF トークンを取る。GET /api/auth/csrf)
-    LoginCtrl->>CogP: メールアドレスとパスワードで認証するよう頼む (authenticate)<br/>Cognito の InitiateAuth USER_PASSWORD_AUTH。中身は EC-B01 の図の 19〜20、36〜37 と同じ
+    LoginCtrl->>CogP: メールアドレスとパスワードで認証するよう頼む (authenticate)<br/>Cognito の InitiateAuth USER_PASSWORD_AUTH。中身は EC-B01 の図と同じ流れ
     CogP-->>LoginCtrl: ID トークンを検証した利用者と refresh トークン (toUser)
     LoginCtrl->>Auth: 会員を用意するよう頼む (provision)
     Auth->>Repo: 会員を読む (findByIssuerAndSubject、SELECT members)
@@ -156,6 +135,8 @@ sequenceDiagram
 ```
 
 ![EC-B16 シーケンス図](<images/EC-B16_一般アカウントを登録する-1.png>)
+
+図に描いていない代替フロー：8a のうち入力の検査（未入力・形式・文字数・確認用のパスワードの不一致）、11a（確認コードが無効・有効期限切れ）、（記述なし）の分岐
 
 ## 共通代替フローを直接書いた図
 
@@ -247,7 +228,7 @@ sequenceDiagram
         AuthJs->>AuthCtrl: GET /api/auth/csrf
         AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン
         AuthJs->>SignupCtrl: POST /api/auth/signup
-        SignupCtrl-->>AuthJs: 200 { codeSent: true } (上の図の 24〜39)
+        SignupCtrl-->>AuthJs: 200 { codeSent: true } (上の図の 22〜34)
         AuthJs-->>Form: 送った
         Form-->>User: 確認コードの入力欄
     end

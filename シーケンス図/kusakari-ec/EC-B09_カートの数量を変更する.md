@@ -8,9 +8,9 @@
 
 参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
 共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
-代替フローのうち、エラーで終わるもの（2a の 2 つ、3a）は分かれる所だけを描き、結果と画面は Note に文で書いています。エラーのときの画面の後処理（`readResponse` が `ApiError` を投げる → `run` の catch でエラーの文を覚える → `refreshOnFailure` なので最新のカートを取り直す（`GET /api/cart` などの流れは EC-B08 の図と同じ）→ エラーの文と最新のカートを出す）は、どれも同じです。取り直しの `GET /api/cart` にも共通代替フロー \*a・\*b が起こります。
+エラーは最重要の 2a（受取店舗の在庫数を超える）だけを描き、ほかの代替フローは図の下に並べています。エラーのときの画面の後処理（`readResponse` が `ApiError` を投げる → `run` の catch でエラーの文を覚える → `refreshOnFailure` なので最新のカートを取り直す（`GET /api/cart` などの流れは EC-B08 の図と同じ）→ エラーの文と最新のカートを出す）は、図に描いていないほかのエラーでも同じです。取り直しの `GET /api/cart` にも共通代替フロー \*a・\*b が起こります。
 
-「＋」と「−」は、どちらも `useShop` の `setQuantity()` に、1 つ増やした数量か 1 つ減らした数量を渡します。サーバーは [EC-B07](<EC-B07_商品をカートに追加する.md>) と同じ `PUT /api/cart/items/{productId}`（`CartService.updateItem()`）で、送られた数量で明細を上書きします。サーバーは数量と在庫より先に `revision` を比べるので、図では 3a の枝が 2a の枝より先に出ます。
+「＋」と「−」は、どちらも `useShop` の `setQuantity()` に、1 つ増やした数量か 1 つ減らした数量を渡します。サーバーは [EC-B07](<EC-B07_商品をカートに追加する.md>) と同じ `PUT /api/cart/items/{productId}`（`CartService.updateItem()`）で、送られた数量で明細を上書きします。サーバーは数量と在庫より先に `revision` を比べます（3a）。
 
 ```mermaid
 sequenceDiagram
@@ -50,18 +50,10 @@ sequenceDiagram
     Svc->>CartRepo: カートの行をロックして読む (findLocked、SELECT ... FOR UPDATE carts)
     CartRepo-->>Svc: カート
     Svc->>Svc: 送られた revision と今の revision を比べる (checkRevision)
-    break 3a 別の操作でカートが更新されていた (revision が違う)
-        Svc--xErrs: 409 CART_CHANGED の例外を投げる (ApiException)
-        Note over Errs,Cart: 結果: 409「別の操作でカートが更新されました。最新の内容を確認してください。」を返し (business)、数量は変えない。<br/>画面: 3a-1 その文と、取り直した最新のカート。3a-2 基本フロー 1 へ戻る。
-    end
     Svc->>ItemRepo: その商品の明細を読む (findById、SELECT cart_items)
     ItemRepo-->>Svc: 今の明細
     Svc->>Catalog: 商品と、今買えるかを調べるよう頼む (listing)<br/>商品・在庫・店舗・組織を読む (findByIdIn、findAllById、<br/>SELECT products、inventory、stores、organizations)
     Catalog-->>Svc: 商品と買えない理由 (Listing)
-    break 2a 購入できない明細 (purchasable が偽。カートで「現在は購入できません」の明細)
-        Svc--xErrs: 409 PRODUCT_ARCHIVED の例外を投げる (ApiException)
-        Note over Errs,Cart: 結果: 409「この商品は販売を終了しています。カートから削除してください。」を返し (business)、数量は変えない。<br/>画面: 2a-1 その文と、取り直した最新のカート。2a-2 基本フロー 1 へ戻る。
-    end
     break 2a 送る数量が受取店舗の在庫数を超える
         Svc--xErrs: 409 OUT_OF_STOCK の例外を投げる (ApiException)
         Note over Errs,Cart: 結果: 409「受取店舗の在庫が不足しています。」を返し (business)、数量は変えない。<br/>画面: 2a-1 その文と、取り直した最新のカート。2a-2 基本フロー 1 へ戻る。
@@ -79,6 +71,8 @@ sequenceDiagram
 ```
 
 ![EC-B09 シーケンス図](<images/EC-B09_カートの数量を変更する-1.png>)
+
+図に描いていない代替フロー：2a（購入できない明細）、3a（別の操作でカートが更新されていた）
 
 ## 共通代替フローを直接書いた図
 
@@ -152,7 +146,7 @@ sequenceDiagram
             AuthJs->>Filter: PUT /api/cart/items/{productId}
             Filter->>Ctrl: 要求を通す (chain.doFilter)
             Ctrl->>Svc: 明細の数量を書き換えるよう頼む (updateItem)
-            Svc->>Db: カートをロックして読み、商品と在庫を確かめ、<br/>明細を保存してコミットする (上の図の 12〜26)
+            Svc->>Db: カートをロックして読み、商品と在庫を確かめ、<br/>明細を保存してコミットする (上の図の 12〜24)
             alt *a MySQL との通信に失敗
                 Db--xSvc: 失敗 (DataAccessException)。<br/>トランザクションの変更はすべて取り消す
                 Svc--xCtrl: 例外
