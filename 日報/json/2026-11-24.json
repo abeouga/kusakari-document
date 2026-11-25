@@ -1,0 +1,59 @@
+{
+ "schema": 1,
+ "date": "2026-11-24",
+ "window": {
+  "start": "2026-11-24T03:00:00+09:00",
+  "end": "2026-11-25T03:00:00+09:00"
+ },
+ "provisional": false,
+ "generatedAt": "2026-11-25T09:41:53+09:00",
+ "summary": [
+  "組織のアカウント一覧で、会員を全件取得し、さらに1人ずつ所属店舗をDBに問い合わせている問題が報告された(対応はまだ決まっていない)。",
+  "kusakari-ec に、シーケンス図を同じ書き方で書くためのスキル kusakari-sequence が入った。",
+  "この日の動きはこの2件だけ。"
+ ],
+ "specs": [
+  {
+   "id": "ec-issue-225",
+   "status": "proposed",
+   "needsCheck": false,
+   "title": "組織のアカウント一覧で、会員の全件取得と1人ずつの店舗問い合わせが起きている問題",
+   "body": "組織のアカウント一覧を表示するとき、AuthMemberRepository の findAll が会員を全件取得しており、画面に出す分だけを取る仕組みになっていない。さらに AuthService の storeIdsOf が、取得した会員1人ごとに所属店舗をDBに問い合わせるので、会員が増えるほど問い合わせの回数も増える。どう直すかはまだ書かれていない。",
+   "reason": "issue は開いたままで、問題の報告だけがあり、直し方の決定もコメントも無いため提案中とした。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "abeouga"
+   ],
+   "links": [
+    {
+     "kind": "issue",
+     "label": "issue #225 ARG_ADMIN以上のロールが利用できる、会員全体取得のメソッドが抱える問題に…",
+     "url": "https://github.com/abeouga/kusakari-ec/issues/225"
+    }
+   ]
+  }
+ ],
+ "changes": [
+  {
+   "id": "ec-commit-8892344",
+   "withSpec": false,
+   "title": "シーケンス図を書くスキル kusakari-sequence をリポジトリに追加",
+   "body": "シーケンス図(画面やクラスの間のやり取りを時間の順に描く図)の書き方の決まりを、スキルとして kusakari-ec の .claude/skills に入れた。参加者の書き方、React と Spring Boot の色分け、矢印の文の書き方などを決めており、mermaid(文字で図を書く記法)の図が描けるかを確かめるスクリプトも付けた。決まりはこれまで個人のPCにしか無かったので、どのPCでも同じ書き方で書けるようにするために入れた。",
+   "repo": "kusakari-ec",
+   "authors": [
+    "阿部桜雅"
+   ],
+   "links": [
+    {
+     "kind": "commit",
+     "label": "コミット 8892344 シーケンス図を書くスキル kusakari-sequence を足す",
+     "url": "https://github.com/abeouga/kusakari-ec/commit/88923444b4075e68bae6bfd0860e7cb956faa9a0"
+    }
+   ]
+  }
+ ],
+ "manual": {
+  "raw": "",
+  "items": []
+ }
+}
