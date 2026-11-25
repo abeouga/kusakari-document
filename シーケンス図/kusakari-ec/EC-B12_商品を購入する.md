@@ -1,21 +1,5 @@
 # EC-B12 商品を購入する
 
-- ユースケース記述: [EC-B12_商品を購入する](<../../アーカイブ/ユースケース/kusakari-ec/EC-B12_商品を購入する.md>)
-- 共通代替フロー: [00_全ユースケース共通の代替フロー](<00_全ユースケース共通の代替フロー.md>)
-- 対象のコード: kusakari-ec の main（6bad7e3、2026-11-24 時点）
-
-## シーケンス図
-
-参加者は、上から「画面や役割の名前」「コンポーネント・クラスの名前」「ファイル名（かっこ付き）」の順に書いています。
-共通代替フローの中身は、00 の図か、下の「共通代替フローを直接書いた図」を見てください。
-エラーは最重要の 4a（最新のカートで在庫不足）と、カードの支払いの失敗の 5c だけを描き、ほかの代替フローは各図の下に並べています。エラーのときの画面の後処理（`readResponse` が `ApiError` を投げる → `run` の `catch` がエラーの文を出す → 409 なら注文の要求を捨ててカートを取り直す、それ以外は注文の要求を残す）は、どれも同じです。条件つきの処理（カード決済の設定の読み込み、返金、`PaymentIntent` の取り消し）は、頼む矢印 1 本と Note に寄せています。
-
-支払方法で流れが大きく分かれ、カードでは Stripe からの通知と時間切れの処理が画面の操作とは別に動くので、図を 3 つに分けています。
-
-- 図 1: 基本フロー 1〜9（店舗でお支払い）と、代替フロー 4a
-- 図 2: 代替フロー 5a、5c（クレジットカードを選んでから、画面で支払いの結果を確かめるまで）
-- 図 3: 代替フロー 5a-8、5c-1、5e（Stripe からの通知と、支払い待ちの時間切れ）。ブラウザーの通信がないので、共通代替フローは適用しません
-
 ### 図 1 店舗でお支払い
 
 ```mermaid
@@ -136,11 +120,7 @@ sequenceDiagram
 
 ![EC-B12 図 1 店舗でお支払い](<images/EC-B12_商品を購入する-1.png>)
 
-図に描いていない代替フロー：2a（購入できない商品・在庫不足）、7a（カートの更新）、7b（価格の変更）、7c（在庫の引き当ての失敗）、7d（店舗の受付停止）、7e（公開停止の商品）、7g（保存の失敗）
-
 ### 図 2 クレジットカード
-
-図 1 の確認画面（34 の前）からの続きです。
 
 ```mermaid
 sequenceDiagram
@@ -232,11 +212,7 @@ sequenceDiagram
 
 ![EC-B12 図 2 クレジットカード](<images/EC-B12_商品を購入する-2.png>)
 
-図に描いていない代替フロー：5b（カード情報の入力の不備）、5d（支払いの確認に時間がかかる）、5f（決済会社との通信の失敗）、7f（カード決済が使えない）、（記述なし）の分岐
-
 ### 図 3 Stripe からの通知と時間切れ
-
-画面の操作とは別に動きます。Stripe からの通知は、図 2 の「支払いを確認しています」と並行して届きます。
 
 ```mermaid
 sequenceDiagram
@@ -303,210 +279,3 @@ sequenceDiagram
 ```
 
 ![EC-B12 図 3 Stripe からの通知と時間切れ](<images/EC-B12_商品を購入する-3.png>)
-
-図に描いていない代替フロー：（記述なし）の分岐
-
-## 共通代替フローを直接書いた図
-
-図 1 の「注文を確定する」の通信（ログイン状態の確認、カートの取り直し、CSRF トークンの取得、`POST /api/orders`）に、この画面で起こる共通代替フロー（\*a、\*b）を書き込んだ図です。
-
-- 「注文内容を確認する」（図 1 の 23〜32）も同じ `checkoutCart()` を通るので、ログイン状態の確認とカートの取り直しの \*a・\*b はこの図の 3〜20 と同じです。失敗するとカートの画面のまま、エラーの文が出ます。
-- 図 2 の「注文してカードで支払う」も、この図と同じ通信を通ります。違いは 5f（502）が加わることです。
-- アプリを開いたときのカートの取得（図 1 の 4）は、401 なら「ログインしていない」として商品だけを読み（`signedOut`）、カートの URL ではログイン画面へ移ります（`App.jsx` の `redirectToLogin()`、\*b-1）。そのほかの失敗では、カートの画面にエラーの文と「商品を探す」が出て、「再取得」はありません。
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User as 購入者
-    box rgba(47,111,219,0.10) ブラウザー React
-        participant Cart as カート画面<br/>Cart<br/>(Cart.jsx)
-        participant Shop as カートと購入の操作<br/>useShop<br/>(useShop.js)
-        participant Http as 通信<br/>request<br/>(api.js)
-        participant AuthJs as ログイン状態と通信の準備<br/>readSession・authFetch<br/>(auth.js)
-        participant Notice as 期限切れのお知らせ<br/>SessionNotice<br/>(SessionNotice.jsx)
-    end
-    box rgba(27,127,92,0.12) EC API Spring Boot
-        participant AuthCtrl as ログイン状態API<br/>AuthController<br/>(AuthController.java)
-        participant Filter as セッションの確認<br/>SessionValidityFilter<br/>(SessionValidityFilter.java)
-        participant OrderCtrl as 注文API<br/>OrderController<br/>(OrderController.java)
-        participant Checkout as お会計の処理<br/>CheckoutService<br/>(CheckoutService.java)
-    end
-    participant Db as MySQL
-    box rgba(180,120,20,0.12) 外部サービス
-        participant Cog as Amazon Cognito
-    end
-
-    User->>Cart: 「注文を確定する」をクリック
-    Cart->>Shop: 注文するよう頼む (checkout → run)
-    Shop->>AuthJs: ログイン状態を読む (checkoutCart → readSession)
-    alt *a ログイン状態を読めない
-        AuthJs-xAuthCtrl: GET /api/auth/me<br/>(届かない、または 200 と 403 以外。Cognito に届かない 503 を含む)
-        AuthJs--xShop: エラーを投げる (届かないときはブラウザーの文、<br/>それ以外は「ログイン状態を確認できません。」)
-        Shop-->>Cart: 失敗を返す (run の catch → setError)
-        Cart-->>User: *a-1 エラーの文。確認画面はそのまま (*a-2)
-    else *b ログインしていない (サーバーのセッションがない、refresh トークンが失効)
-        AuthJs->>AuthCtrl: GET /api/auth/me
-        AuthCtrl-->>AuthJs: 200 authenticated=false
-        AuthJs-->>Shop: ログインしていない
-        Shop->>AuthJs: ログイン画面へ移る (login)
-        AuthJs-->>User: *b-1 /account/login?returnTo=/cart のログイン画面<br/>(*b-2 ログインの後はカートの画面を最初から表示する)
-    else ログイン中
-        AuthJs->>AuthCtrl: GET /api/auth/me
-        AuthCtrl-->>AuthJs: 200 authenticated=true
-        AuthJs-->>Shop: ログイン中
-        Shop->>Http: カートを読む (api.cart → request)
-        alt *a・*b カートを読めない
-            Http-xFilter: GET /api/cart (下の POST と同じように、届かない、401、503 になる)
-            Http--xShop: エラーを投げる (ApiError。401 なら期限切れのお知らせも出す)
-            Shop-->>Cart: 失敗を返す (run の catch → setError)。注文の要求は作らない
-            Cart-->>User: *a-1 エラーの文 (401 なら *b-1 のお知らせ)。確認画面はそのまま
-        else カートを読めた
-            Http->>Filter: GET /api/cart
-            Filter-->>Http: 200 最新のカート (図 1 の 5〜12)
-            Http-->>Shop: 最新のカート (setCart)
-            Shop->>Shop: 注文の要求を作るか、前の要求を使う (checkoutRequest)
-            Shop->>Http: 注文の要求を送る (api.checkout → request)
-            Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (authFetch)
-            alt *a CSRF トークンを取れない (届かない、または 200 以外)
-                AuthJs-xAuthCtrl: GET /api/auth/csrf<br/>(ID トークンの更新に失敗した 401 と 503 もここに入る)
-                AuthJs--xHttp: エラーを投げる
-                Http--xShop: 通信の失敗にまとめて投げる<br/>(send の catch → ApiError(networkErrorMessage, 0))
-                Shop-->>Cart: 失敗を返す (setError)。0 なので注文の要求を残す
-                Cart-->>User: *a-1「サーバーに接続できません。<br/>接続を確認して再試行してください。」。確認画面はそのまま (*a-2)
-            else CSRF トークンを取れた
-                AuthJs->>AuthCtrl: GET /api/auth/csrf
-                AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン
-                alt *a POST が届かない、または応答が JSON でない (注文が保存されたかは分からない)
-                    AuthJs-xFilter: POST /api/orders
-                    Http--xShop: 通信の失敗にまとめて投げる<br/>(send か readResponse → ApiError(networkErrorMessage, 0))
-                    Shop-->>Cart: 失敗を返す (setError)。0 なので注文の要求を残す
-                    Cart-->>User: *a-1「サーバーに接続できません。<br/>接続を確認して再試行してください。」。確認画面はそのまま (*a-2)
-                else *b ログインの期限切れ (サーバーのセッションがない、refresh トークンが失効)
-                    AuthJs->>Filter: POST /api/orders
-                    Filter-->>Http: 401 LOGIN_REQUIRED<br/>(セッションが無いときは AuthConfiguration.java が返す)
-                    Http->>Notice: 期限切れを知らせる<br/>(wasSignedIn が真なので kusakari-session-expired)
-                    Http--xShop: エラーを投げる (ApiError(sessionExpiredMessage, 401))
-                    Shop-->>Cart: 失敗を返す (setError)。注文の要求を残す
-                    Notice-->>User: *b-1「ログインの有効期限が切れました。<br/>もう一度ログインしてください。」「ログインする」「閉じる」
-                    User->>Notice: 「ログインする」をクリック
-                    Notice->>AuthJs: ログイン画面へ移る (login)
-                    AuthJs-->>User: /account/login?returnTo=/cart のログイン画面<br/>(*b-2 ログインの後はカートの画面を最初から表示する。注文は保存されていない)
-                else *a ID トークンの更新で Cognito に届かない
-                    AuthJs->>Filter: POST /api/orders
-                    Filter-xCog: ID トークンを更新する<br/>(InitiateAuth REFRESH_TOKEN_AUTH、CognitoPasswordLogin.java)
-                    Filter-->>Http: 503 AUTH_UNAVAILABLE (セッションは残す)
-                    Http--xShop: エラーを投げる (ApiError 503)
-                    Shop-->>Cart: 失敗を返す (setError)。注文の要求を残す
-                    Cart-->>User: *a-1「認証を確認できません。<br/>時間をおいて再試行してください。」。確認画面はそのまま (*a-2)
-                else 要求が Controller まで届いた
-                    AuthJs->>Filter: POST /api/orders
-                    Filter->>OrderCtrl: 要求を通す (chain.doFilter)
-                    OrderCtrl->>Checkout: 注文を保存するよう頼む (resolve → placeOrder)
-                    Checkout->>Db: カート、店舗、組織、商品、在庫をロックして確かめ、<br/>注文と通知を保存してコミットする (図 1 の 48〜63)
-                    alt *a・7g MySQL との通信に失敗
-                        Db--xCheckout: 失敗 (DataAccessException)。<br/>注文も在庫の減算も取り消す
-                        Checkout--xOrderCtrl: 例外
-                        OrderCtrl-->>Http: 503 DATABASE_UNAVAILABLE (ApiErrors.java の database)
-                        Http--xShop: エラーを投げる (ApiError 503)
-                        Shop-->>Cart: 失敗を返す (setError)。注文の要求を残す
-                        Cart-->>User: *a-1「保存処理を完了できませんでした。<br/>時間をおいて再試行してください。」。確認画面はそのまま (*a-2)
-                    else 保存した
-                        Db-->>Checkout: 完了
-                        Checkout-->>OrderCtrl: 受取店舗ごとの注文
-                        OrderCtrl-->>Http: 200 注文の配列
-                        Http-->>Shop: 保存した注文
-                        Shop-->>Cart: 保存した注文 (setLastOrders、refresh)
-                        Cart-->>User: 「注文を保存しました」
-                    end
-                end
-            end
-        end
-    end
-    opt *a-3 やり直す
-        User->>Cart: 確認画面のまま、もう一度「注文を確定する」をクリック (基本フロー 6 へ戻る)
-        Cart->>Shop: 注文するよう頼む (checkout)。残っている注文の要求 (同じ requestId) を送るので、<br/>前の要求で保存されていても、同じ注文を返すだけで二重に保存しない
-    end
-```
-
-![EC-B12 共通代替フローを直接書いた図](<images/EC-B12_商品を購入する-4.png>)
-
-## ユースケース記述との差
-
-- 7a と 7b は、確認画面を開いた後の変更では起きにくくなっています。`useShop.js` の `checkout()` は、送る直前に `GET /api/cart` でカートを取り直し、その `revision` と合計で注文の要求を作ります。そのため、確認画面を開いた後に別の画面でカートや価格が変わっても、最新の内容と価格で注文が保存されます（表示中のカートは送る直前に最新に置き換わります）。409 `CART_CHANGED` と 409 `PRICE_CHANGED` になるのは、取り直しから `POST /api/orders` までの間に変わったときと、通信の失敗や 503 の後の再試行で前の注文の要求をそのまま送ったときです。
-- 7c の文は 2 種類あります。カート全体の確認（`canCheckout`）で止まると「在庫が変更されました。数量を変更してください。」、店舗ごとの保存の中の在庫の確認で止まると「在庫が変更されました。もう一度確認してください。」です。記述は前者だけです。
-- 7e のエラーコードは 7c と同じ `OUT_OF_STOCK` です。文は記述と同じ「購入できない商品があります。カートを確認してください。」です。
-- 7d-3 で購入者が商品を削除する前に、取り直しの `GET /api/cart`（`CartService.read()`）が、閉鎖済み・停止中の店舗と停止中の組織、削除された商品の明細をカートから外し、「（商品名）は購入できなくなったためカートから外しました。」を出します。購入者が削除する必要があるのは、閉鎖中・非公開・組織の受付停止のように一時的な理由の明細です。
-- 7g（保存に失敗した場合）は、共通代替フロー \*a の「MySQL との通信に失敗」と同じ 503 `DATABASE_UNAVAILABLE` です。7g-2 の「もう一度押せる」は、`useShop.js` が 409 以外の失敗では注文の要求（`checkoutRequest`）を残すので、同じ `requestId` で送り直す動きです。通信が届かなかった場合（\*a）も同じで、前の要求で注文が保存されていれば、その注文を返すだけになります（関連情報「同じ注文は1回だけ記録する」）。
-- 基本フロー 4 の受取店舗の所在地と営業時間は、カートではなく、アプリを開いたときの `GET /api/stores` の結果（`shop.stores`）から出しています。
-- 基本フロー 2 のカートは、アプリを開いたときに `useShop.js` が読んだものです。共通ヘッダーの「カート」を押しても、カートは読み直しません（読み直すのは「注文内容を確認する」を押したとき）。
-- 事後条件の「失敗時は…カートの内容が維持されている」は、カードの支払いの失敗（5c）と時間切れ（5e）には当てはまりません。カードの注文は 5a-4 でカートを空にし、取り消しで戻すのは在庫だけです。
-- 5c で注文を取り消したとき、画面には記述の文のほかに、Stripe のエラーの文も出ます。
-- 5e の取り消しは 1 分ごとの定期処理（`PaymentExpiryJob`）で行うので、30 分を過ぎてから最大で約 1 分遅れます。30 分は `kusakari.ec.payment-timeout-minutes` の既定値です。購入者への「ご注文を取り消しました」は、注文の数にかかわらず決済ごとに 1 件です。
-- 5f-2 でもう一度押すと、`checkout()` は先にカートを取り直します。サーバーのカートは 5a-4 で空になっているので、コードの上では、`PaymentIntent` ができるまでの間、カートの画面は空のカートの表示になります（動かして確かめていません）。
-- 5f の後に 30 分を過ぎてから（5e で取り消された後に）もう一度押すと、`placeOrder()` は取り消し済みの注文を返し、`PaymentService.start()` は決済が支払い待ちでないので `clientSecret` を付けません。画面は `clientSecret` がないと店頭払いと同じく完了の扱いにするので（`useShop.js` の `checkout()`）、コードの上では、取り消した注文に「注文を保存しました」と「カードでのお支払いを確認しました…」が出ます。記述にない動きで、動かして確かめていません。
-- コードにあって記述にない処理です。
-  - Stripe の `confirmPayment()` が `validation_error` と `card_error` 以外のエラーを返すと、エラーの文を出して入力欄に戻り、もう一度押せます。
-  - 取り消した注文に後から支払いの成功が届くと、注文を取り消したまま全額を返金し、購入者に「お支払いを返金します」を通知します（`PaymentService.succeeded()`）。
-  - サーバーは次の応答も返します。409 `REQUEST_REUSED`（同じ `requestId` で内容が違う）、409 `EMPTY_CART`（カートが空）、404 `CART_NOT_FOUND`、400 `INVALID_INPUT`（`CheckoutRequest` の検査）、409 `DATA_CHANGED`（`ApiErrors.conflict()`）。409 のときは画面がカートを取り直します。
-  - 運営のアカウント（`ADMIN`）も購入できます（`AuthService.requireBuyer()`）。
-  - 図 2 の注文の状態の確認（`GET /api/orders/{id}`）は、失敗しても画面に出さず、次の回でやり直します。401 のときは `readResponse()` が期限切れのお知らせ（`SessionNotice`）を出します。
-  - `GET /api/payments/config` に失敗すると、エラーを出さずにカードの選択肢を出しません。
-- 店舗側・出店申請用のアカウントは、カートの画面に「店舗・出店申請用のアカウントでは購入できません。…」が出て購入できません（`CartPage.jsx`、関連情報）。事前条件が購入者のログインなので、図には描いていません。
-
-## 確かめられなかったこと
-
-- Stripe.js（`loadStripe()`、Payment Element、`confirmPayment()`）の中の通信は、Kusakari のコードの外です。図の「Stripe.js と入力欄を読み込む」「カード情報を送って支払う」は、`CardPayment.jsx` のコメントと ADR（`docs/decisions/2026-11-13-stripe-card-payment.md`）の記述をもとにしています。`validation_error` のときに Stripe へ通信するかは確かめていません。
-- カードが断られたときに Stripe が `payment_intent.payment_failed` の通知を送ることは、Stripe の仕様です。コードで確かめたのは、その通知を受けたときの処理だけです。
-- Stripe の通知が EC API に届くかは動かす環境しだいで、コードでは確かめられません。通知が届かなければ、支払っても注文受付にならず、画面は 5d になり、30 分後に 5e で取り消されます。
-- 図 1 の「商品、注文、店舗を読む」（`GET /api/products`、`GET /api/orders`、`GET /api/stores`）の EC API の中は、このユースケースでは描いていません。
-
-## 参照したコード
-
-- [frontend/src/App.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/App.jsx): `useShop`、`navigateFromHeader`、`/cart` の `redirectToLogin` と `CartPage` の表示
-- [packages/site-header/KusakariHeader.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/packages/site-header/KusakariHeader.jsx): `follow`、「カート」のリンク
-- [frontend/src/workspace/navigation.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/workspace/navigation.js): `navigate`
-- [frontend/src/components/CartPage.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/components/CartPage.jsx): `CartPage`（`buyerOnlyMessage`）
-- [frontend/src/components/Cart.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/components/Cart.jsx): `Cart`（`confirming`、`payment`、`checkoutLabel`、ボタンの `disabled`、完了の表示）、`OrderSummary`、`RemovedNotice`
-- [frontend/src/components/CheckoutConfirm.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/components/CheckoutConfirm.jsx): `CheckoutConfirm`、`pickupGroups`
-- [frontend/src/components/CardPayment.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/components/CardPayment.jsx): `CardPaymentStep`、`CardForm`、`stripe`、`pay`、`poll`、`pollIntervalMs`、`pollLimitMs`
-- [frontend/src/payment.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/payment.js): `paymentMethods`、`stripePublishableKey`、`useCardAvailable`、`paymentLabel`
-- [frontend/src/useShop.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/useShop.js): `refresh`、`run`、`initialize`、`checkoutCart`、`beginCheckout`、`checkout`、`acceptCardOrders`
-- [frontend/src/auth.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/auth.js): `readSession`、`authFetch`、`wasSignedIn`、`login`、`redirectToLogin`
-- [frontend/src/api.js](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/api.js): `request`、`send`、`readResponse`、`ApiError`、`api.cart`、`api.checkout`、`networkErrorMessage`、`sessionExpiredMessage`
-- [frontend/src/components/SessionNotice.jsx](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/frontend/src/components/SessionNotice.jsx): 期限切れのお知らせ
-- [backend/src/main/java/jp/kusakari/ec/commerce/controller/CartController.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/commerce/controller/CartController.java): `get`
-- [backend/src/main/java/jp/kusakari/ec/commerce/controller/OrderController.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/commerce/controller/OrderController.java): `checkout`
-- [backend/src/main/java/jp/kusakari/ec/commerce/controller/OrderWorkflowController.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/commerce/controller/OrderWorkflowController.java): `buyer`（`GET /api/orders/{id}`）
-- [backend/src/main/java/jp/kusakari/ec/commerce/service/OrderWorkflowService.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/commerce/service/OrderWorkflowService.java): `buyerOrder`
-- [backend/src/main/java/jp/kusakari/ec/commerce/session/CartSessionResolver.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/commerce/session/CartSessionResolver.java): `resolve`
-- [backend/src/main/java/jp/kusakari/ec/auth/MemberCartService.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/MemberCartService.java): `resolve`
-- [backend/src/main/java/jp/kusakari/ec/auth/AuthController.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthController.java): `me`、`csrf`
-- [backend/src/main/java/jp/kusakari/ec/auth/AuthService.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthService.java): `requireBuyer`、`current`、`session`
-- [backend/src/main/java/jp/kusakari/ec/commerce/service/CartService.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/commerce/service/CartService.java): `read`、`view`
-- [backend/src/main/java/jp/kusakari/ec/catalog/service/CatalogService.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/catalog/service/CatalogService.java): `listingsByIds`、`REMOVED_REASONS`
-- [backend/src/main/java/jp/kusakari/ec/commerce/service/CheckoutService.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/commerce/service/CheckoutService.java): `placeOrder`、`requireOpen`、`requireNotSuspended`、`placeStoreOrder`
-- [backend/src/main/java/jp/kusakari/ec/commerce/service/DeliveryService.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/commerce/service/DeliveryService.java): `pickupDetails`
-- [backend/src/main/java/jp/kusakari/ec/commerce/service/StockReturn.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/commerce/service/StockReturn.java): `restock`
-- [backend/src/main/java/jp/kusakari/ec/commerce/dto/CommerceDtos.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/commerce/dto/CommerceDtos.java): `CheckoutRequest`、`CheckoutResult`、`CardPayment`、`CartLine`
-- [backend/src/main/java/jp/kusakari/ec/commerce/persistence/entity/OrderEntity.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/commerce/persistence/entity/OrderEntity.java): `awaitPayment`、`acceptPayment`、`cancelUnpaid`、`assignPickup`、`changeRecipient`
-- [backend/src/main/java/jp/kusakari/ec/notification/service/NotificationService.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/notification/service/NotificationService.java): `send`、`toStore`
-- [backend/src/main/java/jp/kusakari/ec/payment/controller/PaymentController.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/payment/controller/PaymentController.java): `config`、`webhook`
-- [backend/src/main/java/jp/kusakari/ec/payment/service/PaymentService.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/payment/service/PaymentService.java): `start`、`succeeded`、`failed`、`expire`、`cancelUnpaid`、`lockFor`
-- [backend/src/main/java/jp/kusakari/ec/payment/service/StripeGateway.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/payment/service/StripeGateway.java): `enabled`、`createIntent`、`retrieveIntent`、`cancelIntent`、`signatureValid`、`unavailable`
-- [backend/src/main/java/jp/kusakari/ec/payment/service/StripeWebhookService.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/payment/service/StripeWebhookService.java): `handle`
-- [backend/src/main/java/jp/kusakari/ec/payment/service/PaymentExpiryJob.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/payment/service/PaymentExpiryJob.java): `expireUnpaid`
-- [backend/src/main/java/jp/kusakari/ec/payment/service/AfterCommit.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/payment/service/AfterCommit.java): `run`
-- [backend/src/main/java/jp/kusakari/ec/payment/persistence/entity/PaymentEntity.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/payment/persistence/entity/PaymentEntity.java): `isPending`、`succeed`、`close`、`attachIntent`
-- [backend/src/main/java/jp/kusakari/ec/payment/persistence/repository/PaymentRepository.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/payment/persistence/repository/PaymentRepository.java): `lock`、`lockByIntent`、`findPendingBefore`、`findByCartIdAndRequestId`
-- [backend/src/main/java/jp/kusakari/ec/commerce/persistence/repository/CartRepository.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/commerce/persistence/repository/CartRepository.java): `findLocked`
-- [backend/src/main/java/jp/kusakari/ec/commerce/persistence/repository/CartItemRepository.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/commerce/persistence/repository/CartItemRepository.java): `findAllForCart`
-- [backend/src/main/java/jp/kusakari/ec/commerce/persistence/repository/OrderRepository.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/commerce/persistence/repository/OrderRepository.java): `findByCartIdAndRequestIdOrderByStoreIdAsc`、`lockByPayment`
-- [backend/src/main/java/jp/kusakari/ec/catalog/persistence/repository/StoreRepository.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/catalog/persistence/repository/StoreRepository.java): `lock`
-- [backend/src/main/java/jp/kusakari/ec/store/persistence/repository/OrganizationRepository.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/store/persistence/repository/OrganizationRepository.java): `lockShared`
-- [backend/src/main/java/jp/kusakari/ec/catalog/persistence/repository/ProductRepository.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/catalog/persistence/repository/ProductRepository.java): `findStoreReferences`、`lockSharedSuspension`
-- [backend/src/main/java/jp/kusakari/ec/catalog/persistence/repository/InventoryRepository.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/catalog/persistence/repository/InventoryRepository.java): `lockAll`
-- [backend/src/main/java/jp/kusakari/ec/auth/SessionValidityFilter.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/SessionValidityFilter.java): `doFilterInternal`、`renewIdToken`
-- [backend/src/main/java/jp/kusakari/ec/auth/CognitoPasswordLogin.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/CognitoPasswordLogin.java): ID トークンの更新、503 `AUTH_UNAVAILABLE`
-- [backend/src/main/java/jp/kusakari/ec/auth/AuthConfiguration.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/auth/AuthConfiguration.java): `authenticationEntryPoint`（401 `LOGIN_REQUIRED`）、Webhook の CSRF の除外と認証なしの許可
-- [backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/backend/src/main/java/jp/kusakari/ec/common/web/ApiErrors.java): `business`、`database`、`conflict`、`invalid`
-- [docs/decisions/2026-11-13-stripe-card-payment.md](https://github.com/abeouga/kusakari-ec/blob/6bad7e37c4135034fbe97e30309772fbe872e675/docs/decisions/2026-11-13-stripe-card-payment.md): カード決済の決定（Stripe の呼び出しの時点、Webhook、時間切れ）
