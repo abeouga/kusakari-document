@@ -5,54 +5,52 @@ sequenceDiagram
     autonumber
     actor User as 運営者
     box rgba(47,111,219,0.10) ブラウザー React
-        participant Work as 運営者画面<br/>Workspace<br/>(Workspace.jsx)
-        participant Page as アカウント管理画面<br/>MembersPage<br/>(OperatorPages.jsx)
-        participant Hook as 一覧の取得<br/>useResource<br/>(useResource.js)
-        participant Http as 通信<br/>request<br/>(api.js)
+        participant Work as 運営者画面のサイドバー<br/>(Workspace.jsx)
+        participant Page as アカウント管理画面<br/>(OperatorPages.jsx)
+        participant Hook as 一覧の取得<br/>(useResource.js)
+        participant Http as バックエンドのAPIを叩く<br/>(api.js)
     end
     box rgba(27,127,92,0.12) EC API Spring Boot
-        participant Ctrl as 会員管理API<br/>MemberController<br/>(MemberController.java)
-        participant Svc as 会員の処理<br/>MemberService<br/>(MemberService.java)
-        participant Auth as ログイン中の会員<br/>AuthService<br/>(AuthService.java)
-        participant Repo as 会員の読み書き<br/>AuthMemberRepository<br/>(AuthMemberRepository.java)
+        participant Ctrl as 会員管理API<br/>(MemberController.java)
+        participant Svc as 会員の処理<br/>(MemberService.java)
+        participant Auth as ログイン中の会員<br/>(AuthService.java)
+        participant Repo as 会員の読み書き<br/>(AuthMemberRepository.java)
     end
     participant Db as MySQL
 
     Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認) と 5 に適用<br/>*a 通信に失敗した場合: 5 に適用
 
     User->>Work: 運営者メニューの「会員管理」をクリック
-    Work->>Page: アカウント管理画面を表示<br/>(OperatorPages.jsx)
-    Page->>Hook: バックエンドから会員一覧を取得<br>useResource('/operator/members')
-    Hook->>Http: useEffect の reload() が<br/>request('/operator/members')
-    Http->>Ctrl: アカウント一覧取得メソッドを呼ぶ<br>GET /api/operator/members
-    Ctrl->>Svc: アカウント一覧を取得するメソッド<br>list()
-    Svc->>Auth: メソッド利用者の検証<br>requireAdmin()
-    Auth-->>Svc: 認証成功(SHOP_OWNERもしくは ORG_ADMINである)
-    Svc->>Repo: findAll()
-    Repo->>Db: SELECT members
-    Db-->>Repo: 全会員の行
-    Repo-->>Svc: AuthMember のリスト
+    Work->>Page: アカウント管理画面を表示
+    Page->>Hook: 会員の一覧を取得する処理を呼ぶ (useResource)
+    Hook->>Http: 同左
+    Http->>Ctrl: バックエンドのAPIを叩く<br/>GET /api/operator/members
+    Ctrl->>Svc: アカウント一覧を取得するトランザクションを開始 (list)
+    Svc->>Auth: ログイン中の人が運営者かを確かめる (requireAdmin)
+    Auth-->>Svc: 認証成功
+    Svc->>Repo: 全会員を取得する (findAll)
+    Repo->>Db: 全会員を読む
+    Db-->>Repo: 全会員の行を返す
+    Repo-->>Svc: 会員のリストを返す
     loop 会員ごと
-        Svc->>Auth: 会員一人ひとりがどの店舗に所属しているのかを取得<br>storeIdsOf(m)
-        Auth-->>Svc: 店舗 ID のリストを渡す
+        Svc->>Auth: 会員一人ひとりがどの店舗に所属しているのかを取得 (storeIdsOf)
+        Auth-->>Svc: 店舗 ID のリストを返す
     end
-    Svc-->>Ctrl: Member のリスト<br/>(id、name、email、accountType、storeIds、enabled、withdrawnAt)
-    Ctrl-->>Http: 200 Member の配列
-    Http-->>Hook: data
-    Hook-->>Page: resource.data
-    Page->>Page: all.filter で絞り込む<br/>(query は空なので全員が残る)
-    Page->>Page: 利用状態を決める (withdrawnAt があれば「退会済み」、<br/>enabled が真なら「利用中」、偽なら「利用停止」)
-    Page-->>User: 「名前・メール検索」欄と会員の一覧<br/>name、email、accountType、利用状態
+    Svc-->>Ctrl: 会員のリストを返す<br/>(名前、メールアドレス、アカウントの種類、店舗、利用状態)
+    Ctrl-->>Http: 会員のリストを返す
+    Http-->>Hook: 会員のリストを返す
+    Hook-->>Page: 会員のリストを返す
+    Page->>Page: 会員ごとに「利用中」「利用停止」「退会済み」の<br/>どれかを利用状態として決める
+    Page-->>User: 「名前・メール検索」欄と、会員の名前、メールアドレス、<br/>アカウントの種類、利用状態の一覧を表示
 
     User->>Page: 「名前・メール検索」欄に入力
-    Page->>Page: onChange で setQuery(入力値)
-    Page->>Page: all.filter で、name と email を空白でつないだ<br/>文字列が query を含む会員だけ残す (includes)
+    Page->>Page: 名前かメールアドレスに入力した文字を含む会員だけを残す
     alt 該当する会員がいる (入力欄が空なら全員)
-        Page-->>User: 部分一致した会員だけの一覧
+        Page-->>User: 部分一致した会員だけの一覧を表示
     else 該当する会員がいない
-        Page-->>User: 「検索条件に一致する会員はありません。」
-        User->>Page: 検索条件を変えて入力 (基本フロー 3 へ戻る)
+        Page-->>User: 「検索条件に一致する会員はありません。」を表示
+        User->>Page: 検索条件を変えて入力 (21 へ戻る)
     end
 ```
 
-<img width="7020" height="4762" alt="image" src="https://github.com/user-attachments/assets/0c1d92f7-e8d6-4791-8e26-c2bc773713ef" />
+![EC-A01 シーケンス図](<images/EC-A01_会員を検索・確認する-1.png>)
