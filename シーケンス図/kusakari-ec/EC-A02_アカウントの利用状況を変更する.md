@@ -99,12 +99,96 @@ sequenceDiagram
     autonumber
     actor User as 運営者
     box rgba(47,111,219,0.10) ブラウザー React
+        participant Work as 運営者画面の枠<br/>Workspace<br/>(Workspace.jsx)
         participant Page as 会員管理画面<br/>MembersPage<br/>(OperatorPages.jsx)
         participant Dlg as 確認ダイアログ<br/>ConfirmDialog<br/>(ConfirmDialog.jsx)
-        participant Status as エラーの表示<br/>ResourceStatus<br/>(ResourceView.jsx)
-        participant Hook as 一覧の取得と変更<br/>useResource<br/>(useResource.js)
+        participant Hook as 一覧の取得・変更<br/>useResource<br/>(useResource.js)
         participant Http as 通信<br/>request<br/>(api.js)
-        participant AuthJs as 通信の準備<br/>authFetch<br/>(auth.js)
+        participant AuthJs as 通信の下ごしらえ<br/>authFetch<br/>(auth.js)
+    end
+    box rgba(27,127,92,0.12) EC API Spring Boot
+        participant AuthCtrl as ログイン状態API<br/>AuthController<br/>(AuthController.java)
+        participant Ctrl as 会員管理API<br/>MemberController<br/>(MemberController.java)
+        participant Errs as エラー応答<br/>ApiErrors<br/>(ApiErrors.java)
+        participant Svc as 会員の処理<br/>MemberService<br/>(MemberService.java)
+        participant Auth as ログイン中の会員<br/>AuthService<br/>(AuthService.java)
+        participant Pend as オーナー譲渡の申し出<br/>PendingOwnerSuccession<br/>(PendingOwnerSuccession.java)
+        participant Repo as 会員の読み書き<br/>AuthMemberRepository<br/>(AuthMemberRepository.java)
+    end
+    participant Db as MySQL
+
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインのとき: 2 (URL を直接開いたときのログイン確認)、4、18、一覧を取り直す 35 に当てはまる<br/>*a 通信に失敗したとき: 4、16、18、一覧を取り直す 35 に当てはまる
+
+    User->>Work: 運営者メニューの「会員管理」をクリック
+    Work->>Page: 会員管理画面を表示
+    Page->>Hook: 会員一覧の取得をお願いする (useResource)
+    Hook->>Ctrl: 画面が開くと同時に一覧の取得を始める<br/>GET /api/operator/members (reload → request)
+    Ctrl-->>Hook: 200 会員の配列<br/>流れは EC-A01 の図と同じ
+    Hook-->>Page: 会員一覧を渡す
+    Page-->>User: 会員一覧と利用状態 (「利用中」「利用停止」「退会済み」) を表示<br/>利用中の会員には「利用を停止」、それ以外には「利用を再開」が出る
+
+    User->>Page: 対象の会員の「利用を停止」<br/>か「利用を再開」をクリック
+    Page->>Dlg: 確認ダイアログを開く
+    Dlg-->>User: 「利用状況変更の確認」、対象 (氏名とメールアドレス)、変更内容の説明、<br/>「利用停止を確定」または「利用再開を確定」、「取消」を表示
+
+    User->>Dlg: 「利用停止を確定」か「利用再開を確定」をクリック
+    Dlg->>Page: 確定を伝える
+    Page->>Hook: 変更を実行する。成功時のメッセージも一緒に渡す (run)<br>停止なら「利用を停止しました。」、再開なら「利用を再開しました。」
+    Hook->>Http: アカウントの有効/無効を切り替える
+    Http->>AuthJs: 書き込みの前に CSRF トークンを取る
+    AuthJs->>AuthCtrl: GET /api/auth/csrf
+    AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
+    AuthJs->>Ctrl: PUT /api/operator/members/{id}/enabled<br/>(CSRF トークンのヘッダー付き)
+    Ctrl->>Svc: 会員の利用状態の変更を依頼 (enable)<br/>enable 全体が 1 つのトランザクション
+    Svc->>Auth: ログイン中の人が運営者か確認 (requireAdmin)
+    Auth-->>Svc: 確認できた
+    opt 停止するとき (記述なし)
+        Svc->>Pend: 対象の会員が属する組織をロック (lockOrganizationOf)
+        Note over Svc,Db: オーナーか担当者として属している組織の行を SELECT ... FOR UPDATE でロックする (組織 → 会員の順)。<br/>購入者など、組織を持たない会員はロックしない。
+    end
+    Svc->>Repo: 対象の会員を読む (findById、SELECT members)
+    Repo-->>Svc: 会員 (いなければ空)
+    Svc->>Db: 会員の行をロックして読み直す<br/>(lockMember、SELECT ... FOR UPDATE members)
+    Db-->>Svc: ロックした会員の行
+    break 6a 対象が運営者アカウントか退会済み (isAdmin、withdrawnAt)
+        Svc--xErrs: 409 MEMBER_FIXED の例外を投げる (ApiException)
+        Note over Errs,Page: 409 を返し、利用状態は変えない。<br/>画面では 6a-1 一覧を取り直し、ダイアログを閉じて「管理者または退会済み会員の状態は変更できません。」と表示する。
+    end
+    Svc->>Svc: 会員の利用状態を書き換える (changeEnabled)
+    opt 停止で、組織をロックしたとき (記述なし)
+        Svc->>Pend: 停止する会員が譲渡の申し出に関わっていれば、その申し出を無効にする<br/>(invalidateFor は譲渡先、invalidateForOwner は申し出たオーナー本人かを見る)
+        Note over Svc,Db: 関わっていた場合は、承認待ちを空にして、履歴とオーナー・譲渡先への通知 2 件を保存する<br/>(共通の invalidate と OwnerSuccessionNotices)。関わっていなければ何もしない。
+    end
+    Svc->>Db: 書き換えた行を保存してコミット<br/>(save は呼ばない。UPDATE members ほか)
+    Db-->>Svc: 完了
+    Svc-->>Ctrl: 処理が終わった
+    Ctrl-->>Http: 200 変更後の値 ({ enabled })
+    Http-->>Hook: 変更後の値を返す
+    Hook->>Ctrl: 一覧を取り直す (reload)<br/>GET /api/operator/members。流れは 4〜5 と同じ
+    Ctrl-->>Hook: 最新の会員一覧
+    Hook-->>Page: 成功を返す (run が true、成功メッセージをセット)
+    Page-->>User: ダイアログを閉じて (setTarget(null))、「利用を停止しました。」<br/>または「利用を再開しました。」と、更新後の利用状態を表示
+````
+
+![EC-A02 シーケンス図](<images/EC-A02_アカウントの利用状況を変更する-1.png>)
+
+図に描いていない代替フロー: 5a (確定を取り消した)、(記述なし) の分岐 (会員がいない)
+
+## 共通代替フローを直接書いた図
+
+上の図の「確定」のところ (CSRF トークンの取得と `PUT /api/operator/members/{id}/enabled`) に、この画面で起こりうる共通代替フロー (\*a、\*b) を書き足した図です。画面を開いて一覧を取るときの \*a・\*b は、[EC-A01](<EC-A01_会員を検索・確認する.md>) の「共通代替フローを直接書いた図」と同じなので、ここでは省いています。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as 運営者
+    box rgba(47,111,219,0.10) ブラウザー React
+        participant Page as 会員管理画面<br/>MembersPage<br/>(OperatorPages.jsx)
+        participant Dlg as 確認ダイアログ<br/>ConfirmDialog<br/>(ConfirmDialog.jsx)
+        participant Status as エラー表示<br/>ResourceStatus<br/>(ResourceView.jsx)
+        participant Hook as 一覧の取得・変更<br/>useResource<br/>(useResource.js)
+        participant Http as 通信<br/>request<br/>(api.js)
+        participant AuthJs as 通信の下ごしらえ<br/>authFetch<br/>(auth.js)
         participant Notice as 期限切れのお知らせ<br/>SessionNotice<br/>(SessionNotice.jsx)
     end
     box rgba(27,127,92,0.12) EC API Spring Boot
@@ -118,81 +202,81 @@ sequenceDiagram
         participant Cog as Amazon Cognito
     end
 
-    User->>Dlg: 「利用停止を確定」または「利用再開を確定」をクリック
-    Dlg->>Page: 確定したことを伝える (onConfirm → change)
-    Page->>Hook: 変更を実行し、成功の文を渡す (run)
-    Hook->>Http: 利用状態を書き換える通信を送る (write → request)
-    Http->>AuthJs: 書き込みの前に CSRF トークンを取るよう頼む (authFetch)
+    User->>Dlg: 「利用停止を確定」か「利用再開を確定」をクリック
+    Dlg->>Page: 確定を伝える (onConfirm → change)
+    Page->>Hook: 変更を実行する。成功時のメッセージも一緒に渡す (run)
+    Hook->>Http: 利用状態を書き換えるリクエストを送る (write → request)
+    Http->>AuthJs: 書き込みの前に CSRF トークンを取ってもらう (authFetch)
     alt *a CSRF トークンを取れない (届かない、または 200 以外)
         AuthJs-xAuthCtrl: GET /api/auth/csrf
         AuthJs--xHttp: エラーを投げる
-        Http->>Http: 通信の失敗にまとめる<br/>(send の catch → ApiError(networkErrorMessage, 0))
+        Http->>Http: 通信の失敗としてまとめる<br/>(send の catch → ApiError(networkErrorMessage, 0))
         Http--xHook: エラーを投げる
-        Hook->>Status: エラーの文を出す (run の catch → setError)<br/>0 なので一覧は取り直さない
+        Hook->>Status: エラーメッセージを出す (run の catch → setError)<br/>0 なので一覧は取り直さない
         Hook-->>Page: 失敗を返す (run が false)
         Page->>Dlg: ダイアログを閉じる (setTarget(null))
-        Status-->>User: *a-1「サーバーに接続できません。<br/>接続を確認して再試行してください。」と「再取得」
+        Status-->>User: *a-1「サーバーに接続できません。<br/>接続を確認して再試行してください。」と「再取得」を表示
     else CSRF トークンを取れた
         AuthJs->>AuthCtrl: GET /api/auth/csrf
         AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン
-        alt *a PUT が届かない、または応答が JSON でない (変わったかは分からない)
+        alt *a PUT が届かない、または応答が JSON ではない (変更されたかどうかは分からない)
             AuthJs-xFilter: PUT /api/operator/members/{id}/enabled
-            Http->>Http: 通信の失敗にまとめる<br/>(send か readResponse → ApiError(networkErrorMessage, 0))
+            Http->>Http: 通信の失敗としてまとめる<br/>(send か readResponse → ApiError(networkErrorMessage, 0))
             Http--xHook: エラーを投げる
-            Hook->>Status: エラーの文を出す (run の catch → setError)<br/>0 なので一覧は取り直さない
+            Hook->>Status: エラーメッセージを出す (run の catch → setError)<br/>0 なので一覧は取り直さない
             Hook-->>Page: 失敗を返す (run が false)
             Page->>Dlg: ダイアログを閉じる (setTarget(null))
-            Status-->>User: *a-1「サーバーに接続できません。<br/>接続を確認して再試行してください。」と「再取得」
-        else *b ログインの期限切れ (サーバーのセッションがない、refresh トークンが失効)
+            Status-->>User: *a-1「サーバーに接続できません。<br/>接続を確認して再試行してください。」と「再取得」を表示
+        else *b ログインの期限切れ (サーバー側のセッションがない、または refresh トークンが失効)
             AuthJs->>Filter: PUT /api/operator/members/{id}/enabled
-            Filter-->>Http: 401 LOGIN_REQUIRED<br/>(セッションが無いときは AuthConfiguration.java が返す)
+            Filter-->>Http: 401 LOGIN_REQUIRED<br/>(セッションがないときは AuthConfiguration.java が返す)
             Http->>Notice: 期限切れを知らせる<br/>(wasSignedIn が真なので kusakari-session-expired)
             Http--xHook: エラーを投げる (ApiError(sessionExpiredMessage, 401))
             Hook-->>Page: 失敗を返す (run が false)
             Page->>Dlg: ダイアログを閉じる (setTarget(null))
-            Notice-->>User: *b-1「ログインの有効期限が切れました。<br/>もう一度ログインしてください。」「ログインする」「閉じる」
+            Notice-->>User: *b-1「ログインの有効期限が切れました。<br/>もう一度ログインしてください。」「ログインする」「閉じる」を表示
             User->>Notice: 「ログインする」をクリック
             Notice->>AuthJs: ログイン画面へ移る (login)
-            AuthJs-->>User: /account/login?returnTo=/operator/members のログイン画面<br/>(ログインの後は *b-2 で会員管理画面に戻る。利用状態は変わっていない)
+            AuthJs-->>User: /account/login?returnTo=/operator/members のログイン画面を表示<br/>(ログイン後は *b-2 で会員管理画面に戻る。利用状態は変わっていない)
         else *a ID トークンの更新で Cognito に届かない
             AuthJs->>Filter: PUT /api/operator/members/{id}/enabled
             Filter-xCog: ID トークンを更新する<br/>(InitiateAuth REFRESH_TOKEN_AUTH、CognitoPasswordLogin.java)
             Filter-->>Http: 503 AUTH_UNAVAILABLE (セッションは残す)
             Http--xHook: エラーを投げる (ApiError 503)
-            Hook->>Status: エラーの文を出す (run の catch → setError)
+            Hook->>Status: エラーメッセージを出す (run の catch → setError)
             Hook-->>Page: 失敗を返す (run が false)
             Page->>Dlg: ダイアログを閉じる (setTarget(null))
-            Status-->>User: *a-1「認証を確認できません。<br/>時間をおいて再試行してください。」と「再取得」
-        else 要求が Controller まで届いた
+            Status-->>User: *a-1「認証を確認できません。<br/>時間をおいて再試行してください。」と「再取得」を表示
+        else リクエストが Controller まで届いた
             AuthJs->>Filter: PUT /api/operator/members/{id}/enabled
-            Filter->>Ctrl: 要求を通す (chain.doFilter)
-            Ctrl->>Svc: 会員の利用状態を変えるよう頼む (enable)
-            Svc->>Db: 運営者かを確かめ、組織と会員をロックして読み、<br/>書き換えてコミットする (上の図の 20〜30)
+            Filter->>Ctrl: リクエストを通す (chain.doFilter)
+            Ctrl->>Svc: 会員の利用状態の変更を依頼 (enable)
+            Svc->>Db: 運営者かどうかを確認し、組織と会員をロックして読み、<br/>書き換えてコミットする (上の図の 20〜30)
             alt *a MySQL との通信に失敗
-                Db--xSvc: 失敗 (DataAccessException)。<br/>トランザクションの変更はすべて取り消す
+                Db--xSvc: 失敗 (DataAccessException)。<br/>トランザクション内の変更はすべて取り消される
                 Svc--xCtrl: 例外
                 Ctrl-->>Http: 503 DATABASE_UNAVAILABLE (ApiErrors.java の database)
                 Http--xHook: エラーを投げる (ApiError 503)
-                Hook->>Status: エラーの文を出す (run の catch → setError)
+                Hook->>Status: エラーメッセージを出す (run の catch → setError)
                 Hook-->>Page: 失敗を返す (run が false)
                 Page->>Dlg: ダイアログを閉じる (setTarget(null))
-                Status-->>User: *a-1「保存処理を完了できませんでした。<br/>時間をおいて再試行してください。」と「再取得」
-            else 書き換えた
+                Status-->>User: *a-1「保存処理を完了できませんでした。<br/>時間をおいて再試行してください。」と「再取得」を表示
+            else 書き換えられた
                 Db-->>Svc: 完了
-                Svc-->>Ctrl: 終わった
+                Svc-->>Ctrl: 処理が終わった
                 Ctrl-->>Http: 200 変更後の値
-                Http-->>Hook: 変更後の値
+                Http-->>Hook: 変更後の値を返す
                 Hook-->>Page: 一覧を取り直して成功を返す (reload、run が true)
-                Page-->>User: 「利用を停止しました。」または<br/>「利用を再開しました。」と更新後の利用状態
+                Page-->>User: 「利用を停止しました。」または<br/>「利用を再開しました。」と、更新後の利用状態を表示
             end
         end
     end
-    opt *a-3 やり直す
+    opt *a-3 やり直すとき
         alt 一覧を取り直す
             User->>Status: 「再取得」をクリック
-            Status->>Hook: 一覧を取り直す (reload)。変更の通信は送り直さない
+            Status->>Hook: 一覧を取り直す (reload)。変更のリクエストは送り直さない
         else 変更をやり直す
-            User->>Page: もう一度「利用を停止」か「利用を再開」をクリック<br/>(基本フロー 3 へ戻る)
+            User->>Page: もう一度「利用を停止」か「利用を再開」をクリック<br/>(基本フロー 3 に戻る)
         end
     end
 ```
