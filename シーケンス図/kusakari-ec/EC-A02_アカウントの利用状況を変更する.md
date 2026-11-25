@@ -33,7 +33,7 @@ sequenceDiagram
     end
     participant Db as MySQL
 
-    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、4、20、一覧の取り直しの 37 に適用<br/>*a 通信に失敗した場合: 4、18、20、一覧の取り直しの 37 に適用
+    Note over User,Db: 共通代替フロー<br/>*b 未ログインの場合: 2 (URL を直接開いたときのログインの確認)、4、18、一覧の取り直しの 35 に適用<br/>*a 通信に失敗した場合: 4、16、18、一覧の取り直しの 35 に適用
 
     User->>Work: 運営者メニューの「会員管理」をクリック
     Work->>Page: アカウント管理者画面を表示
@@ -47,54 +47,48 @@ sequenceDiagram
     Page->>Dlg: 確認ダイアログを表示
     Dlg-->>User: 「利用状況変更の確認」、対象：氏名（メールアドレス）、変更の説明、<br/>「利用停止を確定」か「利用再開を確定」、「取消」
 
-    alt 5a 確定を取り消した
-        User->>Dlg: 「取消」をクリック<br/>(Esc キー、「閉じる」、ダイアログの外側のクリックも同じ)
-        Dlg-->>User: ダイアログを閉じる
-        Note over User,Dlg: 結果: 通信せず、利用状態は変わらない。<br/>画面: 会員の一覧に戻る。
-    else 確定した
-        User->>Dlg: 「利用停止を確定」または「利用再開を確定」をクリック
-        Dlg->>Page: 確定したことを伝える
-        Page->>Hook: 変更を実行し、成功の文を渡す (run)<br>停止なら「利用を停止しました。」、再開なら「利用を再開しました。」を表示
-        Hook->>Http: アカウントの有効状態を切り替える
-        Http->>AuthJs: 書き込みの前に CSRF トークンを取得
-        AuthJs->>AuthCtrl: GET /api/auth/csrf
-        AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
-        AuthJs->>Ctrl: PUT /api/operator/members/{id}/enabled<br/>(CSRF トークンのヘッダー付き)
-        Ctrl->>Svc: 会員の利用状態を変えるよう頼む (enable)<br/>enable 全体が 1 つのトランザクション
-        Svc->>Auth: ログイン中の人が運営者かを確かめる (requireAdmin)
-        Auth-->>Svc: 認証成功
-        opt 停止するとき (記述なし)
-            Svc->>Pend: 対象の会員が属する組織を<br>ロックする処理を呼ぶ (lockOrganizationOf)
-            Note over Svc,Db: 結果: オーナーか担当者として属する組織の行を SELECT ... FOR UPDATE でロックする (組織 → 会員の順)。<br/>購入者などは組織がないのでロックしない。
-        end
-        Svc->>Repo: 対象の会員を読む (findById、SELECT members)
-        Repo-->>Svc: 会員 (なければなし)
-        Svc->>Db: 会員の行をロックして読み直す<br/>(lockMember、SELECT ... FOR UPDATE members)
-        Db-->>Svc: ロックした会員の行
-        break 6a 対象が運営者アカウントか退会済み (isAdmin、withdrawnAt)
-            Svc--xErrs: 409 MEMBER_FIXED の例外を投げる (ApiException)
-            Note over Errs,Page: 結果: 409 を返し、利用状態は変えない。<br/>画面: 6a-1 一覧を取り直し、ダイアログを閉じて「管理者または退会済み会員の状態は変更できません。」
-        end
-        Svc->>Svc: 会員の利用状態を書き換える (changeEnabled)
-        opt 停止で、組織をロックした (記述なし)
-            Svc->>Pend: 停止する会員が譲渡の申し出の当事者なら無効にするよう頼む<br/>(invalidateFor は譲渡先、invalidateForOwner は申し出たオーナー本人かを見る)
-            Note over Svc,Db: 結果: 当事者なら承認待ちを空にし、履歴と、オーナーと譲渡先への通知 2 件を保存する<br/>(共通の invalidate と OwnerSuccessionNotices)。当事者でなければ何もしない。
-        end
-        Svc->>Db: 書き換えた行を保存してコミットする<br/>(save は呼ばない。UPDATE members ほか)
-        Db-->>Svc: 完了
-        Svc-->>Ctrl: 終わった
-        Ctrl-->>Http: 200 変更後の値 ({ enabled })
-        Http-->>Hook: 変更後の値
-        Hook->>Ctrl: 一覧を取り直す (reload)<br/>GET /api/operator/members。流れは 4〜5 と同じ
-        Ctrl-->>Hook: 最新の会員の一覧
-        Hook-->>Page: 成功を返す (run が true、成功の文を設定)
-        Page-->>User: ダイアログを閉じ (setTarget(null))、「利用を停止しました。」<br/>または「利用を再開しました。」と更新後の利用状態
+    User->>Dlg: 「利用停止を確定」または「利用再開を確定」をクリック
+    Dlg->>Page: 確定したことを伝える
+    Page->>Hook: 変更を実行し、成功の文を渡す (run)<br>停止なら「利用を停止しました。」、再開なら「利用を再開しました。」を表示
+    Hook->>Http: アカウントの有効状態を切り替える
+    Http->>AuthJs: 書き込みの前に CSRF トークンを取得
+    AuthJs->>AuthCtrl: GET /api/auth/csrf
+    AuthCtrl-->>AuthJs: 200 ヘッダー名とトークン (csrf)
+    AuthJs->>Ctrl: PUT /api/operator/members/{id}/enabled<br/>(CSRF トークンのヘッダー付き)
+    Ctrl->>Svc: 会員の利用状態を変えるよう頼む (enable)<br/>enable 全体が 1 つのトランザクション
+    Svc->>Auth: ログイン中の人が運営者かを確かめる (requireAdmin)
+    Auth-->>Svc: 認証成功
+    opt 停止するとき (記述なし)
+        Svc->>Pend: 対象の会員が属する組織を<br>ロックする処理を呼ぶ (lockOrganizationOf)
+        Note over Svc,Db: 結果: オーナーか担当者として属する組織の行を SELECT ... FOR UPDATE でロックする (組織 → 会員の順)。<br/>購入者などは組織がないのでロックしない。
     end
+    Svc->>Repo: 対象の会員を読む (findById、SELECT members)
+    Repo-->>Svc: 会員 (なければなし)
+    Svc->>Db: 会員の行をロックして読み直す<br/>(lockMember、SELECT ... FOR UPDATE members)
+    Db-->>Svc: ロックした会員の行
+    break 6a 対象が運営者アカウントか退会済み (isAdmin、withdrawnAt)
+        Svc--xErrs: 409 MEMBER_FIXED の例外を投げる (ApiException)
+        Note over Errs,Page: 結果: 409 を返し、利用状態は変えない。<br/>画面: 6a-1 一覧を取り直し、ダイアログを閉じて「管理者または退会済み会員の状態は変更できません。」
+    end
+    Svc->>Svc: 会員の利用状態を書き換える (changeEnabled)
+    opt 停止で、組織をロックした (記述なし)
+        Svc->>Pend: 停止する会員が譲渡の申し出の当事者なら無効にするよう頼む<br/>(invalidateFor は譲渡先、invalidateForOwner は申し出たオーナー本人かを見る)
+        Note over Svc,Db: 結果: 当事者なら承認待ちを空にし、履歴と、オーナーと譲渡先への通知 2 件を保存する<br/>(共通の invalidate と OwnerSuccessionNotices)。当事者でなければ何もしない。
+    end
+    Svc->>Db: 書き換えた行を保存してコミットする<br/>(save は呼ばない。UPDATE members ほか)
+    Db-->>Svc: 完了
+    Svc-->>Ctrl: 終わった
+    Ctrl-->>Http: 200 変更後の値 ({ enabled })
+    Http-->>Hook: 変更後の値
+    Hook->>Ctrl: 一覧を取り直す (reload)<br/>GET /api/operator/members。流れは 4〜5 と同じ
+    Ctrl-->>Hook: 最新の会員の一覧
+    Hook-->>Page: 成功を返す (run が true、成功の文を設定)
+    Page-->>User: ダイアログを閉じ (setTarget(null))、「利用を停止しました。」<br/>または「利用を再開しました。」と更新後の利用状態
 ```
 
 ![EC-A02 シーケンス図](<images/EC-A02_アカウントの利用状況を変更する-1.png>)
 
-図に描いていない代替フロー：（記述なし）の分岐（会員がいない）
+図に描いていない代替フロー：5a（確定を取り消した）、（記述なし）の分岐（会員がいない）
 
 ## 共通代替フローを直接書いた図
 
@@ -173,7 +167,7 @@ sequenceDiagram
             AuthJs->>Filter: PUT /api/operator/members/{id}/enabled
             Filter->>Ctrl: 要求を通す (chain.doFilter)
             Ctrl->>Svc: 会員の利用状態を変えるよう頼む (enable)
-            Svc->>Db: 運営者かを確かめ、組織と会員をロックして読み、<br/>書き換えてコミットする (上の図の 22〜32)
+            Svc->>Db: 運営者かを確かめ、組織と会員をロックして読み、<br/>書き換えてコミットする (上の図の 20〜30)
             alt *a MySQL との通信に失敗
                 Db--xSvc: 失敗 (DataAccessException)。<br/>トランザクションの変更はすべて取り消す
                 Svc--xCtrl: 例外
