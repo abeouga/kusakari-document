@@ -1,1 +1,5 @@
 .obsidian/
+
+# draw.io のバックアップと一時ファイル
+.$*.drawio.bkp
+.$*.drawio.dtmp
